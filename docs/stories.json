@@ -46,6 +46,10 @@
     "title": "You texted a dream. It started building.",
     "tag": "Build",
     "body": "Uber for horses. A white carriage in San Francisco. Zoen didn't send a plan. It said we're doing this. Rust. Owners to riders. You logged in once. Everything after that was on it.",
-    "image": "https://raw.githubusercontent.com/EnzoTironi/Plow/main/docs/zoen-imessage.jpg?v=2"
+    "images": [
+      "https://raw.githubusercontent.com/EnzoTironi/Plow/main/docs/zoen-imessage.jpg?v=2",
+      "https://raw.githubusercontent.com/EnzoTironi/Plow/main/docs/zoen-horses-api.jpg",
+      "https://raw.githubusercontent.com/EnzoTironi/Plow/main/docs/zoen-horses-search.jpg"
+    ]
   }
 ]

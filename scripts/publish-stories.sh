@@ -24,6 +24,8 @@ for story in stories:
     ]
     if story.get("image"):
         cmd.extend(["--image", story["image"]])
+    for url in story.get("images") or []:
+        cmd.extend(["--image", url])
     print("+", story["id"], flush=True)
     subprocess.check_call(cmd)
 print("ok", len(stories), "stories")
