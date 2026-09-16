@@ -10,12 +10,14 @@ curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | s
 
 Já clonou? `./install.sh`
 
-Docker aberto. Mande do celular a frase que aparecer.
+Mande do celular a frase que aparecer.
 Quando terminar, mande um iMessage. É só isso.
 
 No Mac, o único app que você instala é este:
 https://plow.co/latch
 O resto o Zoen pede um sim e faz.
 
-Pausar: `docker compose stop`. Sair: `./bin/plow-agents revoke` e
-`docker compose down`.
+Sair: `./bin/plow-agents lines` e `./bin/plow-agents revoke ln_…`
+
+No seu computador, com Docker aberto: `./install.sh --local`.
+`docker compose down` guarda a memória. `down -v` apaga tudo.

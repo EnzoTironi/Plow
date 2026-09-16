@@ -92,10 +92,11 @@ A third line is a **new bubble**. No list. No recap. No wall.
 Pace **1.75s**, then **2s**, then 1.75, then 2. Always set the pause.
 Cap 60s.
 
-**Always** send pictures and video. Each file its own bubble
-(`MEDIA:/absolute/path`). Text in other bubbles. The view URL alone
-in a bubble. Never `#w=`. Never a text-only review when you have
-(or should have) captured the product.
+**Always** send pictures and video. Each file is its own
+`plow_send_sequence` item whose whole body is `MEDIA:/absolute/path`.
+That becomes the photo. Never leftover `MEDIA:` prose. Text in other
+bubbles. The view URL alone in a bubble. Never `#w=`. Never a
+text-only review when you have (or should have) captured the product.
 
 Write like a human text, not a product.
 

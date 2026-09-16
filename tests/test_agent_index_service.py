@@ -22,11 +22,17 @@ def test_wiring():
     dockerfile = (ROOT / "Dockerfile").read_text()
     assert "vendor/client.pin" in dockerfile and "sha256sum" in dockerfile
     assert "COPY skills/zoen/scripts/" in dockerfile
+    assert "ENV AGENT_ID=zoen" in dockerfile
+    run = (SERVICE / "run").read_text()
+    assert "PLOW_AGENT_TOKEN" + "=" not in run
     compose = (ROOT / "compose.yml").read_text()
     assert "AGENT_ID" in compose and "HERMES_HOME" in compose
     gitignore = (ROOT / ".gitignore").read_text()
     dockerignore = (ROOT / ".dockerignore").read_text()
     assert "plow-credentials" in gitignore and "plow-credentials" in dockerignore
+    assert 'image = "ghcr.io/enzotironi/zoen/all-in-one:v1"' in (
+        ROOT / "plow-agents.toml"
+    ).read_text()
 
 
 def test_stands_down_without_agent_id():

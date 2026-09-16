@@ -1,7 +1,7 @@
 # Kit
 
-The owner installs one Mac app: `https://plow.co/latch`. Docker
-and this line are `install.sh`, not a chat. Everything else that
+The owner installs one Mac app: `https://plow.co/latch`. This
+line is `install.sh`, not a chat. Everything else that
 a Mac can install or log into, you do, after a yes.
 
 Never ask them to install a CLI, an app, brew, `gh`, a dashboard,
