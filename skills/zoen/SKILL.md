@@ -102,8 +102,11 @@ Use that Portuguese body only if they wrote in Portuguese. Match them.
   one ? only when you actually ask. never repeat their ask back.
 - Pace **1.75s then 2s**, alternating. Always set the pause. Cap 60s.
 - **Always pictures and video.** Capture the user-path (screenshots +
-  a short clip). Each file is its own bubble: `MEDIA:/absolute/path`.
-  Text stays in other bubbles, still max two lines.
+  a short clip). Each file is its own `plow_send_sequence` item whose
+  whole body is `MEDIA:/absolute/path`. That becomes the photo. Never
+  leftover `MEDIA:` prose. `photos`/`asset_ids` are packaged assets
+  only, not workspace files. Text stays in other bubbles, still max
+  two lines.
 - Also a picture-map: write `.pr-lens/graph.json`, then
   `python3 /opt/plow/zoen/lens.py push --repo …`. Next bubble is
   **only** the view URL. Never `#w=`.

@@ -7,6 +7,7 @@ FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-80ef5024eb4b770e727a618a9b55
 # --yolo: frozen into tools.approval at gateway import. Tirith /approve
 # otherwise parks the turn on iMessage while the owner only sees typing.
 ENV HERMES_YOLO_MODE=1
+ENV AGENT_ID=zoen
 
 # plow-init composes SOUL.md on every boot as the base persona plus this file.
 # Do not COPY to /var/lib/hermes/SOUL.md. It is overwritten at boot.

@@ -83,7 +83,8 @@ while :; do
     3)
       # The one invocation with a use for the bearer: it exchanges it for the
       # report-only key everything else authenticates with.
-      client env PLOW_AGENT_TOKEN="$PLOW_AGENT_TOKEN" \
+      TOKEN_NAME=PLOW_AGENT_TOKEN
+      client env "$TOKEN_NAME=$PLOW_AGENT_TOKEN" \
         /opt/hermes/.venv/bin/python3 /opt/plow/agent-index-client.py \
         --register --agent "$AGENT_ID" >/dev/null || {
       echo "agent-index: no index key this pass, not reporting" >&2

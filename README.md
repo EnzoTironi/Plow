@@ -21,7 +21,7 @@ A little monster who makes the thing.
 
 ## Start
 
-One command. Docker open.
+One command.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | sh

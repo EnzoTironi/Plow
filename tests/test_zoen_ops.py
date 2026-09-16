@@ -57,18 +57,28 @@ def test_watch_skips_unconfigured_sources():
         os.environ.update(saved)
 
 
-def test_install_renames_the_agent_before_compose_up():
+def test_install_cloud_default_deploys_the_public_digest():
     text = (ROOT / "install.sh").read_text()
-    rename_at = text.find('face.py" rename')
-    compose_at = text.find("docker compose up")
-    assert rename_at != -1
-    assert compose_at != -1
-    assert rename_at < compose_at
+    toml = (ROOT / "plow-agents.toml").read_text()
+    assert 'image = "ghcr.io/enzotironi/zoen/all-in-one:v1"' in toml
+    assert (
+        "ghcr.io/enzotironi/zoen/all-in-one@sha256:"
+        "78c01798f5f43d40a69f8dd06c84448e78ba861e6764f8d7e2999ef8f7bb1cca"
+    ) in text
+    _, _, after = text.partition('[ "$LOCAL" = 1 ]')
+    then_part, _, else_part = after.partition("else")
+    assert 'face.py" rename' in then_part
+    assert "docker compose up" in then_part
+    assert "plow mint" in then_part
+    assert then_part.find('face.py" rename') < then_part.find("docker compose up")
+    assert 'deploy "$IMAGE"' in else_part
+    assert "plow mint" not in else_part
+    assert "docker compose up" not in else_part
 
 
 if __name__ == "__main__":
     test_issues_splits_owner_and_repo()
     test_lens_strips_the_secret_fragment_from_a_view_url()
     test_watch_skips_unconfigured_sources()
-    test_install_renames_the_agent_before_compose_up()
+    test_install_cloud_default_deploys_the_public_digest()
     print("ok")
