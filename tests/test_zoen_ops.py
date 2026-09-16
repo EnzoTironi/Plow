@@ -142,7 +142,10 @@ def test_qa_is_a_skill_not_a_script():
     assert "only notifies" in skill
     assert "Never Block on the Human" in floor
     assert "plow_send_sequence" in skill and "1.75" in skill
-    assert "react.py" in skill
+    assert "face.py intro" in skill
+    assert "face.py intro" in persona
+    assert "face.py intro" in (ROOT / "runtime/bootstrap.md").read_text()
+    assert "qual é o seu sonho?" in (SCRIPTS / "face.py").read_text()
     assert "context.py dump" in skill
     assert "memory.py remember" in skill
     assert "memory.py recall" in skill
@@ -270,6 +273,8 @@ def test_one_command_install():
     text = script.read_text()
     assert "plow-agents" in text and "mint" in text
     assert "docker compose up" in text
+    assert 'face.py" rename' in text
+    assert (ROOT / "docs/zoen-card.jpg").is_file()
     install = (ROOT / "docs/INSTALL.md").read_text()
     assert "curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh" in install
     assert "https://plow.co/latch" in install
@@ -284,8 +289,10 @@ def test_image_ships_scripts():
     dockerfile = (ROOT / "Dockerfile").read_text()
     assert "COPY skills/zoen/scripts/" in dockerfile
     assert (SCRIPTS / "react.py").exists()
+    assert (SCRIPTS / "face.py").exists()
     assert (SCRIPTS / "memory.py").exists()
     assert (SCRIPTS / "context.py").exists()
+    assert "docs/zoen-card.jpg" in dockerfile
     assert "@coldtea/pr-lens-cli" in dockerfile
     assert "cli/cli/releases" in dockerfile
     assert "COPY skills/" in dockerfile

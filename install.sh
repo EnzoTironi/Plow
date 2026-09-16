@@ -98,6 +98,8 @@ if [ ! -f plow-credentials ]; then
   plow mint "$line"
 fi
 
+python3 "$ROOT/skills/zoen/scripts/face.py" rename || true
+
 echo "ligando…"
 if ! docker compose up --build -d; then
   docker logout public.ecr.aws >/dev/null 2>&1 || true
