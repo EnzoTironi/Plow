@@ -195,10 +195,28 @@ def test_intro_waits_if_they_have_not_written():
     assert plow.puts == []
 
 
-def test_intro_waits_if_the_newest_message_is_ours():
+def test_intro_still_sends_if_the_newest_message_is_a_shutdown():
     plow = FakePlow(
         history=outbound(
-            {"direction": "outbound", "body": "on it"},
+            {"direction": "outbound", "body": "Gateway shutting down — interrupted."},
+            {"direction": "inbound", "body": "hey"},
+        )
+    )
+    with tempfile.TemporaryDirectory() as d, face_env(home=d):
+        payload = face.intro(http=plow.http, put=plow.put)
+    assert payload["ok"] is True
+    assert "skipped" not in payload
+    assert payload["hello"] == list(face.HELLO["en"])
+    assert plow.text_bodies() == list(face.HELLO["en"])
+
+
+def test_intro_waits_if_we_already_greeted_in_this_chat():
+    plow = FakePlow(
+        history=outbound(
+            {
+                "direction": "outbound",
+                "body": "hey, I'm Zoen, your little monster that makes your dreams come true",
+            },
             {"direction": "inbound", "body": "hey"},
         )
     )
@@ -227,6 +245,9 @@ def test_intro_sends_hello_then_the_card_then_the_dream():
     assert payload["hello"] == list(face.HELLO["en"])
     assert payload["attachment"] == "att_card"
     assert plow.text_bodies() == list(face.HELLO["en"])
+    assert plow.judged
+    assert "temperature" not in plow.judged[0]
+    assert "model" not in plow.judged[0]
     card = plow.puts[0][2]
     assert b"FN:Zoen" in card
     assert b"+15555550100" in card
@@ -544,6 +565,80 @@ def test_dispatch_swallows_plow_setup_without_intro():
     assert action == {"action": "skip", "reason": "plow setup"}
 
 
+def test_dispatch_intros_when_setup_name_is_on_their_hello():
+    sent = []
+
+    def send(**kwargs):
+        sent.append(kwargs)
+        return {"ok": True}
+
+    action = face.greet_on_dispatch(
+        Event("Hello, what's going on?", user_name="Plow setup"),
+        voiced=False,
+        send=send,
+    )
+    assert action == {"action": "skip", "reason": "zoen intro"}
+    assert sent == [{"inbound": "Hello, what's going on?"}]
+
+
+def test_dispatch_intros_from_history_when_reconnect_is_setup():
+    plow = FakePlow(history=said("Hello, what's going on?"))
+    with tempfile.TemporaryDirectory() as d, face_env(home=d):
+        action = face.greet_on_dispatch(
+            Event(
+                "Plow, not your owner: you just came online in your owner's chat.",
+                user_name="Plow setup",
+            ),
+            voiced=False,
+            http=plow.http,
+            put=plow.put,
+        )
+    assert action == {"action": "skip", "reason": "zoen intro"}
+    assert plow.text_bodies() == list(face.HELLO["en"])
+    assert plow.judged
+    assert "temperature" not in plow.judged[0]
+    assert "model" not in plow.judged[0]
+
+
+def test_dispatch_does_not_replay_hello_on_setup_after_we_already_greeted():
+    plow = FakePlow(
+        history=outbound(
+            {
+                "direction": "outbound",
+                "body": "hey, I'm Zoen, your little monster that makes your dreams come true",
+            },
+            {"direction": "inbound", "body": "Hello, what's going on?"},
+        )
+    )
+    with tempfile.TemporaryDirectory() as d, face_env(home=d):
+        action = face.greet_on_dispatch(
+            Event(
+                "Plow, not your owner: you just came online in your owner's chat.",
+                user_name="Plow setup",
+            ),
+            voiced=False,
+            http=plow.http,
+            put=plow.put,
+        )
+    assert action == {"action": "skip", "reason": "plow setup"}
+    assert plow.text_bodies() == []
+    assert plow.puts == []
+
+
+def test_intro_does_not_greet_a_plow_setup_ping():
+    plow = FakePlow(
+        history=said(
+            "Plow, not your owner: you just came online in your owner's chat."
+        )
+    )
+    with tempfile.TemporaryDirectory() as d, face_env(home=d):
+        payload = face.intro(http=plow.http, put=plow.put)
+        assert payload["skipped"] == "plow setup"
+        assert not (Path(d) / "zoen" / "VOICE.md").exists()
+    assert plow.text_bodies() == []
+    assert plow.puts == []
+
+
 def test_intro_uses_inbound_text_even_when_history_is_still_empty():
     plow = FakePlow(judge="pt")
     with tempfile.TemporaryDirectory() as d, face_env(home=d):
@@ -709,7 +804,8 @@ if __name__ == "__main__":
     test_vcard_names_the_contact_zoen_with_the_line_number_and_photo()
     test_hello_copy_fits_imessage()
     test_intro_waits_if_they_have_not_written()
-    test_intro_waits_if_the_newest_message_is_ours()
+    test_intro_still_sends_if_the_newest_message_is_a_shutdown()
+    test_intro_waits_if_we_already_greeted_in_this_chat()
     test_intro_force_sends_without_waiting()
     test_intro_sends_hello_then_the_card_then_the_dream()
     test_intro_uses_portuguese_when_the_inbound_is_portuguese()
@@ -730,6 +826,10 @@ if __name__ == "__main__":
     test_dispatch_runs_intro_on_first_inbound_and_skips_the_model()
     test_dispatch_lets_the_model_run_after_first_run()
     test_dispatch_swallows_plow_setup_without_intro()
+    test_dispatch_intros_when_setup_name_is_on_their_hello()
+    test_dispatch_intros_from_history_when_reconnect_is_setup()
+    test_dispatch_does_not_replay_hello_on_setup_after_we_already_greeted()
+    test_intro_does_not_greet_a_plow_setup_ping()
     test_intro_uses_inbound_text_even_when_history_is_still_empty()
     test_intro_uses_portuguese_if_the_judge_fails()
     test_intro_renders_hello_when_the_judge_names_another_language()

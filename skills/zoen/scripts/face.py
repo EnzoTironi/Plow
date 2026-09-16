@@ -62,7 +62,6 @@ DIRECTED = (
     "no if they talk to each other, greet the room, name someone else, "
     "or say something merely interesting. Unsure: no."
 )
-JUDGE_MODEL = "anthropic/claude-sonnet-5"
 MENTION = re.compile(r"(?<!\w)@?zoen(?!\w)", re.IGNORECASE)
 GOAL_NAMES = {"goal check"}
 PEEK = (
@@ -224,28 +223,40 @@ def hello_sent(messages: Any) -> bool:
     return False
 
 
-def newest_row(messages: Any) -> dict | None:
-    rows = message_rows(messages)
-    if not rows:
-        return None
-    if any(item.get("created_at") or item.get("sent_at") for item in rows):
-        return max(
-            rows,
-            key=lambda item: str(item.get("created_at") or item.get("sent_at") or ""),
-        )
-    return rows[0]
-
-
-def newest_is_inbound(messages: Any) -> bool:
-    row = newest_row(messages)
-    return bool(row and row.get("direction") == "inbound")
-
-
 def latest_inbound(messages: Any) -> str:
     for item in message_rows(messages):
         if item.get("direction") == "inbound":
             return str(item.get("body") or "")
     return ""
+
+
+def newest_rows(messages: Any) -> list[dict]:
+    rows = message_rows(messages)
+    if any(item.get("created_at") or item.get("sent_at") for item in rows):
+        return sorted(
+            rows,
+            key=lambda item: str(item.get("created_at") or item.get("sent_at") or ""),
+            reverse=True,
+        )
+    return list(rows)
+
+
+def is_noise_row(item: dict) -> bool:
+    if item.get("attachments"):
+        return False
+    body = str(item.get("body") or "")
+    if not body.strip():
+        return True
+    lower = body.lower()
+    return is_setup_text(body) or "gateway shutting down" in lower
+
+
+def newest_is_inbound(messages: Any) -> bool:
+    for item in newest_rows(messages):
+        if is_noise_row(item):
+            continue
+        return item.get("direction") == "inbound"
+    return False
 
 
 def _completion_text(body: Any) -> str:
@@ -262,14 +273,6 @@ def _completion_text(body: Any) -> str:
     return str(body.get("output") or "")
 
 
-def _judge_model() -> str:
-    return (
-        (os.environ.get("ZOEN_LANG_MODEL") or "").strip()
-        or (os.environ.get("HERMES_MODEL") or "").strip()
-        or JUDGE_MODEL
-    )
-
-
 def complete(
     system: str,
     user: str,
@@ -284,8 +287,6 @@ def complete(
         f"{base}/v1/chat/completions",
         headers=headers,
         body={
-            "model": _judge_model(),
-            "temperature": 0,
             "max_tokens": max_tokens,
             "messages": [
                 {"role": "system", "content": system},
@@ -340,8 +341,6 @@ def render_hello(
         f"{base}/v1/chat/completions",
         headers=headers,
         body={
-            "model": _judge_model(),
-            "temperature": 0,
             "max_tokens": 160,
             "messages": [
                 {"role": "system", "content": RENDER},
@@ -802,7 +801,25 @@ def intro(
     )
     history = listed.get("body") if listed.get("ok") else {}
     spoken = (inbound or "").strip() or latest_inbound(history)
-    if not force and not newest_is_inbound(history) and not (inbound or "").strip():
+    if not force and is_setup_text(spoken):
+        return {
+            "ok": True,
+            "skipped": "plow setup",
+            "chat": chat_uid,
+            "name": NAME,
+            "language": "pt",
+            "rename": renamed,
+        }
+    if not force and not spoken:
+        return {
+            "ok": True,
+            "skipped": "waiting for inbound",
+            "chat": chat_uid,
+            "name": NAME,
+            "language": "pt",
+            "rename": renamed,
+        }
+    if not force and not (inbound or "").strip() and not newest_is_inbound(history):
         return {
             "ok": True,
             "skipped": "waiting for inbound",
@@ -895,12 +912,57 @@ def intro(
     }
 
 
+def is_setup_text(text: str) -> bool:
+    return (text or "").strip().lower().startswith(SETUP_PREFIX)
+
+
 def is_plow_setup(event: Any) -> bool:
-    name = str(getattr(event, "user_name", None) or "").strip().lower()
-    if name in SETUP_NAMES or name.startswith("plow setup"):
+    spoken = spoken_text(event)
+    if is_setup_text(spoken):
         return True
-    text = str(getattr(event, "text", None) or "").strip().lower()
-    return text.startswith(SETUP_PREFIX)
+    if spoken:
+        return False
+    name = str(getattr(event, "user_name", None) or "").strip().lower()
+    text = str(getattr(event, "text", None) or "")
+    if is_setup_text(text):
+        return True
+    return name in SETUP_NAMES or name.startswith("plow setup")
+
+
+def _call_intro(
+    send: Callable[..., dict[str, Any]] | None,
+    http: Http | None,
+    put: Put | None,
+    inbound: str | None = None,
+) -> dict[str, Any]:
+    if send is not None:
+        return send(**({} if inbound is None else {"inbound": inbound}))
+    kwargs: dict[str, Any] = {}
+    if inbound is not None:
+        kwargs["inbound"] = inbound
+    if http is not None:
+        kwargs["http"] = http
+    if put is not None:
+        kwargs["put"] = put
+    return intro(**kwargs)
+
+
+def _after_setup(
+    *,
+    voiced: bool | None,
+    send: Callable[..., dict[str, Any]] | None,
+    http: Http | None,
+    put: Put | None,
+) -> dict[str, str]:
+    if send is not None or (voice_exists() if voiced is None else voiced):
+        return {"action": "skip", "reason": "plow setup"}
+    try:
+        payload = _call_intro(send, http, put)
+    except (Exception, SystemExit):
+        return {"action": "skip", "reason": "plow setup"}
+    if payload.get("ok") and payload.get("hello"):
+        return {"action": "skip", "reason": "zoen intro"}
+    return {"action": "skip", "reason": "plow setup"}
 
 
 def greet_on_dispatch(
@@ -909,22 +971,22 @@ def greet_on_dispatch(
     voiced: bool | None = None,
     send: Callable[..., dict[str, Any]] | None = None,
     http: Http | None = None,
+    put: Put | None = None,
     **_: Any,
 ) -> dict[str, str]:
     if getattr(event, "internal", False):
         return {"action": "allow"}
     if is_plow_setup(event):
-        return {"action": "skip", "reason": "plow setup"}
+        return _after_setup(voiced=voiced, send=send, http=http, put=put)
     if is_group(event):
         return group_on_dispatch(event, http=http)
     if voice_exists() if voiced is None else voiced:
         return {"action": "allow"}
-    text = str(getattr(event, "text", None) or "").strip()
+    text = spoken_text(event) or str(getattr(event, "text", None) or "").strip()
     if not text or text.startswith("/"):
         return {"action": "allow"}
-    run = intro if send is None else send
     try:
-        payload = run(inbound=text)
+        payload = _call_intro(send, http, put, inbound=text)
     except (Exception, SystemExit):
         return {"action": "allow"}
     if payload.get("ok"):

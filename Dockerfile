@@ -85,7 +85,7 @@ COPY image/plugins/zoen-face/ /opt/hermes/plugins/zoen-face/
 COPY image/enable-zoen-face.py /opt/hermes/enable-zoen-face.py
 COPY image/plow-init-then-face.sh /opt/hermes/plow-init-then-face.sh
 COPY image/s6-overlay/ /etc/s6-overlay/
-RUN chmod 0644 /opt/hermes/plugins/zoen-face/plugin.yaml /opt/hermes/plugins/zoen-face/__init__.py /opt/hermes/enable-zoen-face.py \
+RUN chmod 0644 /opt/hermes/plugins/zoen-face/plugin.yaml /opt/hermes/plugins/zoen-face/__init__.py /opt/hermes/plugins/zoen-face/quiet.py /opt/hermes/enable-zoen-face.py \
  && chmod 0755 /opt/hermes/plow-init-then-face.sh \
  && chmod 0755 /etc/s6-overlay/s6-rc.d/agent-index/run \
  && chmod 0755 /etc/s6-overlay/s6-rc.d/zoen-floor-cron/run \
