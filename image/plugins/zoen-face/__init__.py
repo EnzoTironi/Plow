@@ -1,4 +1,4 @@
-"""First inbound is the Zoen intro, not a model-written hello."""
+"""First inbound is the Zoen intro. Groups stay quiet unless they are for Zoen."""
 from __future__ import annotations
 
 import sys

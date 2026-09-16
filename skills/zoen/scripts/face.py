@@ -15,7 +15,9 @@ import argparse
 import base64
 import json
 import os
+import re
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
@@ -24,20 +26,21 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from memory import remember  # noqa: E402
 from net import request  # noqa: E402
 
 NAME = "Zoen"
 CARD_NAME = "Zoen.vcf"
 HELLO = {
     "en": (
-        "hey, I'm Zoen\nyour little monster that makes your dreams come true",
+        "hey, I'm Zoen, your little monster that makes your dreams come true",
         "save my card so you know it's me",
-        "what do I call you?\nwhat's your dream?",
+        "what's your dream?",
     ),
     "pt": (
-        "oi, eu sou o Zoen\no monstrinho que faz seus sonhos acontecerem",
+        "oi, eu sou o Zoen, o monstrinho que faz seus sonhos acontecerem",
         "salva meu cartão pra você saber que sou eu",
-        "como te chamo?\nqual é o seu sonho?",
+        "qual é o seu sonho?",
     ),
 }
 SETUP_NAMES = {"plow setup"}
@@ -49,7 +52,24 @@ JUDGE = (
     "Reply with one token only: pt if Portuguese including Brazilian slang, "
     "en if it is entirely English, otherwise the ISO 639-1 code (es, fr, de, ja)."
 )
+DIRECTED = (
+    "Zoen is a software-factory agent in this iMessage group. "
+    "People may also use another contact name for the same number. "
+    "Is the latest message for Zoen to act on or answer? "
+    "Reply with one token only: yes or no. "
+    "yes if they name Zoen, reply to Zoen, assign Zoen work, ask Zoen, "
+    "or continue a task Zoen was just doing with nobody else addressed since. "
+    "no if they talk to each other, greet the room, name someone else, "
+    "or say something merely interesting. Unsure: no."
+)
 JUDGE_MODEL = "anthropic/claude-sonnet-5"
+MENTION = re.compile(r"(?<!\w)@?zoen(?!\w)", re.IGNORECASE)
+GOAL_NAMES = {"goal check"}
+PEEK = (
+    (["id", "-F"], "full name"),
+    (["id", "-un"], "mac username"),
+    (["git", "config", "--global", "user.email"], "email"),
+)
 RENDER = (
     "Rewrite these three iMessage bubbles in the same language as the user. "
     "Keep the meaning. Max two lines each. No trailing period. "
@@ -250,6 +270,34 @@ def _judge_model() -> str:
     )
 
 
+def complete(
+    system: str,
+    user: str,
+    *,
+    http: Http,
+    base: str,
+    headers: dict[str, str] | None = None,
+    max_tokens: int = 8,
+) -> str | None:
+    result = http(
+        "POST",
+        f"{base}/v1/chat/completions",
+        headers=headers,
+        body={
+            "model": _judge_model(),
+            "temperature": 0,
+            "max_tokens": max_tokens,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        },
+    )
+    if not result.get("ok"):
+        return None
+    return _completion_text(result.get("body"))
+
+
 def normalize_lang(token: str) -> str:
     word = token.strip().lower().replace("-", " ").split()[0] if token else ""
     if word.startswith("en"):
@@ -273,23 +321,10 @@ def pick_language(
         return "pt"
     if http is None or not base:
         return "pt"
-    result = http(
-        "POST",
-        f"{base}/v1/chat/completions",
-        headers=headers,
-        body={
-            "model": _judge_model(),
-            "temperature": 0,
-            "max_tokens": 8,
-            "messages": [
-                {"role": "system", "content": JUDGE},
-                {"role": "user", "content": spoken},
-            ],
-        },
-    )
-    if not result.get("ok"):
+    token = complete(JUDGE, spoken, http=http, base=base, headers=headers)
+    if not token:
         return "pt"
-    return normalize_lang(_completion_text(result.get("body")))
+    return normalize_lang(token)
 
 
 def render_hello(
@@ -350,6 +385,208 @@ def hello_for(
     if http is None or not base:
         return list(HELLO["en"])
     return render_hello(spoken, http=http, base=base, headers=headers)
+
+
+def is_group(event: Any) -> bool:
+    source = getattr(event, "source", None)
+    kind = getattr(source, "chat_type", None) if source is not None else None
+    return bool(kind) and kind != "dm"
+
+
+def spoken_text(event: Any) -> str:
+    recall = str(getattr(event, "recall_text", None) or "").strip()
+    if recall:
+        return recall
+    return str(getattr(event, "text", None) or "").strip()
+
+
+def mentioned(text: str) -> bool:
+    return bool(MENTION.search(text or ""))
+
+
+def normalize_yes(token: str) -> bool:
+    word = token.strip().lower().replace("-", " ").split()[0] if token else ""
+    return word in {"yes", "y", "sim"}
+
+
+def format_transcript(messages: Any, cap: int = 8) -> str:
+    rows = message_rows(messages)
+    if any(item.get("created_at") or item.get("sent_at") for item in rows):
+        rows = sorted(
+            rows,
+            key=lambda item: str(item.get("created_at") or item.get("sent_at") or ""),
+        )
+    else:
+        rows = list(reversed(rows))
+    lines: list[str] = []
+    for item in rows[-cap:]:
+        body = str(item.get("body") or "").strip()
+        if not body:
+            continue
+        who = "you" if item.get("direction") == "outbound" else "them"
+        lines.append(f"{who}: {body}")
+    return "\n".join(lines)
+
+
+def directed_at_zoen(
+    event: Any,
+    spoken: str,
+    *,
+    http: Http | None = None,
+) -> bool:
+    if not spoken:
+        return False
+    client = http or request
+    try:
+        base, headers = credentials()
+    except SystemExit:
+        return False
+    source = getattr(event, "source", None)
+    chat_uid = str(getattr(source, "chat_id", None) or "").strip() if source else ""
+    transcript = ""
+    if chat_uid.startswith("cht_"):
+        listed = client(
+            "GET",
+            f"{base}/v1/chats/{quote(chat_uid)}/messages?limit=12",
+            headers=headers,
+        )
+        if listed.get("ok"):
+            transcript = format_transcript(listed.get("body"))
+    user = f"{transcript}\n\nLatest:\n{spoken}" if transcript else spoken
+    try:
+        token = complete(
+            DIRECTED, user, http=client, base=base, headers=headers, max_tokens=4
+        )
+    except Exception:
+        return False
+    if not token:
+        return False
+    return normalize_yes(token)
+
+
+def latch_call(
+    name: str,
+    arguments: dict[str, Any] | None = None,
+    timeout: int = 12,
+) -> dict | None:
+    url = (os.environ.get("PLOW_MCP_URL") or "").strip()
+    token = (os.environ.get("PLOW_AGENT_TOKEN") or "").strip()
+    if not url or not token:
+        return None
+    body = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments or {}},
+        }
+    ).encode()
+    req = Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        },
+    )
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except (HTTPError, URLError, TimeoutError, OSError, ValueError):
+        return None
+    if raw.lstrip().startswith("event:") or "\ndata:" in raw or raw.startswith("data:"):
+        raw = "\n".join(
+            line[5:].strip() for line in raw.splitlines() if line.startswith("data:")
+        )
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    result = parsed.get("result") if isinstance(parsed, dict) else None
+    if not isinstance(result, dict) or result.get("isError"):
+        return None
+    payload = result.get("structuredContent")
+    if payload is None:
+        texts = [
+            item.get("text")
+            for item in (result.get("content") or [])
+            if isinstance(item, dict) and item.get("type") == "text"
+        ]
+        if not texts:
+            return None
+        try:
+            payload = json.loads(texts[0])
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("status", "completed") != "completed":
+        return None
+    return payload
+
+
+def fact_from_output(label: str, output: str) -> str | None:
+    value = (output or "").strip().splitlines()
+    value = value[0].strip() if value else ""
+    if not value or len(value) > 120 or value.lower() in {"none", "null"}:
+        return None
+    return f"{label}: {value}"
+
+
+def facts_from_latch() -> list[str]:
+    facts: list[str] = []
+    for argv, label in PEEK:
+        payload = latch_call("plow_run_command", {"argv": argv})
+        if not payload or payload.get("exit_code") not in (0, None):
+            continue
+        fact = fact_from_output(label, str(payload.get("output") or ""))
+        if fact:
+            facts.append(fact)
+    return facts
+
+
+def peek_owner(
+    *,
+    home: str | None = None,
+    latch: Callable[[], list[str]] | None = None,
+    remember_facts: Callable[..., Any] | None = None,
+    wait: bool = False,
+) -> None:
+    def run() -> None:
+        try:
+            facts = (latch or facts_from_latch)()
+            if facts:
+                (remember_facts or remember)(facts, home=home)
+        except Exception:
+            return
+
+    if wait:
+        run()
+        return
+    threading.Thread(target=run, daemon=True, name="zoen-latch-peek").start()
+
+
+def group_on_dispatch(
+    event: Any,
+    *,
+    http: Http | None = None,
+) -> dict[str, str]:
+    name = str(getattr(event, "user_name", None) or "").strip().lower()
+    if name in GOAL_NAMES:
+        return {"action": "allow"}
+    text = spoken_text(event)
+    if text.startswith("/"):
+        return {"action": "allow"}
+    if mentioned(text):
+        return {"action": "allow"}
+    try:
+        if directed_at_zoen(event, text, http=http):
+            return {"action": "allow"}
+    except Exception:
+        return {"action": "skip", "reason": "group silence"}
+    return {"action": "skip", "reason": "group silence"}
 
 
 def put_bytes(url: str, headers: dict[str, str], data: bytes) -> dict:
@@ -615,6 +852,7 @@ def intro(
     def pack() -> dict[str, Any]:
         return upload_card(base, headers, chat_uid, tel, http, put)
 
+    peek_owner(home=os.environ.get("HERMES_HOME"))
     with ThreadPoolExecutor(max_workers=2) as pool:
         lang_job = pool.submit(judge)
         card_job = pool.submit(pack) if want_card else None
@@ -670,12 +908,15 @@ def greet_on_dispatch(
     *,
     voiced: bool | None = None,
     send: Callable[..., dict[str, Any]] | None = None,
+    http: Http | None = None,
     **_: Any,
 ) -> dict[str, str]:
     if getattr(event, "internal", False):
         return {"action": "allow"}
     if is_plow_setup(event):
         return {"action": "skip", "reason": "plow setup"}
+    if is_group(event):
+        return group_on_dispatch(event, http=http)
     if voice_exists() if voiced is None else voiced:
         return {"action": "allow"}
     text = str(getattr(event, "text", None) or "").strip()

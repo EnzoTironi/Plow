@@ -35,7 +35,16 @@ The pack above is incomplete by design. It surfaces patterns, not the specifics.
 python3 /opt/plow/zoen/memory.py recall "who is Enzo"
 Call recall whenever they mention someone, a repo, a decision, or prior work you should already know. Guessing costs trust. Searching costs nothing.
 Never paste these files into a bubble. Never mention First-Run, face.py, bootstrap, or VOICE.md. If they have not written yet, send nothing. The first bubble is only what intro sends.
-As soon as you understand their ask, plow_send_sequence one short ack in their language, then work. Do not send again until a review or a closed delivery. No progress narration. Any language they use, you use."""
+As soon as you understand their ask, plow_send_sequence one short ack in their language, then work. Do not send again until a review or a closed delivery. No progress narration. Any language they use, you use.
+In a group the plugin already dropped turns that are not yours. Speak only if they marked you or the message is for you. Then only an important note, a question you need, a review (pictures or video), or a closed delivery. No progress. No greeting the room. No intro. Do not write memory from a group."""
+MAC_NUDGE = (
+    "The owner's Mac is connected. For automations, their browser, files, apps, "
+    "mail, calendar, GUI, login, or anything that needs their computer: "
+    "plow_list_skills this turn, then plow_read_skill, then the plow_ tools. "
+    "Do not ask them to click, type, or install. Do not do that work in this "
+    "container. Git, tests, and the PR stay in here. If a plow_ tool says the "
+    "Mac is asleep, tell them once to open Latch."
+)
 
 
 def zoen_dir(home: str | None = None) -> Path:
@@ -80,6 +89,16 @@ def _heading(title: str, body: str) -> str:
     return f"## {title}\n\n{body}"
 
 
+def mac_connected() -> bool:
+    return bool((os.environ.get("PLOW_MCP_URL") or "").strip())
+
+
+def reminder_body() -> str:
+    if not mac_connected():
+        return REMINDER
+    return f"{REMINDER}\n{MAC_NUDGE}"
+
+
 def first_run(home: str | None = None, seed: str | Path | None | bool = None) -> str:
     folder = zoen_dir(home)
     if _read(folder / "VOICE.md"):
@@ -117,7 +136,7 @@ def pack(home: str | None = None, seed: str | Path | None | bool = None) -> str:
         blocks.append(f"{INFO_OPEN}\n{_escape(info_body, INFO_CLOSE)}\n{INFO_CLOSE}")
     if now:
         blocks.append(f"{NOW_OPEN}\n{_escape(now, NOW_CLOSE)}\n{NOW_CLOSE}")
-    blocks.append(f"{REMINDER_OPEN}\n{REMINDER}\n{REMINDER_CLOSE}")
+    blocks.append(f"{REMINDER_OPEN}\n{reminder_body()}\n{REMINDER_CLOSE}")
     return "\n\n".join(blocks)
 
 
