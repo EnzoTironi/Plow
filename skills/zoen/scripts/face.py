@@ -16,7 +16,7 @@ import base64
 import json
 import os
 import sys
-import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote
@@ -32,36 +32,31 @@ HELLO = {
     "en": (
         "hey, I'm Zoen\nyour little monster that makes your dreams come true",
         "save my card so you know it's me",
-        "what's your dream?",
+        "what do I call you?\nwhat's your dream?",
     ),
     "pt": (
         "oi, eu sou o Zoen\no monstrinho que faz seus sonhos acontecerem",
         "salva meu cartão pra você saber que sou eu",
-        "qual é o seu sonho?",
+        "como te chamo?\nqual é o seu sonho?",
     ),
 }
+SETUP_NAMES = {"plow setup"}
+SETUP_PREFIX = "plow, not your owner"
 HELLO_MARKERS = ("I'm Zoen", "eu sou o Zoen")
-PT_MARKS = ("ã", "õ", "ç", "á", "é", "í", "ó", "ú", "ê", "ô", "à")
-PT_WORDS = (
-    " oi",
-    "olá",
-    "oie",
-    "eae",
-    "fala",
-    "obrigad",
-    "valeu",
-    "tudo bem",
-    "faz ",
-    "meu ",
-    "minha ",
-    "pra ",
-    "pro ",
-    "não",
-    "nao ",
+CARD_AFTER = 2
+JUDGE = (
+    "What language is this chat message written in? "
+    "Reply with one token only: pt if Portuguese including Brazilian slang, "
+    "en if it is entirely English, otherwise the ISO 639-1 code (es, fr, de, ja)."
+)
+JUDGE_MODEL = "anthropic/claude-sonnet-5"
+RENDER = (
+    "Rewrite these three iMessage bubbles in the same language as the user. "
+    "Keep the meaning. Max two lines each. No trailing period. "
+    "JSON only: {\"hello\":[\"...\",\"...\",\"...\"]}"
 )
 Http = Callable[..., dict]
 Put = Callable[[str, dict[str, str], bytes], dict]
-Nap = Callable[[float], None]
 
 
 def _out(payload: dict) -> int:
@@ -90,9 +85,14 @@ def load_credentials() -> None:
 def account_token() -> str:
     if "PLOW_ACCOUNT_TOKEN" in os.environ:
         return os.environ["PLOW_ACCOUNT_TOKEN"].strip()
-    path = Path.home() / ".config/plow/token"
-    if path.is_file():
-        return path.read_text().strip()
+    xdg = (os.environ.get("XDG_CONFIG_HOME") or "").strip()
+    candidates = []
+    if xdg:
+        candidates.append(Path(xdg) / "plow" / "token")
+    candidates.append(Path.home() / ".config" / "plow" / "token")
+    for path in candidates:
+        if path.is_file():
+            return path.read_text().strip()
     return ""
 
 
@@ -204,13 +204,21 @@ def hello_sent(messages: Any) -> bool:
     return False
 
 
-def already_talked(messages: Any) -> bool:
-    for item in message_rows(messages):
-        if item.get("direction") != "outbound":
-            continue
-        if str(item.get("body") or "").strip():
-            return True
-    return False
+def newest_row(messages: Any) -> dict | None:
+    rows = message_rows(messages)
+    if not rows:
+        return None
+    if any(item.get("created_at") or item.get("sent_at") for item in rows):
+        return max(
+            rows,
+            key=lambda item: str(item.get("created_at") or item.get("sent_at") or ""),
+        )
+    return rows[0]
+
+
+def newest_is_inbound(messages: Any) -> bool:
+    row = newest_row(messages)
+    return bool(row and row.get("direction") == "inbound")
 
 
 def latest_inbound(messages: Any) -> str:
@@ -220,15 +228,128 @@ def latest_inbound(messages: Any) -> str:
     return ""
 
 
-def pick_language(text: str) -> str:
-    if not (text or "").strip():
+def _completion_text(body: Any) -> str:
+    if not isinstance(body, dict):
+        return str(body or "")
+    choices = body.get("choices")
+    if isinstance(choices, list) and choices:
+        first = choices[0] if isinstance(choices[0], dict) else {}
+        message = first.get("message")
+        if isinstance(message, dict) and message.get("content"):
+            return str(message["content"])
+        if first.get("text"):
+            return str(first["text"])
+    return str(body.get("output") or "")
+
+
+def _judge_model() -> str:
+    return (
+        (os.environ.get("ZOEN_LANG_MODEL") or "").strip()
+        or (os.environ.get("HERMES_MODEL") or "").strip()
+        or JUDGE_MODEL
+    )
+
+
+def normalize_lang(token: str) -> str:
+    word = token.strip().lower().replace("-", " ").split()[0] if token else ""
+    if word.startswith("en"):
+        return "en"
+    if word.startswith("pt") or word in {"por", "portuguese"}:
         return "pt"
-    lower = f" {text.lower()} "
-    if any(mark in text.lower() for mark in PT_MARKS):
+    if len(word) == 2 and word.isalpha():
+        return word
+    return "pt"
+
+
+def pick_language(
+    text: str,
+    *,
+    http: Http | None = None,
+    base: str = "",
+    headers: dict[str, str] | None = None,
+) -> str:
+    spoken = (text or "").strip()
+    if not spoken:
         return "pt"
-    if any(word in lower for word in PT_WORDS):
+    if http is None or not base:
         return "pt"
-    return "en"
+    result = http(
+        "POST",
+        f"{base}/v1/chat/completions",
+        headers=headers,
+        body={
+            "model": _judge_model(),
+            "temperature": 0,
+            "max_tokens": 8,
+            "messages": [
+                {"role": "system", "content": JUDGE},
+                {"role": "user", "content": spoken},
+            ],
+        },
+    )
+    if not result.get("ok"):
+        return "pt"
+    return normalize_lang(_completion_text(result.get("body")))
+
+
+def render_hello(
+    text: str,
+    *,
+    http: Http,
+    base: str,
+    headers: dict[str, str] | None,
+) -> list[str]:
+    source = "\n---\n".join(HELLO["en"])
+    result = http(
+        "POST",
+        f"{base}/v1/chat/completions",
+        headers=headers,
+        body={
+            "model": _judge_model(),
+            "temperature": 0,
+            "max_tokens": 160,
+            "messages": [
+                {"role": "system", "content": RENDER},
+                {"role": "user", "content": f"{text}\n---\n{source}"},
+            ],
+        },
+    )
+    if not result.get("ok"):
+        return list(HELLO["en"])
+    raw = _completion_text(result.get("body")).strip()
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        start = raw.find("{")
+        end = raw.rfind("}")
+        if start < 0 or end <= start:
+            return list(HELLO["en"])
+        try:
+            parsed = json.loads(raw[start : end + 1])
+        except json.JSONDecodeError:
+            return list(HELLO["en"])
+    bubbles = parsed.get("hello") if isinstance(parsed, dict) else parsed
+    if not isinstance(bubbles, list) or len(bubbles) != 3:
+        return list(HELLO["en"])
+    out = [str(item).strip() for item in bubbles]
+    if any(not item or len(item.splitlines()) > 2 for item in out):
+        return list(HELLO["en"])
+    return out
+
+
+def hello_for(
+    lang: str,
+    spoken: str,
+    *,
+    http: Http | None = None,
+    base: str = "",
+    headers: dict[str, str] | None = None,
+) -> list[str]:
+    if lang in HELLO:
+        return list(HELLO[lang])
+    if http is None or not base:
+        return list(HELLO["en"])
+    return render_hello(spoken, http=http, base=base, headers=headers)
 
 
 def put_bytes(url: str, headers: dict[str, str], data: bytes) -> dict:
@@ -274,12 +395,10 @@ def rename_agent(base: str, me: dict, http: Http) -> dict[str, Any] | None:
         "error": result.get("error"),
         "name": NAME,
     }
-    if not result.get("ok"):
-        raise SystemExit(f"face: rename failed: {result.get('error') or result.get('status')}")
     return renamed
 
 
-def send_card(
+def upload_card(
     base: str,
     headers: dict[str, str],
     chat_uid: str,
@@ -313,18 +432,65 @@ def send_card(
             "error": stored.get("error") or "card upload failed",
             "status": stored.get("status"),
         }
+    return {"ok": True, "uid": upload["uid"], "status": stored.get("status")}
+
+
+def attach_card(
+    base: str,
+    headers: dict[str, str],
+    chat_uid: str,
+    uid: str,
+    http: Http,
+) -> dict[str, Any]:
     sent = http(
         "POST",
         f"{base}/v1/chats/{quote(chat_uid)}/messages",
         headers=headers,
-        body={"body": "", "attachment_uids": [upload["uid"]]},
+        body={"body": "", "attachment_uids": [uid]},
     )
     return {
         "ok": bool(sent.get("ok")),
         "status": sent.get("status"),
         "error": sent.get("error"),
-        "attachment": upload.get("uid"),
+        "attachment": uid,
     }
+
+
+def send_card(
+    base: str,
+    headers: dict[str, str],
+    chat_uid: str,
+    tel: str,
+    http: Http,
+    put: Put,
+) -> dict[str, Any]:
+    uploaded = upload_card(base, headers, chat_uid, tel, http, put)
+    if not uploaded.get("ok"):
+        return uploaded
+    return attach_card(base, headers, chat_uid, str(uploaded["uid"]), http)
+
+
+def voice_path(home: str | None = None) -> Path | None:
+    root = (home or os.environ.get("HERMES_HOME") or "").strip()
+    if not root:
+        return None
+    return Path(root) / "zoen" / "VOICE.md"
+
+
+def voice_exists(home: str | None = None) -> bool:
+    path = voice_path(home)
+    return bool(path and path.is_file() and path.read_text(encoding="utf-8").strip())
+
+
+def stamp_voice(lang: str, home: str | None = None) -> str | None:
+    path = voice_path(home)
+    if path is None:
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_file() and path.read_text(encoding="utf-8").strip():
+        return "exists"
+    path.write_text(f"language: {lang}\n", encoding="utf-8")
+    return "wrote"
 
 
 def send_text(
@@ -381,9 +547,9 @@ def apply(
 def intro(
     force: bool = False,
     chat: str | None = None,
+    inbound: str | None = None,
     http: Http = request,
     put: Put = put_bytes,
-    nap: Nap = time.sleep,
 ) -> dict[str, Any]:
     base, headers, me = load_me(http)
     line = me.get("line") if isinstance(me.get("line"), dict) else {}
@@ -398,26 +564,31 @@ def intro(
         headers=headers,
     )
     history = listed.get("body") if listed.get("ok") else {}
-    lang = pick_language(latest_inbound(history))
-    bubbles = list(HELLO[lang])
-    want_hello = force or not (hello_sent(history) or already_talked(history))
-    want_card = force or not already_sent(history)
+    spoken = (inbound or "").strip() or latest_inbound(history)
+    if not force and not newest_is_inbound(history) and not (inbound or "").strip():
+        return {
+            "ok": True,
+            "skipped": "waiting for inbound",
+            "chat": chat_uid,
+            "name": NAME,
+            "language": "pt",
+            "rename": renamed,
+        }
+    voiced = voice_exists()
+    want_hello = force or not (hello_sent(history) and voiced)
+    want_card = force or not (already_sent(history) and voiced)
     if not want_hello and not want_card:
+        voice = stamp_voice(pick_language(spoken))
         return {
             "ok": True,
             "skipped": "already sent",
             "chat": chat_uid,
             "name": NAME,
-            "language": lang,
+            "language": pick_language(spoken),
             "rename": renamed,
+            "voice": voice,
         }
     sent_hello: list[str] = []
-    pace = 0
-
-    def wait() -> None:
-        nonlocal pace
-        nap(1.75 if pace % 2 == 0 else 2.0)
-        pace += 1
 
     def fail(result: dict[str, Any]) -> dict[str, Any]:
         result.update({
@@ -429,32 +600,51 @@ def intro(
         return result
 
     def say(bubble: str) -> dict[str, Any] | None:
-        if sent_hello:
-            wait()
         result = send_text(base, headers, chat_uid, bubble, http)
         if not result.get("ok"):
             return fail(result)
         sent_hello.append(bubble)
         return None
 
-    opening, ask = bubbles[:-1], bubbles[-1]
-    if want_hello:
-        for bubble in opening:
-            failed = say(bubble)
-            if failed:
-                return failed
-    attachment = None
-    if want_card:
-        if sent_hello:
-            wait()
-        result = send_card(base, headers, chat_uid, tel, http, put)
-        if not result.get("ok"):
-            return fail(result)
-        attachment = result.get("attachment")
-    if want_hello:
-        failed = say(ask)
-        if failed:
-            return failed
+    def judge() -> str:
+        try:
+            return pick_language(spoken, http=http, base=base, headers=headers)
+        except Exception:
+            return "pt"
+
+    def pack() -> dict[str, Any]:
+        return upload_card(base, headers, chat_uid, tel, http, put)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        lang_job = pool.submit(judge)
+        card_job = pool.submit(pack) if want_card else None
+        lang = lang_job.result()
+        bubbles = hello_for(lang, spoken, http=http, base=base, headers=headers)
+        before, after = bubbles[:CARD_AFTER], bubbles[CARD_AFTER:]
+        if want_hello:
+            for bubble in before:
+                failed = say(bubble)
+                if failed:
+                    return failed
+        attachment = None
+        if want_card:
+            assert card_job is not None
+            try:
+                uploaded = card_job.result()
+            except Exception as exc:
+                return fail({"ok": False, "error": str(exc), "status": 0})
+            if not uploaded.get("ok"):
+                return fail(uploaded)
+            posted = attach_card(base, headers, chat_uid, str(uploaded["uid"]), http)
+            if not posted.get("ok"):
+                return fail(posted)
+            attachment = posted.get("attachment")
+        if want_hello:
+            for bubble in after:
+                failed = say(bubble)
+                if failed:
+                    return failed
+    voice = stamp_voice(lang)
     return {
         "ok": True,
         "chat": chat_uid,
@@ -463,16 +653,59 @@ def intro(
         "hello": sent_hello,
         "attachment": attachment,
         "rename": renamed,
+        "voice": voice,
     }
 
 
+def is_plow_setup(event: Any) -> bool:
+    name = str(getattr(event, "user_name", None) or "").strip().lower()
+    if name in SETUP_NAMES or name.startswith("plow setup"):
+        return True
+    text = str(getattr(event, "text", None) or "").strip().lower()
+    return text.startswith(SETUP_PREFIX)
+
+
+def greet_on_dispatch(
+    event: Any = None,
+    *,
+    voiced: bool | None = None,
+    send: Callable[..., dict[str, Any]] | None = None,
+    **_: Any,
+) -> dict[str, str]:
+    if getattr(event, "internal", False):
+        return {"action": "allow"}
+    if is_plow_setup(event):
+        return {"action": "skip", "reason": "plow setup"}
+    if voice_exists() if voiced is None else voiced:
+        return {"action": "allow"}
+    text = str(getattr(event, "text", None) or "").strip()
+    if not text or text.startswith("/"):
+        return {"action": "allow"}
+    run = intro if send is None else send
+    try:
+        payload = run(inbound=text)
+    except (Exception, SystemExit):
+        return {"action": "allow"}
+    if payload.get("ok"):
+        return {"action": "skip", "reason": "zoen intro"}
+    return {"action": "allow"}
+
+
 def rename(
-    chat: str | None = None,
     http: Http = request,
 ) -> dict[str, Any]:
     base, _headers, me = load_me(http)
     renamed = rename_agent(base, me, http)
-    return {"ok": True, "name": NAME, "rename": renamed, "chat": home_chat(me, chat)}
+    if renamed is None:
+        return {"ok": False, "error": "no account token", "name": NAME}
+    if not renamed.get("ok"):
+        return {
+            "ok": False,
+            "error": renamed.get("error") or "rename failed",
+            "name": NAME,
+            "rename": renamed,
+        }
+    return {"ok": True, "name": NAME, "rename": renamed}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -493,14 +726,13 @@ def main(
     argv: list[str] | None = None,
     http: Http = request,
     put: Put = put_bytes,
-    nap: Nap = time.sleep,
 ) -> int:
     args = build_parser().parse_args(argv)
     if args.mode == "rename":
-        return _out(rename(chat=args.chat, http=http))
+        return _out(rename(http=http))
     if args.mode == "card":
         return _out(apply(force=args.force, chat=args.chat, http=http, put=put))
-    return _out(intro(force=args.force, chat=args.chat, http=http, put=put, nap=nap))
+    return _out(intro(force=args.force, chat=args.chat, http=http, put=put))
 
 
 if __name__ == "__main__":

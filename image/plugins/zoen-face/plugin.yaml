@@ -1,0 +1,5 @@
+name: zoen-face
+version: 1.0.0
+description: First inbound runs the Zoen intro and skips the model until VOICE.md exists.
+hooks:
+  - pre_gateway_dispatch

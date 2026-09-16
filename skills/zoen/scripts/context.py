@@ -34,7 +34,8 @@ Only if they asked you directly to save it ("salva isso", "lembra que", "anota",
 The pack above is incomplete by design. It surfaces patterns, not the specifics. If you catch yourself reaching for "I think", "maybe", "if I remember", "last time", "didn't we": recall before you ask or guess. Recall is also silent. Never narrate it.
 python3 /opt/plow/zoen/memory.py recall "who is Enzo"
 Call recall whenever they mention someone, a repo, a decision, or prior work you should already know. Guessing costs trust. Searching costs nothing.
-Never paste these files into a bubble."""
+Never paste these files into a bubble. Never mention First-Run, face.py, bootstrap, or VOICE.md. If they have not written yet, send nothing. The first bubble is only what intro sends.
+As soon as you understand their ask, plow_send_sequence one short ack in their language, then work. Do not send again until a review or a closed delivery. No progress narration. Any language they use, you use."""
 
 
 def zoen_dir(home: str | None = None) -> Path:

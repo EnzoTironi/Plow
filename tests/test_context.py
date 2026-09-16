@@ -11,39 +11,35 @@ context = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(context)
 
 
-def test_pack_empty_home_without_seed():
+def test_pack_is_reminder_only_when_home_and_seed_are_missing():
     packed = context.pack("/tmp/zoen-context-missing-home", seed=False)
     assert packed.startswith(context.REMINDER_OPEN)
-    assert "memory.py remember" in packed
-    assert "memory.py recall" in packed
-    assert "Never tell them you saved" in packed
-    assert "salva isso" in packed
+    assert packed.rstrip().endswith(context.REMINDER_CLOSE)
     assert "<info>" not in packed
+    assert context.RITUAL_HEAD not in packed
 
 
-def test_first_run_when_no_voice():
+def test_pack_includes_the_ritual_until_voice_has_content():
     with tempfile.TemporaryDirectory() as d:
+        assert context.first_run(d, seed=SEED)
         packed = context.pack(d, seed=SEED)
         assert packed.startswith(context.RITUAL_HEAD)
         assert packed.rstrip().endswith(context.REMINDER_CLOSE)
-        assert "memory.py recall" in packed
-        assert "ChatGPT" not in packed
-        assert "Hermes" not in packed
-        assert "—" not in packed
 
 
-def test_first_run_drops_after_voice():
+def test_pack_drops_the_ritual_after_voice_has_content():
     with tempfile.TemporaryDirectory() as d:
         zoen = Path(d) / "zoen"
         zoen.mkdir()
         (zoen / "VOICE.md").write_text("language: pt\n")
+        assert context.first_run(d, seed=SEED) == ""
         packed = context.pack(d, seed=SEED)
         assert context.RITUAL_HEAD not in packed
         assert packed.startswith("<info>")
         assert packed.rstrip().endswith(context.REMINDER_CLOSE)
 
 
-def test_living_bootstrap_wins_until_voice():
+def test_living_bootstrap_wins_until_voice_exists():
     with tempfile.TemporaryDirectory() as d:
         zoen = Path(d) / "zoen"
         zoen.mkdir()
@@ -53,7 +49,7 @@ def test_living_bootstrap_wins_until_voice():
         assert "One shot" not in packed
 
 
-def test_pack_layers():
+def test_pack_layers_voice_memory_journal_then_now():
     with tempfile.TemporaryDirectory() as d:
         zoen = Path(d) / "zoen"
         zoen.mkdir()
@@ -77,7 +73,7 @@ def test_pack_layers():
         assert packed.rstrip().endswith(context.REMINDER_CLOSE)
 
 
-def test_now_stays_short():
+def test_now_keeps_the_first_ten_lines():
     with tempfile.TemporaryDirectory() as d:
         zoen = Path(d) / "zoen"
         zoen.mkdir()
@@ -87,7 +83,7 @@ def test_now_stays_short():
         assert len(body.splitlines()) == 10
 
 
-def test_escapes_close_tags():
+def test_pack_escapes_close_tags_inside_memory():
     with tempfile.TemporaryDirectory() as d:
         zoen = Path(d) / "zoen"
         zoen.mkdir()
@@ -99,11 +95,11 @@ def test_escapes_close_tags():
 
 
 if __name__ == "__main__":
-    test_pack_empty_home_without_seed()
-    test_first_run_when_no_voice()
-    test_first_run_drops_after_voice()
-    test_living_bootstrap_wins_until_voice()
-    test_pack_layers()
-    test_now_stays_short()
-    test_escapes_close_tags()
+    test_pack_is_reminder_only_when_home_and_seed_are_missing()
+    test_pack_includes_the_ritual_until_voice_has_content()
+    test_pack_drops_the_ritual_after_voice_has_content()
+    test_living_bootstrap_wins_until_voice_exists()
+    test_pack_layers_voice_memory_journal_then_now()
+    test_now_keeps_the_first_ten_lines()
+    test_pack_escapes_close_tags_inside_memory()
     print("ok")

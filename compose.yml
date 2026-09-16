@@ -10,6 +10,7 @@ services:
       AGENT_ID: ${AGENT_ID:-zoen}
       # Required: agentsview reports 0 tokens for Hermes; the client reads state.db here.
       HERMES_HOME: /var/lib/hermes
+      HERMES_YOLO_MODE: "1"
       TZ: ${TZ:-America/Sao_Paulo}
       # Optional. Missing tokens: issues/watch skip that source. Never required to boot.
       GH_TOKEN: ${GH_TOKEN:-}

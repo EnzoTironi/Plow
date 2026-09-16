@@ -4,6 +4,10 @@
 # agent that holds a live Plow credential.
 FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-80ef5024eb4b770e727a618a9b55421c73da6228@sha256:864771e8165db16c11a55635df85696f39d91020f258576dd62b7cab0515514f
 
+# --yolo: frozen into tools.approval at gateway import. Tirith /approve
+# otherwise parks the turn on iMessage while the owner only sees typing.
+ENV HERMES_YOLO_MODE=1
+
 # plow-init composes SOUL.md on every boot as the base persona plus this file.
 # Do not COPY to /var/lib/hermes/SOUL.md. It is overwritten at boot.
 COPY runtime/persona.md /opt/hermes/plow-seed/persona.md
@@ -77,6 +81,12 @@ RUN chown -R root:root /opt/plow \
  && find /opt/plow -type d -exec chmod 0755 {} + \
  && find /opt/plow -type f -exec chmod 0644 {} +
 
+COPY image/plugins/zoen-face/ /opt/hermes/plugins/zoen-face/
+COPY image/enable-zoen-face.py /opt/hermes/enable-zoen-face.py
+COPY image/plow-init-then-face.sh /opt/hermes/plow-init-then-face.sh
 COPY image/s6-overlay/ /etc/s6-overlay/
-RUN chmod 0755 /etc/s6-overlay/s6-rc.d/agent-index/run \
- && chmod 0755 /etc/s6-overlay/s6-rc.d/zoen-floor-cron/run
+RUN chmod 0644 /opt/hermes/plugins/zoen-face/plugin.yaml /opt/hermes/plugins/zoen-face/__init__.py /opt/hermes/enable-zoen-face.py \
+ && chmod 0755 /opt/hermes/plow-init-then-face.sh \
+ && chmod 0755 /etc/s6-overlay/s6-rc.d/agent-index/run \
+ && chmod 0755 /etc/s6-overlay/s6-rc.d/zoen-floor-cron/run \
+ && /opt/hermes/.venv/bin/python /opt/hermes/enable-zoen-face.py

@@ -10,7 +10,7 @@ memory = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(memory)
 
 
-def test_remember_and_recall():
+def test_remember_writes_facts_that_recall_finds():
     with tempfile.TemporaryDirectory() as d:
         wrote = memory.remember(["Enzo prefers lowercase", "cli in this folder"], home=d)
         assert wrote["ok"] is True
@@ -24,21 +24,21 @@ def test_remember_and_recall():
         assert any("Enzo prefers lowercase" in hit["text"] for hit in found["hits"])
 
 
-def test_recall_misses_empty_home():
+def test_recall_returns_no_hits_in_an_empty_home():
     with tempfile.TemporaryDirectory() as d:
         found = memory.recall("enzo", home=d)
         assert found["ok"] is True
         assert found["hits"] == []
 
 
-def test_remember_requires_a_fact():
+def test_remember_rejects_blank_facts():
     with tempfile.TemporaryDirectory() as d:
         wrote = memory.remember(["  "], home=d)
         assert wrote["ok"] is False
 
 
 if __name__ == "__main__":
-    test_remember_and_recall()
-    test_recall_misses_empty_home()
-    test_remember_requires_a_fact()
+    test_remember_writes_facts_that_recall_finds()
+    test_recall_returns_no_hits_in_an_empty_home()
+    test_remember_rejects_blank_facts()
     print("ok")
