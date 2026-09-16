@@ -4,6 +4,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from . import quiet
+
 SCRIPTS = Path("/opt/plow/zoen")
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
@@ -13,3 +15,4 @@ import face  # noqa: E402
 
 def register(ctx) -> None:
     ctx.register_hook("pre_gateway_dispatch", face.greet_on_dispatch)
+    quiet.silence_plow_adapter()
