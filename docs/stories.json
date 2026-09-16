@@ -1,32 +1,51 @@
 [
   {
     "id": "just-works",
-    "title": "I texted what I wanted. It built it. Pictures and a clip came back.",
+    "title": "You already know what you want.",
     "tag": "Build",
-    "body": "I texted: a queue app for a bakery. Short bubbles, then photos of the two ways, then a video of the one it picked. A PR was already open with the same files. I did not have to say yes to start."
+    "body": "It's in your head. You text it. That's the brief. Zoen goes to work. A movie of the product comes back to your phone. You didn't run a factory. You had an idea."
   },
   {
     "id": "review-on-the-phone",
-    "title": "The PR had the video. So did iMessage.",
+    "title": "Don't read the code. Watch the product.",
     "tag": "Review",
-    "body": "I sent a GitHub PR URL. Two lines: hardcoded key in auth.py:18. Then a screenshot bubble, then a clip. The same files were on the PR. I said nothing. The comment still went up with the pictures."
+    "body": "Something's off. You send the link. Zoen doesn't explain. It shows you. The screen. The tap. The thing that broke. Then the thing that doesn't. You say no, or you don't. The proof is the movie."
   },
   {
     "id": "qa-container-or-latch",
-    "title": "It used the app the way I would. It did not nag.",
+    "title": "You sent a text. That's all you installed.",
     "tag": "Prove",
-    "body": "I don't have extra apps. It used the product like I would, sent photos and a short clip, and did not ask me to install anything. A friend with a Mac got the same pass there, no tap-for-permission ritual."
+    "body": "You don't have a toolchain. You have a phone. Zoen makes the thing and sends you the movie. If your Mac is awake, it uses it. If it isn't, it still finishes. You stay in the conversation."
   },
   {
     "id": "voice-not-quiz",
-    "title": "It learned how I write. No form.",
+    "title": "It talks like you. Not like a product.",
     "tag": "Voice",
-    "body": "I said my name in Portuguese, short. It asked what I wanted to make. After that it answered like me. I never filled a form."
+    "body": "You wrote like a person. Short. In your language. It answered the same way. No form. No command. A friend who builds things."
   },
   {
     "id": "duas-linhas",
-    "title": "Falei em português. Bolhas curtas. Foto e vídeo.",
-    "tag": "Language",
-    "body": "Mandei o que eu queria. Duas linhas por bolha, várias bolhas. Depois as fotos, depois o vídeo. Na língua em que eu escrevi."
+    "title": "One more thing. It's already a pull request.",
+    "tag": "Ship",
+    "body": "You never opened GitHub to start. When you want the work back, it's there. The same movie. The same files. A pull request your team can keep."
+  },
+  {
+    "id": "company-in-a-thread",
+    "title": "You don't start a company in a dashboard.",
+    "tag": "Team",
+    "body": "You start it in a thread. You, your people, Zoen. Someone texts the idea. The movie comes back where everyone can see it. No ticket. No stand-up. The work is the conversation."
+  },
+  {
+    "id": "quiet-until-named",
+    "title": "It doesn't talk over your team.",
+    "tag": "Team",
+    "body": "Zoen is in the group. It stays quiet. When you say its name, it works. When the thing is done, the movie lands for everyone. It never introduced itself. It never asked who you are."
+  },
+  {
+    "id": "horses-in-sf",
+    "title": "You texted a dream. It started building.",
+    "tag": "Build",
+    "body": "Uber for horses. A white carriage in San Francisco. Zoen didn't send a plan. It said we're doing this. Rust. Owners to riders. You logged in once. Everything after that was on it.",
+    "image": "https://raw.githubusercontent.com/EnzoTironi/Plow/main/docs/zoen-imessage.jpg"
   }
 ]

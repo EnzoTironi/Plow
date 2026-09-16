@@ -22,6 +22,8 @@ for story in stories:
         "--body", story["body"],
         "--tag", story["tag"],
     ]
+    if story.get("image"):
+        cmd.extend(["--image", story["image"]])
     print("+", story["id"], flush=True)
     subprocess.check_call(cmd)
 print("ok", len(stories), "stories")

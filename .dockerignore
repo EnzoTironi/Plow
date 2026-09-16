@@ -7,6 +7,9 @@ tools/
 **/.pytest_cache
 .DS_Store
 compose.override.yml
+docs/*.mp4
+docs/zoen.jpg
+docs/zoen-imessage.jpg
 
 # Live bearer from `plow-agents mint`. Build context is this directory.
 plow-credentials
