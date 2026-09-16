@@ -1,0 +1,13 @@
+{
+  "schema_version": "1",
+  "mode": "range",
+  "from": "main",
+  "to": "HEAD",
+  "merge_base": "abc",
+  "reviewable_files": [
+    {"path": "app.py", "status": "modified", "insertions": 12, "deletions": 1},
+    {"path": "auth.py", "status": "added", "insertions": 40, "deletions": 0},
+    {"path": "util.py", "status": "modified", "insertions": 3, "deletions": 3}
+  ],
+  "excluded_files": []
+}

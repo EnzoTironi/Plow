@@ -1,0 +1,17 @@
+#!/command/with-contenv sh
+# Make sure the Zoen floor cron exists, then idle. A longrun, not a oneshot,
+# so a failure retries on its own schedule instead of failing the boot.
+PATH=/command:/usr/local/bin:/usr/local/sbin:/usr/bin:/usr/sbin:/bin:/sbin
+export PATH
+
+# plow-init publishes these, 0600 root; read before dropping to the agent's uid.
+PLOW_HOME_CHANNEL=$(cat /run/s6/container_environment/PLOW_HOME_CHANNEL 2>/dev/null || true)
+TZ=$(cat /run/s6/container_environment/TZ 2>/dev/null || echo America/Sao_Paulo)
+
+until /command/s6-setuidgid hermes \
+  env HOME=/var/lib/hermes HERMES_HOME=/var/lib/hermes TZ="$TZ" PLOW_HOME_CHANNEL="$PLOW_HOME_CHANNEL" \
+  /opt/hermes/.venv/bin/python3 /opt/plow/zoen/register_cron.py; do
+  echo "zoen-floor-cron: not registered this pass, retrying in 5 minutes" >&2
+  /bin/sleep 300
+done
+exec /bin/sleep infinity

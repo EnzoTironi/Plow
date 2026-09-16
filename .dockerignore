@@ -1,0 +1,13 @@
+.git
+.env
+.env.*
+tools/
+**/__pycache__
+**/*.py[co]
+**/.pytest_cache
+.DS_Store
+compose.override.yml
+
+# Live bearer from `plow-agents mint`. Build context is this directory.
+plow-credentials
+/plow-credentials

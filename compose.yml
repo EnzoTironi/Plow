@@ -1,0 +1,39 @@
+# Copied from plow-pbc/plow-agents compose.example.yml, then given this
+# agent's Index id and an explicit HERMES_HOME so usage reports are not zero.
+services:
+  agent:
+    build: .
+    env_file:
+      - plow-credentials
+    environment:
+      # Unique Agent Index id. Guessing someone else's id files usage under them.
+      AGENT_ID: ${AGENT_ID:-zoen}
+      # Required: agentsview reports 0 tokens for Hermes; the client reads state.db here.
+      HERMES_HOME: /var/lib/hermes
+      TZ: ${TZ:-America/Sao_Paulo}
+      # Optional. Missing tokens: issues/watch skip that source. Never required to boot.
+      GH_TOKEN: ${GH_TOKEN:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_REPO: ${GITHUB_REPO:-}
+      LINEAR_API_KEY: ${LINEAR_API_KEY:-}
+      LINEAR_TEAM_ID: ${LINEAR_TEAM_ID:-}
+      SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}
+      SENTRY_ORG: ${SENTRY_ORG:-}
+      POSTHOG_API_KEY: ${POSTHOG_API_KEY:-}
+      POSTHOG_HOST: ${POSTHOG_HOST:-}
+      POSTHOG_PROJECT_ID: ${POSTHOG_PROJECT_ID:-}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      VERCEL_TOKEN: ${VERCEL_TOKEN:-}
+      VERCEL_TEAM_ID: ${VERCEL_TEAM_ID:-}
+    volumes:
+      # `.host`: the image copies it into place as root, so host ownership does not matter.
+      - ./plow-credentials:/var/lib/plow/credentials.host:ro
+      # The agent's home, kept across `up`/`down`. `down -v` starts this agent fresh.
+      - agent-home:/var/lib/hermes
+    # The agent checkpoints on SIGTERM; its supervisor allows 30s.
+    stop_grace_period: 35s
+    # No ports: the agent connects to Plow outbound.
+
+volumes:
+  agent-home:

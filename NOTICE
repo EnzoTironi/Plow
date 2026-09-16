@@ -1,0 +1,59 @@
+Zoen - Your Software Factory (zoen)
+Copyright 2026 Enzo Tironi
+
+This product includes software and image patterns derived from:
+
+- plow-pbc/plow-hermes-agent
+- plow-pbc/life-assistant-hermes-agent
+- plow-pbc/one-thing-hermes-agent
+- plow-pbc/agent-index-client
+- plow-pbc/plow-agents (compose.example.yml)
+
+Those works are copyright The Plow Collective, Inc. and licensed under
+Apache-2.0 or MIT as stated in their repositories. The Agent Index reporter
+service under image/s6-overlay/s6-rc.d/agent-index is adapted from
+life-assistant-hermes-agent (Apache-2.0).
+
+The container image installs the following CLIs as deterministic scanners
+or intake tools (not as LLM backends):
+
+- @alibaba-group/open-code-review (Apache-2.0), Alibaba
+- deepsec (Apache-2.0), Vercel Labs
+- @coldtea/pr-lens-cli (MIT), Coldtea AI — validate/render/canvas only
+- GitHub CLI `gh` (MIT), GitHub
+
+QA on the owner's Mac uses Plow Latch when installed; otherwise the
+Zoen skill drives the same user-path inside this container. There is no
+recipe-runner script.
+
+Personality and memory ideas are distilled from
+vellum-ai/vellum-assistant (MIT): five 0-100 axes (companion /
+coworker, gen z / boomer, independent / collaborative, playful /
+serious, polite / unfiltered) pinned in SOUL rather than exposed
+as sliders; punctuation (match their casing, lowercase if they do,
+no em dash, no period at the end of a bubble); first-run ritual
+from their BOOTSTRAP.md, gated off once VOICE.md exists; per-turn
+pack of VOICE / essentials / NOW.md matching their `<info>` +
+`<NOW.md>` injectors; remember-the-same-turn and recall-before-
+guessing (their `remember` / `recall` tools, as `memory.py` plus a
+`<system_reminder>` on every dump); eight kinds of curated notes.
+This agent does not run that runtime; the files live as markdown
+under HERMES_HOME/zoen/.
+
+Engineering principles on the floor are the 23 principle skills in
+full, rebranded for Zoen, from pstack (MIT, Lauren Tan): office-hours,
+architect, how, why, interrogate, blast-radius, tdd, figure-it-out,
+arena, swarm, and shipping as separate Hermes skills routed by `zoen`.
+Not the Cursor playbook runner. GitHub PRs and issues are `gh`,
+not a wrapper. Spec and tickets follow mattpocock/skills (MIT)
+to-spec and to-tickets, rebranded: one parent issue, vertical
+slices, native `--parent` / `--blocked-by`. Domain skill lookup
+is vercel-labs/skills (MIT) `find-skills`, rebranded: Zoen runs
+`npx skills use` in the background, never installs, never the
+owner. Never-block until
+merge: high-risk merge waits. Stop on no. Do not delete
+production, force-push shared history, or spend money unless
+they asked.
+
+"Plow" and the Plow logo are trademarks of The Plow Collective, Inc.
+The MIT license of this repository grants no trademark rights.

@@ -1,0 +1,32 @@
+[
+  {
+    "id": "just-works",
+    "title": "I texted what I wanted. It built it. Pictures and a clip came back.",
+    "tag": "Build",
+    "body": "I texted: a queue app for a bakery. Short bubbles, then photos of the two ways, then a video of the one it picked. A PR was already open with the same files. I did not have to say yes to start."
+  },
+  {
+    "id": "review-on-the-phone",
+    "title": "The PR had the video. So did iMessage.",
+    "tag": "Review",
+    "body": "I sent a GitHub PR URL. Two lines: hardcoded key in auth.py:18. Then a screenshot bubble, then a clip. The same files were on the PR. I said nothing. The comment still went up with the pictures."
+  },
+  {
+    "id": "qa-container-or-latch",
+    "title": "It used the app the way I would. It did not nag.",
+    "tag": "Prove",
+    "body": "I don't have extra apps. It used the product like I would, sent photos and a short clip, and did not ask me to install anything. A friend with a Mac got the same pass there, no tap-for-permission ritual."
+  },
+  {
+    "id": "voice-not-quiz",
+    "title": "It learned how I write. No form.",
+    "tag": "Voice",
+    "body": "I said my name in Portuguese, short. It asked what I wanted to make. After that it answered like me. I never filled a form."
+  },
+  {
+    "id": "duas-linhas",
+    "title": "Falei em português. Bolhas curtas. Foto e vídeo.",
+    "tag": "Language",
+    "body": "Mandei o que eu queria. Duas linhas por bolha, várias bolhas. Depois as fotos, depois o vídeo. Na língua em que eu escrevi."
+  }
+]

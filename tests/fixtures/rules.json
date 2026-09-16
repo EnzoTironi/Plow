@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "groups": [
+    {
+      "group_id": 1,
+      "source": "builtin",
+      "pattern": "*.py",
+      "files": ["app.py", "util.py"],
+      "rule": "Check error paths."
+    }
+  ]
+}
