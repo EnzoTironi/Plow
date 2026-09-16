@@ -275,6 +275,9 @@ def test_one_command_install():
     assert "https://plow.co/latch" in install
     readme = (ROOT / "README.md").read_text()
     assert "curl -fsSL" in readme
+    assert "docs/zoen.jpg" in readme
+    assert "Bring your dream to life" in readme
+    assert (ROOT / "docs/zoen.jpg").is_file()
 
 
 def test_image_ships_scripts():

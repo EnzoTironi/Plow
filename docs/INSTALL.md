@@ -1,6 +1,8 @@
-# Instalar o Zoen
+# Zoen
 
-Um comando. Docker aberto. Mande do celular a frase que aparecer.
+Um monstrinho. Sua fábrica de software.
+
+Um comando. Depois, uma mensagem. O resto ele faz.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | sh
@@ -8,6 +10,7 @@ curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | s
 
 Já clonou? `./install.sh`
 
+Docker aberto. Mande do celular a frase que aparecer.
 Quando terminar, mande um iMessage. É só isso.
 
 No Mac, o único app que você instala é este:
@@ -30,7 +33,7 @@ curl -O https://raw.githubusercontent.com/plow-pbc/agent-index-client/f900ff1440
 set -a; . ./plow-credentials; set +a
 python3 agent_index_client.py --register --agent zoen \
   --name "Zoen" \
-  --blurb "Your Software Factory. Text what you want. It gets built. Pictures and video come back." \
+  --blurb "Bring your dream to life. A little monster who builds software. Text what you want. Pictures and a clip come back." \
   --runtime Hermes \
   --repo https://github.com/EnzoTironi/Plow \
   --install-url https://github.com/EnzoTironi/Plow/blob/main/docs/INSTALL.md

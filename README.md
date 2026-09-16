@@ -1,15 +1,33 @@
-# Zoen
+<p align="center">
+  <img src="docs/zoen.jpg" alt="Zoen, a little green monster" width="720" />
+</p>
 
-Your Software Factory.
+<h1 align="center">Zoen</h1>
 
-Text what you want. It gets built. Pictures and video come back, on
-the PR and on iMessage.
+<p align="center"><strong>Bring your dream to life.</strong></p>
+
+<p align="center">Your Software Factory.</p>
+
+You have an idea. You text it.
+Zoen builds it.
+
+Pictures and a clip come back to your phone.
+The same ones wait on the pull request.
+
+No dashboard. No ticket to file. No waiting room.
+A little monster who makes the thing.
+
+## Start
+
+One command. Docker open.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | sh
 ```
 
-Docker on. The login prints a phrase. send it from your phone. Then
-iMessage the line.
+A phrase appears. Send it from your phone.
+Then text Zoen.
 
-[More](docs/INSTALL.md) · MIT · [Plow](https://plow.co)
+[That's it.](docs/INSTALL.md)
+
+MIT. Built on [Plow](https://plow.co). Want to help? Open a pull request. `main` stays protected.
