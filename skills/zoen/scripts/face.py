@@ -26,6 +26,13 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from credits import (  # noqa: E402
+    language as credits_language,
+    mark_told,
+    notice as credits_notice,
+    recently_told,
+    result_is_credits,
+)
 from lang import detect_language  # noqa: E402
 from memory import remember  # noqa: E402
 from net import request  # noqa: E402
@@ -53,12 +60,6 @@ ACK_SYS = (
     "One iMessage ack. Same language as the user. Max two lines. "
     "No trailing period. No em dash. JSON only: {\"ack\":\"...\"}"
 )
-ACK_FALLBACK = {
-    "pt": "tô nisso",
-    "en": "on it",
-    "es": "voy",
-    "fr": "c'est parti",
-}
 _CLOSER = {
     "thanks",
     "thank",
@@ -294,6 +295,33 @@ def _completion_text(body: Any) -> str:
     return str(body.get("output") or "")
 
 
+def complete_http(
+    system: str,
+    user: str,
+    *,
+    http: Http,
+    base: str,
+    headers: dict[str, str] | None = None,
+    max_tokens: int = 8,
+    model: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }
+    if model:
+        payload["model"] = model
+    return http(
+        "POST",
+        f"{base}/v1/chat/completions",
+        headers=headers,
+        body=payload,
+    )
+
+
 def complete(
     system: str,
     user: str,
@@ -304,20 +332,14 @@ def complete(
     max_tokens: int = 8,
     model: str | None = None,
 ) -> str | None:
-    payload: dict[str, Any] = {
-        "max_tokens": max_tokens,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
-    }
-    if model:
-        payload["model"] = model
-    result = http(
-        "POST",
-        f"{base}/v1/chat/completions",
+    result = complete_http(
+        system,
+        user,
+        http=http,
+        base=base,
         headers=headers,
-        body=payload,
+        max_tokens=max_tokens,
+        model=model,
     )
     if not result.get("ok"):
         return None
@@ -449,10 +471,27 @@ def mark_acking(home: str | None = None) -> None:
     path.write_text("acking\n", encoding="utf-8")
 
 
-def _ack_body(raw: str | None, lang: str) -> str:
-    fallback = ACK_FALLBACK.get(lang) or ACK_FALLBACK["en"]
+def _store_acked(home: str | None, body: str) -> None:
+    path = acked_path(home)
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+
+
+def _clear_acked(home: str | None) -> None:
+    path = acked_path(home)
+    if path is None or not path.is_file():
+        return
+    try:
+        path.unlink()
+    except OSError:
+        return
+
+
+def _ack_body(raw: str | None) -> str | None:
     if not raw:
-        return fallback
+        return None
     text = raw.strip()
     try:
         parsed = json.loads(text)
@@ -469,7 +508,7 @@ def _ack_body(raw: str | None, lang: str) -> str:
         text = str(parsed["ack"])
     lines = [line.strip() for line in text.splitlines() if line.strip()][:2]
     if not lines:
-        return fallback
+        return None
     cleaned: list[str] = []
     for line in lines:
         line = line.replace("—", ",").replace("–", ",")
@@ -478,7 +517,7 @@ def _ack_body(raw: str | None, lang: str) -> str:
         if line:
             cleaned.append(line)
     if not cleaned or any(len(line.splitlines()) > 1 for line in cleaned):
-        return fallback
+        return None
     return "\n".join(cleaned)
 
 
@@ -496,7 +535,7 @@ def send_ack(
         return
     lang = pick_language(spoken, prior=voice_language(home), home=home)
     try:
-        token = complete(
+        result = complete_http(
             ACK_SYS,
             spoken,
             http=http,
@@ -506,17 +545,27 @@ def send_ack(
             model=ACK_MODEL,
         )
     except Exception:
-        token = None
-    body = _ack_body(token, lang)
-    sent = send_text(base, headers, chat_uid, body, http)
-    path = acked_path(home)
-    if path is None:
+        result = {"ok": False, "status": 0, "body": None, "error": "ack"}
+    if result_is_credits(result):
+        if recently_told(home):
+            return
+        body = credits_notice(lang or credits_language(home))
+        sent = send_text(base, headers, chat_uid, body, http)
+        if sent.get("ok"):
+            mark_told(body, home)
+            _store_acked(home, f"sent\n{body}\n")
+        else:
+            _clear_acked(home)
         return
-    path.parent.mkdir(parents=True, exist_ok=True)
+    body = _ack_body(_completion_text(result.get("body")) if result.get("ok") else None)
+    if not body:
+        _clear_acked(home)
+        return
+    sent = send_text(base, headers, chat_uid, body, http)
     if sent.get("ok"):
-        path.write_text(f"sent\n{body}\n", encoding="utf-8")
+        _store_acked(home, f"sent\n{body}\n")
     else:
-        path.write_text("failed\n", encoding="utf-8")
+        _clear_acked(home)
 
 
 def maybe_ack(

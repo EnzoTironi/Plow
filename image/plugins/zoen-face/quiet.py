@@ -21,10 +21,23 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+_SCRIPTS = Path("/opt/plow/zoen")
+_REPO_SCRIPTS = Path(__file__).resolve().parents[3] / "skills/zoen/scripts"
+for _path in (_SCRIPTS, _REPO_SCRIPTS):
+    if _path.is_dir() and str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
+
+from credits import (  # noqa: E402
+    language as credits_language,
+    looks_like as credits_looks_like,
+    mark_told,
+    notice as credits_notice,
+    recently_told,
+)
+
 log = logging.getLogger("zoen-face")
 
 _SILENT = (
-    "send",
     "send_or_update_status",
     "send_image_file",
     "send_voice",
@@ -53,6 +66,52 @@ class Dropped:
     success = True
     error = None
     message_id = None
+
+
+def _leftover_chat(args: tuple, kwargs: dict) -> str:
+    chat = kwargs.get("chat_id") or kwargs.get("chat_uid")
+    if chat:
+        return str(chat)
+    if args and str(args[0]).startswith("cht_"):
+        return str(args[0])
+    return ""
+
+
+def _leftover_text(args: tuple, kwargs: dict) -> str:
+    for key in ("content", "text", "message", "body"):
+        value = kwargs.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    if len(args) >= 2 and args[1] is not None:
+        return str(args[1])
+    return ""
+
+
+def _wrap_send(orig_seq):
+    async def send(self, *args, **kwargs):
+        text = _leftover_text(args, kwargs)
+        if credits_looks_like(text):
+            if recently_told():
+                log.debug("zoen-face dropped duplicate credits leftover")
+                return Dropped()
+            chat_id = _leftover_chat(args, kwargs)
+            if orig_seq is None or not chat_id:
+                log.warning("zoen-face credits leftover had no chat")
+                return Dropped()
+            body = credits_notice(credits_language())
+            last = await orig_seq(
+                self,
+                {"items": [{"type": "text", "body": body}]},
+                {"chat_uid": chat_id},
+            )
+            mark_told(body)
+            return last
+        log.debug("zoen-face dropped Hermes send")
+        return Dropped()
+
+    send.__name__ = "send"
+    send.__qualname__ = "send"
+    return send
 
 
 def _dropped(name: str):
@@ -256,6 +315,8 @@ def silence(adapter_cls) -> None:
     orig_seq = getattr(adapter_cls, "send_sequence", None)
     orig_attach = getattr(adapter_cls, "_send_attachment", None)
     orig_voice = getattr(adapter_cls, "send_voice", None)
+    if getattr(adapter_cls, "send", None) is not None:
+        adapter_cls.send = _wrap_send(orig_seq)
     for name in _SILENT:
         if getattr(adapter_cls, name, None) is None:
             continue

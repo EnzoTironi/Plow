@@ -60,12 +60,21 @@ def fail(status=500, error="nope"):
 
 
 class FakePlow:
-    def __init__(self, history=None, me=None, patch_ok=True, judge="en", directed="no"):
+    def __init__(
+        self,
+        history=None,
+        me=None,
+        patch_ok=True,
+        judge="en",
+        directed="no",
+        completions=None,
+    ):
         self.history = history if history is not None else {"data": []}
         self.me = me or ME
         self.patch_ok = patch_ok
         self.judge = judge
         self.directed = directed
+        self.completions = completions
         self.judged = []
         self.calls = []
         self.puts = []
@@ -82,6 +91,8 @@ class FakePlow:
             return fail(403, "keys:manage")
         if url.endswith("/chat/completions"):
             self.judged.append(body)
+            if self.completions is not None:
+                return self.completions
             messages = (body or {}).get("messages") or []
             system = ""
             if messages and isinstance(messages[0], dict):
@@ -828,6 +839,47 @@ def test_plugin_ack_uses_luna_and_does_not_ack_a_closer():
         assert not (Path(d) / "zoen" / "acked").exists()
 
 
+def test_plugin_ack_stays_quiet_when_luna_fails():
+    plow = FakePlow(completions=fail(500, "nope"))
+    with tempfile.TemporaryDirectory() as d, face_env(home=d):
+        face.greet_on_dispatch(
+            Event("faz um CLI", source=Source(), recall_text="faz um CLI"),
+            voiced=True,
+            send=no_intro,
+            http=plow.http,
+            wait_ack=True,
+        )
+        assert plow.text_bodies() == []
+        assert not (Path(d) / "zoen" / "acked").exists()
+
+
+def test_plugin_ack_tells_them_credits_ran_out_on_402():
+    plow = FakePlow(
+        completions=fail(
+            402,
+            "You're out of Plow credits. Top up at app.plow.co/dashboard to keep going.",
+        )
+    )
+    with tempfile.TemporaryDirectory() as d, face_env(home=d):
+        (Path(d) / "zoen").mkdir()
+        (Path(d) / "zoen" / "VOICE.md").write_text("language: en\n")
+        face.greet_on_dispatch(
+            Event(
+                "I currently have a dream",
+                source=Source(),
+                recall_text="I currently have a dream",
+            ),
+            voiced=True,
+            send=no_intro,
+            http=plow.http,
+            wait_ack=True,
+        )
+        bodies = plow.text_bodies()
+        assert bodies == [face.credits_notice("en")]
+        assert "on it" not in "".join(bodies)
+        assert (Path(d) / "zoen" / "credits").is_file()
+
+
 def test_fact_from_output_keeps_the_mac_full_name():
     assert face.fact_from_output("full name", "Enzo Tironi\n") == "full name: Enzo Tironi"
     assert face.fact_from_output("full name", "none") is None
@@ -875,5 +927,7 @@ if __name__ == "__main__":
     test_peek_owner_stays_quiet_when_latch_is_off()
     test_peek_owner_does_not_block_when_latch_fails()
     test_plugin_ack_uses_luna_and_does_not_ack_a_closer()
+    test_plugin_ack_stays_quiet_when_luna_fails()
+    test_plugin_ack_tells_them_credits_ran_out_on_402()
     test_fact_from_output_keeps_the_mac_full_name()
     print("ok")

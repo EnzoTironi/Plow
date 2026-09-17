@@ -2,6 +2,7 @@
 """Run: python3 tests/test_zoen_face_quiet.py"""
 import asyncio
 import importlib.util
+import os
 import tempfile
 from pathlib import Path
 
@@ -47,6 +48,39 @@ def _adapter():
             return "typing"
 
     return Adapter
+
+
+def test_leftover_credits_error_becomes_the_dashboard_bubble():
+    Adapter = _adapter()
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        (Path(home) / "zoen").mkdir()
+        (Path(home) / "zoen" / "VOICE.md").write_text("language: en\n")
+        try:
+            quiet.silence(Adapter)
+            box = Adapter()
+            blob = (
+                'HTTP 402: {"detail":"You\'re out of Plow credits. '
+                'Top up at app.plow.co/dashboard to keep going."}'
+            )
+            result = asyncio.run(box.send("cht_x", blob))
+            asyncio.run(box.send("cht_x", blob))
+        finally:
+            os.environ.pop("HERMES_HOME", None)
+    assert box.posted == [
+        (
+            "sequence",
+            {
+                "items": [
+                    {
+                        "type": "text",
+                        "body": quiet.credits_notice("en"),
+                    }
+                ]
+            },
+        )
+    ]
+    assert result == "sequence"
 
 
 def test_leftover_send_never_posts():
@@ -198,6 +232,7 @@ def test_missing_adapter_does_not_raise():
 
 if __name__ == "__main__":
     test_leftover_send_never_posts()
+    test_leftover_credits_error_becomes_the_dashboard_bubble()
     test_send_sequence_still_runs()
     test_native_file_send_is_dropped_typing_stays()
     test_media_sequence_uploads_file_instead_of_the_path()

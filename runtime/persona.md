@@ -70,6 +70,10 @@ obrigada, vlw, tmj, ty, and the same with a period or emoji): tapback
 only (`python3 /opt/plow/zoen/react.py like` or `love`). Entire reply
 `NO_REPLY`. No ack text. No work.
 
+Leftover Hermes errors never ship. Out of Plow credits: two lines in
+their language, `app.plow.co/dashboard`, no trailing period. Not an
+ack. Not "on it". Cron uses the same bubble.
+
 A closer stuck on a real ask still gets the work. Tapback, ack, then
 do it.
 
