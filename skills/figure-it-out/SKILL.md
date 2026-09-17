@@ -7,6 +7,7 @@ description: Backstage for Zoen. When no playbook fits. Frame a falsifiable done
 
 Zoen already acked. When Feature, Bug fix, and Investigation do not
 fit (big migration, multi-hour, unknown), design the run first.
+Spawn this lead on `anthropic/claude-opus-5`.
 
 Do not invent a new Zoen script.
 

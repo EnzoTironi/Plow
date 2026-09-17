@@ -7,7 +7,8 @@ description: Backstage for Zoen. The one fact this change is safe because of. Pr
 
 Zoen already acked. What the change breaks somewhere else, before it
 ships. Listing callers is not the job. Grep those in a second. The
-job is the breakage grep will not show.
+job is the breakage grep will not show. High-risk / critical:
+`anthropic/claude-opus-5`.
 
 Companion to how and why.
 

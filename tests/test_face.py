@@ -86,6 +86,18 @@ class FakePlow:
             system = ""
             if messages and isinstance(messages[0], dict):
                 system = str(messages[0].get("content") or "")
+            if "JSON only" in system and "ack" in system.lower():
+                return ok(
+                    {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": json.dumps({"ack": "on it"})
+                                }
+                            }
+                        ]
+                    }
+                )
             if "JSON" in system and getattr(self, "hello", None):
                 return ok(
                     {
@@ -245,9 +257,7 @@ def test_intro_sends_hello_then_the_card_then_the_dream():
     assert payload["hello"] == list(face.HELLO["en"])
     assert payload["attachment"] == "att_card"
     assert plow.text_bodies() == list(face.HELLO["en"])
-    assert plow.judged
-    assert "temperature" not in plow.judged[0]
-    assert "model" not in plow.judged[0]
+    assert plow.judged == []
     card = plow.puts[0][2]
     assert b"FN:Zoen" in card
     assert b"+15555550100" in card
@@ -595,9 +605,7 @@ def test_dispatch_intros_from_history_when_reconnect_is_setup():
         )
     assert action == {"action": "skip", "reason": "zoen intro"}
     assert plow.text_bodies() == list(face.HELLO["en"])
-    assert plow.judged
-    assert "temperature" not in plow.judged[0]
-    assert "model" not in plow.judged[0]
+    assert plow.judged == []
 
 
 def test_dispatch_does_not_replay_hello_on_setup_after_we_already_greeted():
@@ -650,11 +658,10 @@ def test_intro_uses_inbound_text_even_when_history_is_still_empty():
     assert payload["ok"] is True
     assert payload["language"] == "pt"
     assert payload["hello"][-1] == "qual é o seu sonho?"
-    assert plow.judged
-    assert plow.judged[0]["messages"][-1]["content"] == "Opa, beleza?"
+    assert plow.judged == []
 
 
-def test_intro_uses_portuguese_if_the_judge_fails():
+def test_intro_uses_english_hello_if_render_fails_for_another_language():
     plow = FakePlow(history=said("hola"))
 
     def http(method, url, headers=None, body=None):
@@ -664,8 +671,8 @@ def test_intro_uses_portuguese_if_the_judge_fails():
 
     with tempfile.TemporaryDirectory() as d, face_env(home=d):
         payload = face.intro(http=http, put=plow.put)
-    assert payload["language"] == "pt"
-    assert payload["hello"] == list(face.HELLO["pt"])
+    assert payload["language"] == "es"
+    assert payload["hello"] == list(face.HELLO["en"])
 
 
 def test_intro_renders_hello_when_the_judge_names_another_language():
@@ -679,7 +686,7 @@ def test_intro_renders_hello_when_the_judge_names_another_language():
         payload = face.intro(http=plow.http, put=plow.put)
     assert payload["language"] == "es"
     assert payload["hello"] == plow.hello
-    assert len(plow.judged) == 2
+    assert len(plow.judged) == 1
 
 
 def test_dispatch_answers_a_group_when_they_name_zoen():
@@ -707,10 +714,7 @@ def test_dispatch_does_not_treat_the_roster_as_a_mention():
             http=plow.http,
         )
     assert action == {"action": "skip", "reason": "group silence"}
-    assert plow.judged
-    latest = plow.judged[0]["messages"][-1]["content"].split("Latest:")[-1]
-    assert "vamos almoçar" in latest
-    assert "Zoen represents" not in latest
+    assert plow.judged == []
 
 
 def test_dispatch_answers_a_group_when_the_judge_says_the_message_is_for_zoen():
@@ -729,10 +733,7 @@ def test_dispatch_answers_a_group_when_the_judge_says_the_message_is_for_zoen():
             http=plow.http,
         )
     assert action == {"action": "allow"}
-    assert plow.judged
-    asked = plow.judged[0]["messages"][-1]["content"]
-    assert "e o login também" in asked
-    assert "tô nisso" in asked
+    assert plow.judged == []
 
 
 def test_dispatch_stays_quiet_in_a_group_when_the_judge_fails():
@@ -795,6 +796,38 @@ def test_peek_owner_does_not_block_when_latch_fails():
         assert not (Path(d) / "zoen" / "MEMORY.md").exists()
 
 
+def test_plugin_ack_uses_luna_and_does_not_ack_a_closer():
+    plow = FakePlow()
+    with tempfile.TemporaryDirectory() as d, face_env(home=d):
+        action = face.greet_on_dispatch(
+            Event("faz um CLI", source=Source(), recall_text="faz um CLI"),
+            voiced=True,
+            send=no_intro,
+            http=plow.http,
+            wait_ack=True,
+        )
+        assert action == {"action": "allow"}
+        assert (Path(d) / "zoen" / "acked").read_text(encoding="utf-8").startswith("sent")
+        models = [
+            body.get("model")
+            for method, url, body, _headers in plow.calls
+            if url.endswith("/chat/completions") and isinstance(body, dict)
+        ]
+        assert face.ACK_MODEL in models
+        assert "on it" in plow.text_bodies()
+    closer = FakePlow()
+    with tempfile.TemporaryDirectory() as d, face_env(home=d):
+        face.greet_on_dispatch(
+            Event("valeu", source=Source(), recall_text="valeu"),
+            voiced=True,
+            send=no_intro,
+            http=closer.http,
+            wait_ack=True,
+        )
+        assert closer.text_bodies() == []
+        assert not (Path(d) / "zoen" / "acked").exists()
+
+
 def test_fact_from_output_keeps_the_mac_full_name():
     assert face.fact_from_output("full name", "Enzo Tironi\n") == "full name: Enzo Tironi"
     assert face.fact_from_output("full name", "none") is None
@@ -831,7 +864,7 @@ if __name__ == "__main__":
     test_dispatch_does_not_replay_hello_on_setup_after_we_already_greeted()
     test_intro_does_not_greet_a_plow_setup_ping()
     test_intro_uses_inbound_text_even_when_history_is_still_empty()
-    test_intro_uses_portuguese_if_the_judge_fails()
+    test_intro_uses_english_hello_if_render_fails_for_another_language()
     test_intro_renders_hello_when_the_judge_names_another_language()
     test_dispatch_answers_a_group_when_they_name_zoen()
     test_dispatch_does_not_treat_the_roster_as_a_mention()
@@ -841,5 +874,6 @@ if __name__ == "__main__":
     test_peek_owner_writes_memory_when_latch_answers()
     test_peek_owner_stays_quiet_when_latch_is_off()
     test_peek_owner_does_not_block_when_latch_fails()
+    test_plugin_ack_uses_luna_and_does_not_ack_a_closer()
     test_fact_from_output_keeps_the_mac_full_name()
     print("ok")

@@ -66,6 +66,8 @@ def test_apply_runtime_turns_yolo_on_and_quiets_plow_chat():
     assert data["security"]["tirith_enabled"] is False
     assert data["display"]["interim_assistant_messages"] is False
     assert data["display"]["platforms"]["plow_chat"]["long_running_notifications"] is False
+    assert data["busy_input_mode"] == "steer"
+    assert data["busy_ack_enabled"] is False
     assert enable.apply_runtime(data) is False
 
 
@@ -75,8 +77,10 @@ def test_already_listed_still_gains_yolo():
     with tempfile.TemporaryDirectory() as folder:
         path = _write(folder, "config.yaml", VOICED)
         assert enable.ensure(path) is True
-        assert "mode: off" in path.read_text()
-        assert "- zoen-face" in path.read_text()
+        text = path.read_text()
+        assert "mode: off" in text
+        assert "busy_input_mode: steer" in text
+        assert "- zoen-face" in text
 
 
 def test_seed_text_keeps_indent_and_neighbors():

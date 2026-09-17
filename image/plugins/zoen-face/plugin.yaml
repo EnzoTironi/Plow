@@ -1,5 +1,5 @@
 name: zoen-face
 version: 1.0.0
-description: Intro on first inbound. Leftover Hermes send never posts to iMessage.
+description: Intro, leftover send wrap, Luna ack. Groups stay quiet unless they are for Zoen.
 hooks:
   - pre_gateway_dispatch

@@ -23,6 +23,8 @@ YOLO = {
         "unattended_mode": "approve",
     },
     "security": {"tirith_enabled": False},
+    "busy_input_mode": "steer",
+    "busy_ack_enabled": False,
     "display": {
         "interim_assistant_messages": False,
         "memory_notifications": "off",

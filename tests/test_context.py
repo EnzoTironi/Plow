@@ -114,6 +114,17 @@ def test_pack_escapes_close_tags_inside_memory():
         assert packed.count("</info>") == 1
 
 
+def test_pack_tells_the_talker_the_plugin_already_acked():
+    with tempfile.TemporaryDirectory() as d:
+        zoen = Path(d) / "zoen"
+        zoen.mkdir()
+        (zoen / "VOICE.md").write_text("language: pt\n")
+        (zoen / "acked").write_text("sent\non it\n")
+        packed = context.pack(d, seed=False)
+        assert context.ACKED_OPEN in packed
+        assert "Do not plow_send_sequence an ack" in packed
+
+
 def test_pack_tells_the_model_to_drive_the_mac_when_latch_is_connected():
     with env(PLOW_MCP_URL="https://api.plow.co/v1/relay/x/mcp"):
         packed = context.pack("/tmp/zoen-context-missing-home", seed=False)
@@ -135,6 +146,7 @@ if __name__ == "__main__":
     test_pack_layers_voice_memory_journal_then_now()
     test_now_keeps_the_first_ten_lines()
     test_pack_escapes_close_tags_inside_memory()
+    test_pack_tells_the_talker_the_plugin_already_acked()
     test_pack_tells_the_model_to_drive_the_mac_when_latch_is_connected()
     test_pack_does_not_push_the_mac_when_latch_is_off()
     print("ok")

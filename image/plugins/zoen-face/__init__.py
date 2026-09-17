@@ -14,5 +14,9 @@ import face  # noqa: E402
 
 
 def register(ctx) -> None:
-    ctx.register_hook("pre_gateway_dispatch", face.greet_on_dispatch)
+    def on_dispatch(event, **kwargs):
+        quiet.silence_plow_adapter()
+        return face.greet_on_dispatch(event, **kwargs)
+
+    ctx.register_hook("pre_gateway_dispatch", on_dispatch)
     quiet.silence_plow_adapter()

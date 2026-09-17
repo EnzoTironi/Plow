@@ -30,6 +30,10 @@ def _adapter():
             self.posted.append(("image", image_path))
             return "image"
 
+        async def send_voice(self, chat_id, audio_path, caption=None, **_kwargs):
+            self.posted.append(("voice", audio_path))
+            return type("Result", (), {"success": True, "error": None})()
+
         async def send_sequence(self, args, turn, receipt=None):
             self.posted.append(("sequence", args))
             return "sequence"
@@ -133,6 +137,57 @@ def test_silence_is_idempotent():
     assert box.posted == []
 
 
+def test_voice_sequence_uses_native_send_voice():
+    Adapter = _adapter()
+    with tempfile.TemporaryDirectory() as folder:
+        m4a = Path(folder) / "note.m4a"
+        m4a.write_bytes(b"ftypM4A " + b"\x00" * 8)
+        saved = quiet._MEDIA_ROOTS
+        quiet._MEDIA_ROOTS = (Path(folder),)
+        try:
+            quiet.silence(Adapter)
+            box = Adapter()
+            args = {
+                "items": [
+                    {"type": "text", "body": f"VOICE:{m4a}"},
+                    {"type": "text", "body": "shipped"},
+                ]
+            }
+            asyncio.run(box.send_sequence(args, {"chat_uid": "cht_x"}))
+        finally:
+            quiet._MEDIA_ROOTS = saved
+    assert box.posted == [
+        ("voice", str(m4a.resolve())),
+        ("sequence", {"items": [{"type": "text", "body": "shipped"}]}),
+    ]
+
+
+def test_leftover_send_voice_never_posts():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    asyncio.run(box.send_voice("cht_x", "/tmp/note.m4a"))
+    assert box.posted == []
+
+
+def test_silence_finds_adapter_in_sys_modules():
+    import sys
+    import types
+
+    Adapter = _adapter()
+    Adapter.__name__ = "PlowChatAdapter"
+    mod = types.ModuleType("zoen_fake_plow_chat")
+    mod.PlowChatAdapter = Adapter
+    sys.modules["zoen_fake_plow_chat"] = mod
+    try:
+        quiet.silence_plow_adapter()
+        box = Adapter()
+        asyncio.run(box.send("cht_x", "leftover"))
+        assert box.posted == []
+    finally:
+        del sys.modules["zoen_fake_plow_chat"]
+
+
 def test_missing_adapter_does_not_raise():
     quiet.log.disabled = True
     try:
@@ -148,5 +203,8 @@ if __name__ == "__main__":
     test_media_sequence_uploads_file_instead_of_the_path()
     test_media_outside_workspace_is_not_posted_as_text()
     test_silence_is_idempotent()
+    test_voice_sequence_uses_native_send_voice()
+    test_leftover_send_voice_never_posts()
+    test_silence_finds_adapter_in_sys_modules()
     test_missing_adapter_does_not_raise()
     print("ok")
