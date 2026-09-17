@@ -21,8 +21,9 @@ N ≥ 2. Each candidate its own worktree or `/tmp/arena-<slug>/<n>/`.
 ## Fan
 
 One `delegate_task` lot. Each worker writes the sketch plus a short
-rationale (what it considered and rejected). If one drops, proceed
-with N-1 and note it.
+rationale (what it considered and rejected). Form sketches:
+`anthropic/claude-opus-5`. UI sketches: `moonshotai/kimi-k3`. Cross-judge:
+`anthropic/claude-opus-5`. If one drops, proceed with N-1 and note it.
 
 ## Pick
 

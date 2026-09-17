@@ -6,7 +6,7 @@ set -eu
 
 REPO="${ZOEN_REPO:-https://github.com/EnzoTironi/Plow.git}"
 RUNNER="${ZOEN_RUNNER:-https://github.com/plow-pbc/plow-agents.git}"
-IMAGE="${ZOEN_IMAGE:-ghcr.io/enzotironi/zoen/all-in-one@sha256:78c01798f5f43d40a69f8dd06c84448e78ba861e6764f8d7e2999ef8f7bb1cca}"
+IMAGE="${ZOEN_IMAGE:-ghcr.io/enzotironi/zoen/all-in-one@sha256:ffb63ba0c437e7ecb11c0fdd82fbd15a4462973a4d97939cc679e250b4f7bc7c}"
 
 LOCAL=0
 for arg in "$@"; do

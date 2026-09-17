@@ -68,6 +68,18 @@ RUN set -eu; \
     got="$(sha256sum /opt/plow/agent-index-client.py | cut -d' ' -f1)"; \
     [ "$got" = "$want" ] || { echo "agent-index client is $got, pin says $want" >&2; exit 1; }
 
+# Language id for the ack. Algorithm in-process; not an LLM.
+# fasttext-wheel has no cp313 wheel; source needs <cstdint> on newer gcc.
+RUN set -eu; \
+    export CXXFLAGS="${CXXFLAGS:-} -include cstdint"; \
+    if /usr/local/bin/uv pip install --python /opt/hermes/.venv/bin/python --no-cache fasttext-wheel; then \
+      curl -fsS --max-time 120 -o /opt/plow/lid.176.ftz \
+        https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz; \
+      /opt/hermes/.venv/bin/python -c "import fasttext, pathlib; assert pathlib.Path('/opt/plow/lid.176.ftz').is_file(); m=fasttext.load_model('/opt/plow/lid.176.ftz'); assert m.f.predict('olá tudo bem\n', 1, 0.0, 'strict')"; \
+    else \
+      echo "zoen: FastText wheel missing, heuristic language id"; \
+    fi
+
 # Bundled skills. The gateway reconciles this tree into $HERMES_HOME/skills
 # on boot: new/untouched copies update, owner edits stay.
 COPY skills/ /opt/hermes/skills/

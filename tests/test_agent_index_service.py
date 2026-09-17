@@ -21,6 +21,7 @@ def test_wiring():
     assert re.search(r"^sha256=[0-9a-f]{64}$", pin, re.M)
     dockerfile = (ROOT / "Dockerfile").read_text()
     assert "vendor/client.pin" in dockerfile and "sha256sum" in dockerfile
+    assert "lid.176.ftz" in dockerfile
     assert "COPY skills/zoen/scripts/" in dockerfile
     assert "ENV AGENT_ID=zoen" in dockerfile
     run = (SERVICE / "run").read_text()

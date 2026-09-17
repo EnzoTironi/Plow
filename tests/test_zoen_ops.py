@@ -63,7 +63,7 @@ def test_install_cloud_default_deploys_the_public_digest():
     assert 'image = "ghcr.io/enzotironi/zoen/all-in-one:v1"' in toml
     assert (
         "ghcr.io/enzotironi/zoen/all-in-one@sha256:"
-        "78c01798f5f43d40a69f8dd06c84448e78ba861e6764f8d7e2999ef8f7bb1cca"
+        "ffb63ba0c437e7ecb11c0fdd82fbd15a4462973a4d97939cc679e250b4f7bc7c"
     ) in text
     _, _, after = text.partition('[ "$LOCAL" = 1 ]')
     then_part, _, else_part = after.partition("else")

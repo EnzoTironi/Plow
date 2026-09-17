@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 from pathlib import Path
 
 NOW_OPEN = "<NOW.md Always keep this up to date; keep under 10 lines>"
 NOW_CLOSE = "</NOW.md>"
 INFO_OPEN = "<info>"
 INFO_CLOSE = "</info>"
+ACKED_OPEN = "<acked>"
+ACKED_CLOSE = "</acked>"
 RITUAL_HEAD = "# First-Run Ritual"
 REMINDER_OPEN = "<system_reminder>"
 REMINDER_CLOSE = "</system_reminder>"
@@ -35,7 +38,8 @@ The pack above is incomplete by design. It surfaces patterns, not the specifics.
 python3 /opt/plow/zoen/memory.py recall "who is Enzo"
 Call recall whenever they mention someone, a repo, a decision, or prior work you should already know. Guessing costs trust. Searching costs nothing.
 Never paste these files into a bubble. Never mention First-Run, face.py, bootstrap, or VOICE.md. If they have not written yet, send nothing. The first bubble is only what intro sends.
-As soon as you understand their ask, plow_send_sequence one short ack in their language, then work. Do not send again until a review or a closed delivery. No progress narration. Any language they use, you use.
+As soon as you understand their ask, plow_send_sequence one short ack in their language, then work. If this dump has <acked>, the plugin already sent that ack: do not send another. Do not send again until a review or a closed delivery. No progress narration. Any language they use, you use.
+VOICE:/absolute/path.mp3 or .m4a on plow_send_sequence is a native iMessage voice memo. Same as MEDIA: for photos. One file, no other text in that item.
 In a group the plugin already dropped turns that are not yours. Speak only if they marked you or the message is for you. Then only an important note, a question you need, a review (pictures or video), or a closed delivery. No progress. No greeting the room. No intro. Do not write memory from a group."""
 MAC_NUDGE = (
     "The owner's Mac is connected. For automations, their browser, files, apps, "
@@ -93,6 +97,25 @@ def mac_connected() -> bool:
     return bool((os.environ.get("PLOW_MCP_URL") or "").strip())
 
 
+def acked_note(home: str | None = None) -> str:
+    path = zoen_dir(home) / "acked"
+    if not path.is_file():
+        return ""
+    try:
+        age = time.time() - path.stat().st_mtime
+    except OSError:
+        return ""
+    if age > 180:
+        return ""
+    return (
+        f"{ACKED_OPEN}\n"
+        "The plugin already sent the first ack this turn. "
+        "Do not plow_send_sequence an ack. Tapback closers still. "
+        "Work, then review or delivery.\n"
+        f"{ACKED_CLOSE}"
+    )
+
+
 def reminder_body() -> str:
     if not mac_connected():
         return REMINDER
@@ -136,6 +159,9 @@ def pack(home: str | None = None, seed: str | Path | None | bool = None) -> str:
         blocks.append(f"{INFO_OPEN}\n{_escape(info_body, INFO_CLOSE)}\n{INFO_CLOSE}")
     if now:
         blocks.append(f"{NOW_OPEN}\n{_escape(now, NOW_CLOSE)}\n{NOW_CLOSE}")
+    note = acked_note(home)
+    if note:
+        blocks.append(note)
     blocks.append(f"{REMINDER_OPEN}\n{reminder_body()}\n{REMINDER_CLOSE}")
     return "\n\n".join(blocks)
 

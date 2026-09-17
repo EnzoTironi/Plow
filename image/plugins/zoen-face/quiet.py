@@ -4,16 +4,22 @@ Hermes leftover assistant text still reaches PlowChatAdapter.send().
 That path is not the agent's voice. Empty transform_llm_output is
 ignored, and NO_REPLY only drops when the turn advertised it, so the
 gate is wrapping leftover send. Workspace photos are MEDIA: text
-items on plow_send_sequence; the tool itself refuses paths, so those
-items are expanded into the adapter's attachment POST.
+items on plow_send_sequence; native voice memos are VOICE:. The tool
+itself refuses paths, so those items are expanded into the adapter's
+attachment or voicememo POST.
 """
 from __future__ import annotations
 
 import importlib
+import json
 import logging
+import os
 import re
 import sys
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 log = logging.getLogger("zoen-face")
 
@@ -26,13 +32,21 @@ _SILENT = (
     "send_document",
 )
 
-_ADAPTER = "hermes_plugins.plow_chat_platform"
-_MEDIA = re.compile(r"^MEDIA:(/\S+)$")
+_KNOWN = (
+    "hermes_plugins.plow_chat_platform",
+    "hermes_plugins.plow_chat",
+    "plow_chat",
+)
+_TAG = re.compile(r"^(MEDIA|VOICE):(/\S+)$")
 _MEDIA_ROOTS = (
     Path("/var/lib/hermes/workspace"),
     Path("/srv"),
     Path("/opt/plow"),
 )
+_VOICE_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+}
 
 
 class Dropped:
@@ -71,7 +85,7 @@ def media_file(raw: str) -> Path | None:
     return None
 
 
-def media_paths(item: object) -> list[str] | None:
+def tagged_paths(item: object) -> list[tuple[str, str]] | None:
     if not isinstance(item, dict) or item.get("type") != "text":
         return None
     body = item.get("body")
@@ -80,13 +94,22 @@ def media_paths(item: object) -> list[str] | None:
     lines = [line.strip() for line in body.splitlines() if line.strip()]
     if not lines:
         return None
-    found: list[str] = []
+    found: list[tuple[str, str]] = []
     for line in lines:
-        match = _MEDIA.fullmatch(line)
+        match = _TAG.fullmatch(line)
         if match is None:
             return None
-        found.append(match.group(1))
+        found.append((match.group(1), match.group(2)))
     return found
+
+
+def media_paths(item: object) -> list[str] | None:
+    tagged = tagged_paths(item)
+    if tagged is None:
+        return None
+    if any(kind != "MEDIA" for kind, _path in tagged):
+        return None
+    return [path for _kind, path in tagged]
 
 
 def expand_items(items: list) -> list[tuple[str, object]]:
@@ -99,22 +122,91 @@ def expand_items(items: list) -> list[tuple[str, object]]:
             buffered.clear()
 
     for item in items:
-        paths = media_paths(item)
-        if paths is None:
+        tagged = tagged_paths(item)
+        if tagged is None:
             buffered.append(item)
             continue
         flush()
-        for path in paths:
-            chunks.append(("file", path))
+        for kind, path in tagged:
+            chunks.append(("voice" if kind == "VOICE" else "file", path))
     flush()
     return chunks
 
 
-def _wrap_sequence(orig_seq, orig_attach):
+def _json(method: str, url: str, headers: dict[str, str], body: dict | None = None) -> dict:
+    data = None if body is None else json.dumps(body).encode()
+    req = Request(url, data=data, method=method, headers=headers)
+    try:
+        with urlopen(req, timeout=30) as resp:
+            raw = resp.read()
+            parsed = json.loads(raw.decode()) if raw else {}
+            return {"ok": True, "status": resp.status, "body": parsed, "error": None}
+    except HTTPError as exc:
+        exc.read()
+        return {"ok": False, "status": exc.code, "body": None, "error": str(exc.reason)}
+    except (URLError, TimeoutError, OSError, ValueError) as exc:
+        return {"ok": False, "status": 0, "body": None, "error": str(exc)}
+
+
+def _put(url: str, headers: dict[str, str], data: bytes) -> dict:
+    req = Request(url, data=data, method="PUT", headers=headers)
+    try:
+        with urlopen(req, timeout=60) as resp:
+            resp.read()
+            return {"ok": True, "status": resp.status, "error": None}
+    except HTTPError as exc:
+        exc.read()
+        return {"ok": False, "status": exc.code, "error": str(exc.reason)}
+    except (URLError, TimeoutError, OSError) as exc:
+        return {"ok": False, "status": 0, "error": str(exc)}
+
+
+def post_voicememo(chat_id: str, path: Path) -> object:
+    ctype = _VOICE_TYPES.get(path.suffix.lower())
+    if ctype is None:
+        return None
+    base = (os.environ.get("PLOW_API_BASE") or "").strip().rstrip("/")
+    token = (os.environ.get("PLOW_AGENT_TOKEN") or "").strip()
+    if not base or not token:
+        return None
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    payload = path.read_bytes()
+    declared = _json(
+        "POST",
+        f"{base}/v1/chats/{quote(chat_id)}/attachments",
+        headers,
+        {
+            "filename": path.name,
+            "content_type": ctype,
+            "size_bytes": len(payload),
+        },
+    )
+    upload = declared.get("body") if declared.get("ok") else None
+    if not isinstance(upload, dict) or not upload.get("uid") or not upload.get("upload_url"):
+        return None
+    stored = _put(str(upload["upload_url"]), dict(upload.get("upload_headers") or {}), payload)
+    if not stored.get("ok"):
+        return None
+    sent = _json(
+        "POST",
+        f"{base}/v1/chats/{quote(chat_id)}/voicememo",
+        headers,
+        {"attachmentuid": upload["uid"]},
+    )
+    if not sent.get("ok"):
+        return None
+    return type("Result", (), {"success": True, "error": None, "message_id": None})()
+
+
+def _wrap_sequence(orig_seq, orig_attach, orig_voice):
     async def send_sequence(self, args, turn, receipt=None):
         items = list((args or {}).get("items") or [])
         chunks = expand_items(items)
-        if not any(kind == "file" for kind, _ in chunks):
+        if not any(kind in {"file", "voice"} for kind, _ in chunks):
             return await orig_seq(self, args, turn, receipt)
         chat_id = (turn or {}).get("chat_uid")
         last = None
@@ -126,6 +218,24 @@ def _wrap_sequence(orig_seq, orig_attach):
                     log.warning("zoen-face skipped MEDIA path %s", payload)
                     continue
                 last = await orig_attach(self, chat_id, str(path))
+                delivered = True
+                continue
+            if kind == "voice":
+                path = media_file(str(payload))
+                if (
+                    path is None
+                    or not chat_id
+                    or path.suffix.lower() not in _VOICE_TYPES
+                ):
+                    log.warning("zoen-face skipped VOICE path %s", payload)
+                    continue
+                if orig_voice is not None:
+                    last = await orig_voice(self, chat_id, str(path))
+                else:
+                    last = post_voicememo(chat_id, path)
+                    if last is None:
+                        log.warning("zoen-face skipped VOICE path %s", payload)
+                        continue
                 delivered = True
                 continue
             last = await orig_seq(self, {"items": payload}, turn, receipt)
@@ -145,26 +255,41 @@ def silence(adapter_cls) -> None:
     adapter_cls._zoen_quiet = True
     orig_seq = getattr(adapter_cls, "send_sequence", None)
     orig_attach = getattr(adapter_cls, "_send_attachment", None)
+    orig_voice = getattr(adapter_cls, "send_voice", None)
     for name in _SILENT:
         if getattr(adapter_cls, name, None) is None:
             continue
         setattr(adapter_cls, name, _dropped(name))
     if orig_seq is not None and orig_attach is not None:
-        adapter_cls.send_sequence = _wrap_sequence(orig_seq, orig_attach)
+        adapter_cls.send_sequence = _wrap_sequence(orig_seq, orig_attach, orig_voice)
     log.info("zoen-face: iMessage send is plow_send_sequence only")
 
 
+def _adapters():
+    seen: set[int] = set()
+    for name in _KNOWN:
+        mod = sys.modules.get(name)
+        if mod is None:
+            try:
+                mod = importlib.import_module(name)
+            except ImportError:
+                continue
+        cls = getattr(mod, "PlowChatAdapter", None)
+        if isinstance(cls, type) and id(cls) not in seen:
+            seen.add(id(cls))
+            yield cls
+    for mod in list(sys.modules.values()):
+        cls = getattr(mod, "PlowChatAdapter", None)
+        if isinstance(cls, type) and callable(getattr(cls, "send", None)):
+            if callable(getattr(cls, "send_sequence", None)) and id(cls) not in seen:
+                seen.add(id(cls))
+                yield cls
+
+
 def silence_plow_adapter() -> None:
-    # plow-chat-platform is listed first; bind after that module is loaded.
-    mod = sys.modules.get(_ADAPTER)
-    if mod is None:
-        try:
-            mod = importlib.import_module(_ADAPTER)
-        except ImportError:
-            log.warning("zoen-face: plow chat adapter missing, leftover send still live")
-            return
-    cls = getattr(mod, "PlowChatAdapter", None)
-    if cls is None:
-        log.warning("zoen-face: PlowChatAdapter missing, leftover send still live")
-        return
-    silence(cls)
+    wrapped = False
+    for cls in _adapters():
+        silence(cls)
+        wrapped = True
+    if not wrapped:
+        log.warning("zoen-face: plow chat adapter missing, leftover send still live")

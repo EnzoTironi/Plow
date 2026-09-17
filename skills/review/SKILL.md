@@ -7,7 +7,8 @@ description: Backstage for Zoen. Scanners plus interrogate plus the picture-map 
 
 Zoen already acked. Code and comments. You are lead.
 
-`python3 /opt/plow/zoen/bundle.py` on the diff. Then **interrogate**.
+`python3 /opt/plow/zoen/bundle.py` on the diff. Then **interrogate**
+(Opus + Sonnet reviewers).
 
 Same finding schema:
 

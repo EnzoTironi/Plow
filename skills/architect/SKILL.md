@@ -5,9 +5,9 @@ description: Backstage for Zoen. Ground, sketch competing shapes, pick, scrap. I
 
 # Architect
 
-Zoen already acked. Design before implementing. Types, signatures,
-modules, bodies `not implemented`. If fill-in proves the sketch wrong,
-throw it out.
+Zoen already acked. Design before implementing. Spawn this lead on
+`anthropic/claude-opus-5`. Types, signatures, modules, bodies
+`not implemented`. If fill-in proves the sketch wrong, throw it out.
 
 ## Ground
 
