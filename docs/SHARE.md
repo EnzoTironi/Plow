@@ -2,10 +2,8 @@
 
 Lead with one click. Curl is the fallback.
 
-Get Zoen on the [Agent Index](https://aiworthusing.com/agent-index) → **Deploy**.
+https://aiworthusing.com/agent-index/zoen → **Deploy**.
 Then text it from iMessage.
-
-<!-- TODO(enzo): paste the final 1-click Deploy URL here -->
 
 Mac later: the only app is https://plow.co/latch
 
@@ -26,10 +24,10 @@ Paste as-is. First line is the install.
 ### 1. PT — o filme
 
 ```
-Agent Index → Zoen → Deploy.
-https://aiworthusing.com/agent-index
+https://aiworthusing.com/agent-index/zoen
+Deploy. Depois é iMessage.
 
-Você já sabe o que quer. Manda no iMessage.
+Você já sabe o que quer. Manda no texto.
 Volta um filme do produto. O mesmo no PR.
 Sem dashboard. Sem ticket.
 ```
@@ -37,8 +35,8 @@ Sem dashboard. Sem ticket.
 ### 1. EN — the movie
 
 ```
-Agent Index → Zoen → Deploy.
-https://aiworthusing.com/agent-index
+https://aiworthusing.com/agent-index/zoen
+Deploy. Then text it.
 
 You already know what you want. Text it.
 A movie of the product comes back to your phone.
@@ -48,8 +46,8 @@ The same one waits on the pull request.
 ### 2. PT — cavalos
 
 ```
-Agent Index → Zoen → Deploy.
-https://aiworthusing.com/agent-index
+https://aiworthusing.com/agent-index/zoen
+Deploy. Depois é iMessage.
 
 Uber de cavalo em SF. Mandei num texto.
 Ele não mandou um plano. Começou a construir.
@@ -59,8 +57,8 @@ Ele não mandou um plano. Começou a construir.
 ### 2. EN — horses
 
 ```
-Agent Index → Zoen → Deploy.
-https://aiworthusing.com/agent-index
+https://aiworthusing.com/agent-index/zoen
+Deploy. Then text it.
 
 Uber for horses in SF. I texted it.
 Zoen didn't send a plan. It started building.
@@ -70,8 +68,8 @@ Zoen didn't send a plan. It started building.
 ### 3. PT — sem dashboard
 
 ```
-Agent Index → Zoen → Deploy.
-https://aiworthusing.com/agent-index
+https://aiworthusing.com/agent-index/zoen
+Deploy. Depois é iMessage.
 
 Empresa começa num fio do iMessage.
 Alguém manda a ideia. O filme volta pra todo mundo.
@@ -81,8 +79,8 @@ O único app no Mac é o Latch. O resto o Zoen pede um sim e faz.
 ### 3. EN — no dashboard
 
 ```
-Agent Index → Zoen → Deploy.
-https://aiworthusing.com/agent-index
+https://aiworthusing.com/agent-index/zoen
+Deploy. Then text it.
 
 You don't start a company in a dashboard.
 Someone texts the idea. The movie lands for everyone.

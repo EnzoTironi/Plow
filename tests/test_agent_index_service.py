@@ -74,13 +74,16 @@ def test_stories_and_install_lead_with_one_click():
     assert "three-tickets-one-dream" in seen
     assert "waitlist-two-screens" in seen
     assert "broke-then-fixed" in seen
+    cta = "https://aiworthusing.com/agent-index/zoen"
     install = (ROOT / "docs/INSTALL.md").read_text()
     readme = (ROOT / "README.md").read_text()
     share = (ROOT / "docs/SHARE.md").read_text()
     for text in (install, readme, share):
-        assert "Agent Index" in text
+        assert cta in text
         assert "Deploy" in text
-        assert text.find("Agent Index") < text.find("curl")
+        assert text.find(cta) < text.find("curl")
+        assert "TODO(enzo)" not in text
+    assert cta in (ROOT / "docs/stories.json").read_text()
 
 
 if __name__ == "__main__":

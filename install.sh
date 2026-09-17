@@ -1,5 +1,5 @@
 #!/bin/sh
-# Founders: Agent Index → Zoen → Deploy (docs/INSTALL.md). This script is the fallback.
+# Founders: https://aiworthusing.com/agent-index/zoen → Deploy. This script is the fallback.
 #   curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | sh
 # Local Docker instead: ./install.sh --local
 set -eu

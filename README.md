@@ -23,9 +23,7 @@ A little monster who makes the thing.
 
 One click.
 
-Get Zoen on the [Agent Index](https://aiworthusing.com/agent-index) → **Deploy**.
-
-<!-- TODO(enzo): paste the final 1-click Deploy URL here -->
+[https://aiworthusing.com/agent-index/zoen](https://aiworthusing.com/agent-index/zoen) → **Deploy**.
 
 Then text Zoen from iMessage.
 

@@ -5,12 +5,10 @@ A little monster. Your software factory.
 
 ## Um clique / One click
 
-Abra o [Agent Index](https://aiworthusing.com/agent-index).
-Ache o **Zoen**. Aperte **Deploy**.
+Abra a página do Zoen no Agent Index e aperte **Deploy**.
+Open Zoen's Index page. Hit **Deploy**.
 
-Open the Index. Find **Zoen**. Hit **Deploy**.
-
-<!-- TODO(enzo): paste the final 1-click Deploy URL here -->
+https://aiworthusing.com/agent-index/zoen
 
 O Plow sobe o Zoen na nuvem. Se uma frase aparecer, mande no iMessage.
 Plow starts Zoen in the cloud. If a phrase appears, send it from iMessage.
