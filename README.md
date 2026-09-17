@@ -21,11 +21,14 @@ A little monster who makes the thing.
 
 ## Start
 
-One click.
+One tap.
 
-[https://aiworthusing.com/agent-index/zoen](https://aiworthusing.com/agent-index/zoen) → **Deploy**.
+1. Open [https://aiworthusing.com/agent-index/zoen](https://aiworthusing.com/agent-index/zoen)
+2. Tap **[Text this agent](sms:+16282463032?&body=Set%20this%20up%20for%20me%3A%20aiworthusing.com%2Fagent-index%2Fzoen)**
+3. Send the SMS to +1 628 246-3032:
+   `Set this up for me: aiworthusing.com/agent-index/zoen`
 
-Then text Zoen from iMessage.
+Then text Zoen.
 
 Need the Mac later? The only app is [Latch](https://plow.co/latch).
 Zoen asks. You tap yes.

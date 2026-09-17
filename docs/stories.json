@@ -3,7 +3,7 @@
     "id": "horses-in-sf",
     "title": "You texted a dream. It started building.",
     "tag": "Build",
-    "body": "Uber for horses. A white carriage in San Francisco. Zoen didn't send a plan. It said we're doing this. Rust. Owners to riders. You logged in once. Everything after that was on it. https://aiworthusing.com/agent-index/zoen. Deploy. Then text the dream.",
+    "body": "Uber for horses. A white carriage in San Francisco. Zoen didn't send a plan. It said we're doing this. Rust. Owners to riders. You logged in once. Everything after that was on it. https://aiworthusing.com/agent-index/zoen. Tap Text this agent. Then text the dream.",
     "images": [
       "https://raw.githubusercontent.com/EnzoTironi/Plow/main/docs/zoen-imessage.jpg?v=2",
       "https://raw.githubusercontent.com/EnzoTironi/Plow/main/docs/zoen-horses-api.jpg",
@@ -14,19 +14,19 @@
     "id": "three-tickets-one-dream",
     "title": "I texted Uber for horses. It opened 3 tickets and started building.",
     "tag": "Build",
-    "body": "White carriage in San Francisco. I said rust, owners to riders. Zoen didn't send a plan. Three tickets went up. Nearby search by radius. A booking lifecycle. Riders and owners over HTTP. A movie of the product came back to my phone. The same files waited on the pull request. https://aiworthusing.com/agent-index/zoen. Deploy. Then text it."
+    "body": "White carriage in San Francisco. I said rust, owners to riders. Zoen didn't send a plan. Three tickets went up. Nearby search by radius. A booking lifecycle. Riders and owners over HTTP. A movie of the product came back to my phone. The same files waited on the pull request. https://aiworthusing.com/agent-index/zoen. Tap Text this agent. Then text it."
   },
   {
     "id": "waitlist-two-screens",
     "title": "You texted a waitlist. Two screens came back as a movie.",
     "tag": "Build",
-    "body": "Email field. Thanks page. That was the whole brief. Zoen built it and sent the clip to your phone. The same clip sat on the pull request. You didn't open a laptop to start. https://aiworthusing.com/agent-index/zoen. Deploy. Then text it."
+    "body": "Email field. Thanks page. That was the whole brief. Zoen built it and sent the clip to your phone. The same clip sat on the pull request. You didn't open a laptop to start. https://aiworthusing.com/agent-index/zoen. Tap Text this agent. Then text it."
   },
   {
     "id": "broke-then-fixed",
     "title": "Checkout ate the zip. You sent the link. You watched it stop.",
     "tag": "Review",
-    "body": "One URL. First movie: the tap that died. Second movie: the tap that works. Same two clips on the pull request. You said no, or you didn't. The proof was the movie. https://aiworthusing.com/agent-index/zoen. Deploy."
+    "body": "One URL. First movie: the tap that died. Second movie: the tap that works. Same two clips on the pull request. You said no, or you didn't. The proof was the movie. https://aiworthusing.com/agent-index/zoen. Tap Text this agent."
   },
   {
     "id": "just-works",
@@ -42,9 +42,9 @@
   },
   {
     "id": "qa-container-or-latch",
-    "title": "You clicked Deploy. Then you sent a text.",
+    "title": "You tapped Text this agent. Then you sent a text.",
     "tag": "Prove",
-    "body": "You don't have a toolchain. You have a phone. https://aiworthusing.com/agent-index/zoen. Deploy. Zoen makes the thing and sends you the movie. If your Mac is awake and Latch is on, it uses it. If it isn't, it still finishes. You stay in the conversation."
+    "body": "You don't have a toolchain. You have a phone. https://aiworthusing.com/agent-index/zoen. Tap Text this agent. Zoen makes the thing and sends you the movie. If your Mac is awake and Latch is on, it uses it. If it isn't, it still finishes. You stay in the conversation."
   },
   {
     "id": "voice-not-quiz",

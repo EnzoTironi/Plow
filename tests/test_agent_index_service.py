@@ -75,15 +75,20 @@ def test_stories_and_install_lead_with_one_click():
     assert "waitlist-two-screens" in seen
     assert "broke-then-fixed" in seen
     cta = "https://aiworthusing.com/agent-index/zoen"
+    sms = "sms:+16282463032?&body=Set%20this%20up%20for%20me%3A%20aiworthusing.com%2Fagent-index%2Fzoen"
     install = (ROOT / "docs/INSTALL.md").read_text()
     readme = (ROOT / "README.md").read_text()
     share = (ROOT / "docs/SHARE.md").read_text()
     for text in (install, readme, share):
         assert cta in text
-        assert "Deploy" in text
+        assert "Text this agent" in text
+        assert sms in text
+        assert "Set this up for me: aiworthusing.com/agent-index/zoen" in text
         assert text.find(cta) < text.find("curl")
         assert "TODO(enzo)" not in text
-    assert cta in (ROOT / "docs/stories.json").read_text()
+    stories = (ROOT / "docs/stories.json").read_text()
+    assert cta in stories
+    assert "Text this agent" in stories
 
 
 if __name__ == "__main__":
