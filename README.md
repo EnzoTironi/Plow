@@ -21,15 +21,23 @@ A little monster who makes the thing.
 
 ## Start
 
-One command.
+One click.
+
+Get Zoen on the [Agent Index](https://aiworthusing.com/agent-index) → **Deploy**.
+
+<!-- TODO(enzo): paste the final 1-click Deploy URL here -->
+
+Then text Zoen from iMessage.
+
+Need the Mac later? The only app is [Latch](https://plow.co/latch).
+Zoen asks. You tap yes.
+
+[That's it.](docs/INSTALL.md) · [Share it.](docs/SHARE.md)
+
+### Power users
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | sh
 ```
-
-A phrase appears. Send it from your phone.
-Then text Zoen.
-
-[That's it.](docs/INSTALL.md)
 
 MIT. Built on [Plow](https://plow.co). Want to help? Open a pull request. `main` stays protected.

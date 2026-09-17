@@ -1,5 +1,5 @@
 #!/bin/sh
-# One command:
+# Founders: Agent Index → Zoen → Deploy (docs/INSTALL.md). This script is the fallback.
 #   curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | sh
 # Local Docker instead: ./install.sh --local
 set -eu

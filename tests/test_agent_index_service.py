@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Run: python3 tests/test_agent_index_service.py (no dependencies)."""
+import json
 import os
 import pathlib
 import re
@@ -27,7 +28,8 @@ def test_wiring():
     run = (SERVICE / "run").read_text()
     assert "PLOW_AGENT_TOKEN" + "=" not in run
     compose = (ROOT / "compose.yml").read_text()
-    assert "AGENT_ID" in compose and "HERMES_HOME" in compose
+    assert "AGENT_ID: ${AGENT_ID:-zoen}" in compose
+    assert "HERMES_HOME: /var/lib/hermes" in compose
     gitignore = (ROOT / ".gitignore").read_text()
     dockerignore = (ROOT / ".dockerignore").read_text()
     assert "plow-credentials" in gitignore and "plow-credentials" in dockerignore
@@ -61,9 +63,30 @@ def test_gitignore_blocks_credentials():
     assert "plow-credentials" in di or "/plow-credentials" in di
 
 
+def test_stories_and_install_lead_with_one_click():
+    stories = json.loads((ROOT / "docs/stories.json").read_text())
+    assert stories
+    seen = set()
+    for story in stories:
+        assert story["id"] and story["id"] not in seen
+        seen.add(story["id"])
+        assert story["title"] and story["body"] and story["tag"]
+    assert "three-tickets-one-dream" in seen
+    assert "waitlist-two-screens" in seen
+    assert "broke-then-fixed" in seen
+    install = (ROOT / "docs/INSTALL.md").read_text()
+    readme = (ROOT / "README.md").read_text()
+    share = (ROOT / "docs/SHARE.md").read_text()
+    for text in (install, readme, share):
+        assert "Agent Index" in text
+        assert "Deploy" in text
+        assert text.find("Agent Index") < text.find("curl")
+
+
 if __name__ == "__main__":
     test_wiring()
     test_stands_down_without_agent_id()
     test_gitignore_blocks_credentials()
+    test_stories_and_install_lead_with_one_click()
     time.sleep(0)
     print("ok")
