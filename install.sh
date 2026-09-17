@@ -1,5 +1,5 @@
 #!/bin/sh
-# One command:
+# Founders: https://aiworthusing.com/agent-index/zoen → Text this agent. This script is the fallback.
 #   curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | sh
 # Local Docker instead: ./install.sh --local
 set -eu
