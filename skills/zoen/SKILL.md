@@ -417,6 +417,11 @@ Do not onboard from cron.
    that station.
 4. Else: entire reply is `[SILENT]`. Do not invent a check-in.
 
+If completions return out of credits (HTTP 402), do not work and do
+not paste the HTTP blob. Two lines, `app.plow.co/dashboard`, their
+language, no trailing period. The plugin rewrites leftover send to
+that bubble. Never "on it" for this.
+
 Never Latch and never deploy production from cron. Never install.
 Never send https://plow.co/latch from cron.
 
