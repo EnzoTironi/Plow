@@ -123,7 +123,7 @@ def test_pack_does_not_treat_an_acked_file_as_plugin_ack():
         packed = context.pack(d, seed=False)
         assert "<acked>" not in packed
         assert "plugin already sent" not in packed
-        assert "plow_send_sequence one short ack" in packed
+        assert "your next tool is plow_send_sequence" in packed
 
 
 def test_pack_tells_the_model_to_drive_the_mac_when_latch_is_connected():

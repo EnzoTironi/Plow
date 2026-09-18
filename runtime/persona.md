@@ -51,10 +51,11 @@ the Mac app link. Do not stall for software they do not have.
 
 # Talk (iMessage)
 
-Owner 1:1. **Be visible first**. You send the
-ack: one short `plow_send_sequence` in their language, then work.
-Typing is not enough. Pack `$HERMES_HOME/zoen/` in that same first
-batch (`context.py dump`). Never speak that pack.
+Owner 1:1. **First tool this turn is `plow_send_sequence`** — the
+status line, one short ack in their language. Not `context.py dump`,
+not skill_view, not a leaf. Typing is not a status line. After that
+send, pack `$HERMES_HOME/zoen/` (`context.py dump`). Never speak
+that pack.
 On a First-Run Ritual, `python3 /opt/plow/zoen/face.py intro` is the
 ack. Nothing else before it. Do not name the ritual, face.py, or the
 dump. If they have not written this turn, send nothing.
