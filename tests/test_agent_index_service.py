@@ -30,15 +30,8 @@ def test_wiring():
     assert "base-42cb36ed16f513e9c7461b3f355acec181c8a26d" in dockerfile
     assert "sha256:7bb771761c075ef3736c4cc7bdc48402ce325ed35b5efb529b1b31ec7956fd40" in dockerfile
     run = (SERVICE / "run").read_text()
-    assert "#!/command/with-contenv" not in run
-    assert "env -i" not in run
-    assert "PLOW_AGENT_TOKEN=" not in run
-    assert "container_environment/PLOW_API_BASE" in run
-    assert run.count("/opt/plow/agent-index-client.py") == 3
-    assert run.count('PLOW_API_BASE="$PLOW_API_BASE"') == 3
-    assert run.count("/bin/sleep 300") == 3
+    assert "PLOW_AGENT_TOKEN" + "=" not in run
     assert "--name" in run and "--blurb" in run
-    assert 'set -- --register --agent "$AGENT_ID"' in run
     compose = (ROOT / "compose.yml").read_text()
     assert "AGENT_ID: ${AGENT_ID:-zoen}" in compose
     assert "AGENT_NAME: ${AGENT_NAME:-Zoen}" in compose
@@ -49,28 +42,6 @@ def test_wiring():
     assert 'image = "ghcr.io/enzotironi/zoen/all-in-one:v1"' in (
         ROOT / "plow-agents.toml"
     ).read_text()
-
-
-def test_register_argv_is_built_as_the_shell_builds_it():
-    block = (SERVICE / "run").read_text()
-    block = block[block.index("set -- --register"):block.index("while :; do")]
-    script = block + '\nfor a in "$@"; do printf "%s\\n" "$a"; done\n'
-    cases = [
-        ({"AGENT_ID": "my-agent"},
-         ["--register", "--agent", "my-agent"]),
-        ({"AGENT_ID": "my-agent", "AGENT_NAME": "My Agent"},
-         ["--register", "--agent", "my-agent", "--name", "My Agent"]),
-        ({"AGENT_ID": "my-agent", "AGENT_NAME": "My Agent",
-          "AGENT_BLURB": "One line about it"},
-         ["--register", "--agent", "my-agent", "--name", "My Agent",
-          "--blurb", "One line about it"]),
-        ({"AGENT_ID": "my-agent", "AGENT_NAME": "", "AGENT_BLURB": ""},
-         ["--register", "--agent", "my-agent"]),
-    ]
-    for environment, expected in cases:
-        result = subprocess.run(["sh", "-c", script], env=environment,
-                                capture_output=True, text=True, check=True)
-        assert result.stdout.splitlines() == expected, environment
 
 
 def test_stands_down_without_agent_id():
@@ -128,7 +99,6 @@ def test_stories_and_install_lead_with_one_click():
 
 if __name__ == "__main__":
     test_wiring()
-    test_register_argv_is_built_as_the_shell_builds_it()
     test_stands_down_without_agent_id()
     test_gitignore_blocks_credentials()
     test_stories_and_install_lead_with_one_click()

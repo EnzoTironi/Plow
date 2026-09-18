@@ -11,8 +11,8 @@ This product includes software and image patterns derived from:
 
 Those works are copyright The Plow Collective, Inc. and licensed under
 Apache-2.0 or MIT as stated in their repositories. The Agent Index reporter
-service under image/s6-overlay/s6-rc.d/agent-index follows plow-hermes-agent
-(Apache-2.0): it reads PLOW_API_BASE from the s6 container environment.
+service under image/s6-overlay/s6-rc.d/agent-index is adapted from
+life-assistant-hermes-agent (Apache-2.0).
 
 The container image installs the following CLIs as deterministic scanners
 or intake tools (not as LLM backends):
