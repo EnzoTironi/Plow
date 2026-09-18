@@ -32,6 +32,7 @@ def test_wiring():
     run = (SERVICE / "run").read_text()
     assert "#!/command/with-contenv" not in run
     assert "env -i" not in run
+    assert "PLOW_AGENT_TOKEN=" not in run
     assert "container_environment/PLOW_API_BASE" in run
     assert run.count("/opt/plow/agent-index-client.py") == 3
     assert run.count('PLOW_API_BASE="$PLOW_API_BASE"') == 3
