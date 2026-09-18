@@ -26,6 +26,8 @@ export PATH
 # agent's real bearer -- so behind one, the exchange has to be sent where the
 # token is.
 export AGENT_ID
+export AGENT_NAME
+export AGENT_BLURB
 
 # The agent's home is where its usage store lives, and the client keeps its
 # ledger beside that store. Fixed, not overridable: this image puts the home
@@ -84,9 +86,12 @@ while :; do
       # The one invocation with a use for the bearer: it exchanges it for the
       # report-only key everything else authenticates with.
       TOKEN_NAME=PLOW_AGENT_TOKEN
+      set -- --register --agent "$AGENT_ID"
+      [ -n "$AGENT_NAME" ] && set -- "$@" --name "$AGENT_NAME"
+      [ -n "$AGENT_BLURB" ] && set -- "$@" --blurb "$AGENT_BLURB"
       client env "$TOKEN_NAME=$PLOW_AGENT_TOKEN" \
         /opt/hermes/.venv/bin/python3 /opt/plow/agent-index-client.py \
-        --register --agent "$AGENT_ID" >/dev/null || {
+        "$@" >/dev/null || {
       echo "agent-index: no index key this pass, not reporting" >&2
       /bin/sleep 300
       continue

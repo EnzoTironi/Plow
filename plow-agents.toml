@@ -1,1 +1,2 @@
+# Image Text this agent / plow deploy uses. Rebuild and retag :v1 after a FROM bump.
 image = "ghcr.io/enzotironi/zoen/all-in-one:v1"

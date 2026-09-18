@@ -25,10 +25,16 @@ def test_wiring():
     assert "lid.176.ftz" in dockerfile
     assert "COPY skills/zoen/scripts/" in dockerfile
     assert "ENV AGENT_ID=zoen" in dockerfile
+    assert "ENV AGENT_NAME=Zoen" in dockerfile
+    assert "ENV AGENT_BLURB=" in dockerfile
+    assert "base-42cb36ed16f513e9c7461b3f355acec181c8a26d" in dockerfile
+    assert "sha256:7bb771761c075ef3736c4cc7bdc48402ce325ed35b5efb529b1b31ec7956fd40" in dockerfile
     run = (SERVICE / "run").read_text()
     assert "PLOW_AGENT_TOKEN" + "=" not in run
+    assert "--name" in run and "--blurb" in run
     compose = (ROOT / "compose.yml").read_text()
     assert "AGENT_ID: ${AGENT_ID:-zoen}" in compose
+    assert "AGENT_NAME: ${AGENT_NAME:-Zoen}" in compose
     assert "HERMES_HOME: /var/lib/hermes" in compose
     gitignore = (ROOT / ".gitignore").read_text()
     dockerignore = (ROOT / ".dockerignore").read_text()
