@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep Zoen's live Hermes config: zoen-face on, yolo, no mid-turn chatter."""
+"""Keep Zoen's live Hermes config: zoen-face on, yolo, models, no mid-turn chatter."""
 from __future__ import annotations
 
 import os
@@ -14,7 +14,31 @@ except ImportError:
 PLUGIN = "zoen-face"
 CHAT = "plow-chat-platform"
 SEED = Path("/opt/hermes/plow-seed/config.yaml")
+OVERLAY = Path("/opt/hermes/plow-seed/zoen-config.yaml")
+REPO_OVERLAY = Path(__file__).resolve().parents[1] / "runtime/config.yaml"
 LIVE = Path(os.environ.get("HERMES_HOME", "/var/lib/hermes")) / "config.yaml"
+MODELS = {
+    "model": {
+        "default": "openai/gpt-5.6-luna",
+        "provider": "plow",
+    },
+    "providers": {
+        "plow": {
+            "models": {
+                "anthropic/claude-sonnet-5": {},
+                "anthropic/claude-opus-5": {},
+                "openai/gpt-5.6-luna": {},
+                "moonshotai/kimi-k3": {},
+            }
+        }
+    },
+    "auxiliary": {
+        "vision": {
+            "provider": "plow",
+            "model": "anthropic/claude-sonnet-5",
+        }
+    },
+}
 YOLO = {
     "approvals": {
         "mode": "off",
@@ -64,8 +88,23 @@ def _merge(dst: dict, src: dict) -> bool:
     return changed
 
 
+def load_overlay() -> dict:
+    if yaml is not None:
+        for path in (OVERLAY, REPO_OVERLAY):
+            try:
+                if not path.is_file():
+                    continue
+                data = yaml.safe_load(path.read_text())
+            except (OSError, yaml.YAMLError):
+                continue
+            if isinstance(data, dict) and data:
+                return data
+    return MODELS
+
+
 def apply_runtime(data: dict) -> bool:
-    return _merge(data, YOLO)
+    changed = _merge(data, YOLO)
+    return _merge(data, load_overlay()) or changed
 
 
 def enable_plugin(data: dict) -> bool:
@@ -142,7 +181,10 @@ def main(argv: list[str] | None = None) -> int:
             ensure(Path(raw))
         return 0
     if SEED.is_file():
-        ensure(SEED, text_only=True)
+        if yaml is None:
+            ensure(SEED, text_only=True)
+        else:
+            ensure(SEED)
     if LIVE.is_file():
         ensure(LIVE)
     return 0

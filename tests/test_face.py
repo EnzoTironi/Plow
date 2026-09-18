@@ -807,7 +807,7 @@ def test_peek_owner_does_not_block_when_latch_fails():
         assert not (Path(d) / "zoen" / "MEMORY.md").exists()
 
 
-def test_plugin_ack_uses_luna_and_does_not_ack_a_closer():
+def test_dispatch_does_not_send_a_plugin_ack():
     plow = FakePlow()
     with tempfile.TemporaryDirectory() as d, face_env(home=d):
         action = face.greet_on_dispatch(
@@ -815,69 +815,13 @@ def test_plugin_ack_uses_luna_and_does_not_ack_a_closer():
             voiced=True,
             send=no_intro,
             http=plow.http,
-            wait_ack=True,
         )
         assert action == {"action": "allow"}
-        assert (Path(d) / "zoen" / "acked").read_text(encoding="utf-8").startswith("sent")
-        models = [
-            body.get("model")
-            for method, url, body, _headers in plow.calls
-            if url.endswith("/chat/completions") and isinstance(body, dict)
-        ]
-        assert face.ACK_MODEL in models
-        assert "on it" in plow.text_bodies()
-    closer = FakePlow()
-    with tempfile.TemporaryDirectory() as d, face_env(home=d):
-        face.greet_on_dispatch(
-            Event("valeu", source=Source(), recall_text="valeu"),
-            voiced=True,
-            send=no_intro,
-            http=closer.http,
-            wait_ack=True,
-        )
-        assert closer.text_bodies() == []
-        assert not (Path(d) / "zoen" / "acked").exists()
-
-
-def test_plugin_ack_stays_quiet_when_luna_fails():
-    plow = FakePlow(completions=fail(500, "nope"))
-    with tempfile.TemporaryDirectory() as d, face_env(home=d):
-        face.greet_on_dispatch(
-            Event("faz um CLI", source=Source(), recall_text="faz um CLI"),
-            voiced=True,
-            send=no_intro,
-            http=plow.http,
-            wait_ack=True,
-        )
         assert plow.text_bodies() == []
+        assert not any(
+            url.endswith("/chat/completions") for _method, url, _body, _headers in plow.calls
+        )
         assert not (Path(d) / "zoen" / "acked").exists()
-
-
-def test_plugin_ack_tells_them_credits_ran_out_on_402():
-    plow = FakePlow(
-        completions=fail(
-            402,
-            "You're out of Plow credits. Top up at app.plow.co/dashboard to keep going.",
-        )
-    )
-    with tempfile.TemporaryDirectory() as d, face_env(home=d):
-        (Path(d) / "zoen").mkdir()
-        (Path(d) / "zoen" / "VOICE.md").write_text("language: en\n")
-        face.greet_on_dispatch(
-            Event(
-                "I currently have a dream",
-                source=Source(),
-                recall_text="I currently have a dream",
-            ),
-            voiced=True,
-            send=no_intro,
-            http=plow.http,
-            wait_ack=True,
-        )
-        bodies = plow.text_bodies()
-        assert bodies == [face.credits_notice("en")]
-        assert "on it" not in "".join(bodies)
-        assert (Path(d) / "zoen" / "credits").is_file()
 
 
 def test_fact_from_output_keeps_the_mac_full_name():
@@ -926,8 +870,6 @@ if __name__ == "__main__":
     test_peek_owner_writes_memory_when_latch_answers()
     test_peek_owner_stays_quiet_when_latch_is_off()
     test_peek_owner_does_not_block_when_latch_fails()
-    test_plugin_ack_uses_luna_and_does_not_ack_a_closer()
-    test_plugin_ack_stays_quiet_when_luna_fails()
-    test_plugin_ack_tells_them_credits_ran_out_on_402()
+    test_dispatch_does_not_send_a_plugin_ack()
     test_fact_from_output_keeps_the_mac_full_name()
     print("ok")

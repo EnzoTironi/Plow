@@ -5,7 +5,7 @@ description: Backstage for Zoen. Fan cards as one lot, drain, one report. Each w
 
 # Swarm
 
-Zoen already acked. Fan N parallel workers. Parent drains,
+Zoen is the talker. Fan N parallel workers. Parent drains,
 aggregates, returns one report. You review the **diff**, not the
 worker's summary. Workers never ship.
 

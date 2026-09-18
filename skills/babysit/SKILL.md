@@ -5,7 +5,7 @@ description: Backstage for Zoen. Drive open PRs with gh. Comments and checks. Pa
 
 # Babysit
 
-Zoen already acked. GitHub is `gh`. Do not write a Python wrapper.
+Zoen is the talker. GitHub is `gh`. Do not write a Python wrapper.
 You own comments and checks. You do not land high-risk PRs.
 
 ```sh

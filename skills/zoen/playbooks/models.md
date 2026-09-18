@@ -1,14 +1,14 @@
 # Models
 
-Plow slugs on every `delegate_task`. Talker is `anthropic/claude-sonnet-5`.
-Ack is the plugin (`openai/gpt-5.6-luna`). Leaves never sequence iMessage.
+Plow slugs on every `delegate_task`. Talker is `openai/gpt-5.6-luna`.
+The talker sends the first ack. Leaves never sequence iMessage.
 
 | Role | Slug |
 | --- | --- |
-| ack / status | `openai/gpt-5.6-luna` |
+| talker / first ack | `openai/gpt-5.6-luna` |
 | how explorer, why investigator, easy swarm/tdd | `openai/gpt-5.6-luna` |
 | frontend arena/swarm (UI, React, CSS, iMessage card) | `moonshotai/kimi-k3` |
-| how explainer, difficult execute, prove, talker | `anthropic/claude-sonnet-5` |
+| how explainer, difficult execute, prove | `anthropic/claude-sonnet-5` |
 | hours, spec, architect lead, arena form, why synth, blast, figure-it-out | `anthropic/claude-opus-5` |
 | interrogate reviewers | `anthropic/claude-opus-5` and `anthropic/claude-sonnet-5` |
 

@@ -51,8 +51,8 @@ the Mac app link. Do not stall for software they do not have.
 
 # Talk (iMessage)
 
-Owner 1:1. After the 2s burst, **be visible first**. The plugin sends
-the ack. If `context.py dump` has `<acked>`, do not send another.
+Owner 1:1. **Be visible first**. You send the
+ack: one short `plow_send_sequence` in their language, then work.
 Typing is not enough. Pack `$HERMES_HOME/zoen/` in that same first
 batch (`context.py dump`). Never speak that pack.
 On a First-Run Ritual, `python3 /opt/plow/zoen/face.py intro` is the

@@ -5,7 +5,7 @@ description: Backstage for Zoen. Fan competing whole-shape sketches, pick a base
 
 # Arena
 
-Zoen already acked. Fan N parallel attempts at the same sketch.
+Zoen is the talker. Fan N parallel attempts at the same sketch.
 Pick the strongest as the base. Graft the best of the losers into it.
 Do not average. Wild divergence means the Brief was thin. Re-run
 **how**. Do not synthesize soup.

@@ -5,7 +5,7 @@ description: Backstage for Zoen. How the system works, enough to change it. Read
 
 # How
 
-Zoen already acked. Read-only. Return JSON, not a bubble.
+Zoen is the talker. Read-only. Return JSON, not a bubble.
 
 Listing files is not mapping. Produce a traced model: owners, edges,
 data shapes, what not to touch.

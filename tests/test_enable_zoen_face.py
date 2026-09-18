@@ -57,6 +57,8 @@ def test_live_dump_gains_zoen_face_and_keeps_plow_chat():
         assert data["security"]["tirith_enabled"] is False
         assert data["display"]["interim_assistant_messages"] is False
         assert data["display"]["platforms"]["plow_chat"]["long_running_notifications"] is False
+        assert data["model"]["default"] == "openai/gpt-5.6-luna"
+        assert "openai/gpt-5.6-luna" in data["providers"]["plow"]["models"]
 
 
 def test_apply_runtime_turns_yolo_on_and_quiets_plow_chat():
@@ -69,6 +71,29 @@ def test_apply_runtime_turns_yolo_on_and_quiets_plow_chat():
     assert data["display"]["platforms"]["plow_chat"]["long_running_notifications"] is False
     assert data["busy_input_mode"] == "steer"
     assert data["busy_ack_enabled"] is False
+    assert enable.apply_runtime(data) is False
+
+
+def test_apply_runtime_pins_talker_and_leaf_catalog():
+    data = {
+        "model": {"default": "z-ai/glm-5.2", "provider": "plow"},
+        "providers": {
+            "plow": {"models": {"z-ai/glm-5.2": {"prompt_caching": True}}}
+        },
+    }
+    assert enable.apply_runtime(data) is True
+    assert data["model"]["default"] == "openai/gpt-5.6-luna"
+    assert data["model"]["provider"] == "plow"
+    models = data["providers"]["plow"]["models"]
+    assert models["z-ai/glm-5.2"]["prompt_caching"] is True
+    for slug in (
+        "anthropic/claude-sonnet-5",
+        "anthropic/claude-opus-5",
+        "openai/gpt-5.6-luna",
+        "moonshotai/kimi-k3",
+    ):
+        assert slug in models
+    assert data["auxiliary"]["vision"]["model"] == "anthropic/claude-sonnet-5"
     assert enable.apply_runtime(data) is False
 
 
@@ -101,6 +126,7 @@ def test_seed_text_keeps_indent_and_neighbors():
 if __name__ == "__main__":
     test_live_dump_gains_zoen_face_and_keeps_plow_chat()
     test_apply_runtime_turns_yolo_on_and_quiets_plow_chat()
+    test_apply_runtime_pins_talker_and_leaf_catalog()
     test_already_listed_still_gains_yolo()
     test_seed_text_keeps_indent_and_neighbors()
     print("ok")

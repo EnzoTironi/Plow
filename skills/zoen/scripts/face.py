@@ -26,13 +26,6 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from credits import (  # noqa: E402
-    language as credits_language,
-    mark_told,
-    notice as credits_notice,
-    recently_told,
-    result_is_credits,
-)
 from lang import detect_language  # noqa: E402
 from memory import remember  # noqa: E402
 from net import request  # noqa: E402
@@ -55,25 +48,6 @@ SETUP_NAMES = {"plow setup"}
 SETUP_PREFIX = "plow, not your owner"
 HELLO_MARKERS = ("I'm Zoen", "eu sou o Zoen")
 CARD_AFTER = 2
-ACK_MODEL = "openai/gpt-5.6-luna"
-ACK_SYS = (
-    "One iMessage ack. Same language as the user. Max two lines. "
-    "No trailing period. No em dash. JSON only: {\"ack\":\"...\"}"
-)
-_CLOSER = {
-    "thanks",
-    "thank",
-    "you",
-    "thx",
-    "tks",
-    "ty",
-    "valeu",
-    "obrigado",
-    "obrigada",
-    "vlw",
-    "tmj",
-    "obg",
-}
 DIRECTED = (
     "Zoen is a software-factory agent in this iMessage group. "
     "People may also use another contact name for the same number. "
@@ -444,160 +418,6 @@ def spoken_text(event: Any) -> str:
 
 def mentioned(text: str) -> bool:
     return bool(MENTION.search(text or ""))
-
-
-def closer_only(text: str) -> bool:
-    spoken = (text or "").strip()
-    if not spoken:
-        return False
-    tokens = [tok.lower() for tok in re.findall(r"[^\W\d_]+", spoken, flags=re.UNICODE)]
-    if not tokens:
-        return True
-    return all(tok in _CLOSER for tok in tokens)
-
-
-def acked_path(home: str | None = None) -> Path | None:
-    root = (home or os.environ.get("HERMES_HOME") or "").strip()
-    if not root:
-        return None
-    return Path(root) / "zoen" / "acked"
-
-
-def mark_acking(home: str | None = None) -> None:
-    path = acked_path(home)
-    if path is None:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("acking\n", encoding="utf-8")
-
-
-def _store_acked(home: str | None, body: str) -> None:
-    path = acked_path(home)
-    if path is None:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(body, encoding="utf-8")
-
-
-def _clear_acked(home: str | None) -> None:
-    path = acked_path(home)
-    if path is None or not path.is_file():
-        return
-    try:
-        path.unlink()
-    except OSError:
-        return
-
-
-def _ack_body(raw: str | None) -> str | None:
-    if not raw:
-        return None
-    text = raw.strip()
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find("{")
-        end = text.rfind("}")
-        parsed = None
-        if start >= 0 and end > start:
-            try:
-                parsed = json.loads(text[start : end + 1])
-            except json.JSONDecodeError:
-                parsed = None
-    if isinstance(parsed, dict) and parsed.get("ack"):
-        text = str(parsed["ack"])
-    lines = [line.strip() for line in text.splitlines() if line.strip()][:2]
-    if not lines:
-        return None
-    cleaned: list[str] = []
-    for line in lines:
-        line = line.replace("—", ",").replace("–", ",")
-        if line.endswith("."):
-            line = line[:-1].rstrip()
-        if line:
-            cleaned.append(line)
-    if not cleaned or any(len(line.splitlines()) > 1 for line in cleaned):
-        return None
-    return "\n".join(cleaned)
-
-
-def send_ack(
-    spoken: str,
-    chat_uid: str,
-    *,
-    http: Http,
-    home: str | None = None,
-) -> None:
-    mark_acking(home)
-    try:
-        base, headers = credentials()
-    except SystemExit:
-        return
-    lang = pick_language(spoken, prior=voice_language(home), home=home)
-    try:
-        result = complete_http(
-            ACK_SYS,
-            spoken,
-            http=http,
-            base=base,
-            headers=headers,
-            max_tokens=40,
-            model=ACK_MODEL,
-        )
-    except Exception:
-        result = {"ok": False, "status": 0, "body": None, "error": "ack"}
-    if result_is_credits(result):
-        if recently_told(home):
-            return
-        body = credits_notice(lang or credits_language(home))
-        sent = send_text(base, headers, chat_uid, body, http)
-        if sent.get("ok"):
-            mark_told(body, home)
-            _store_acked(home, f"sent\n{body}\n")
-        else:
-            _clear_acked(home)
-        return
-    body = _ack_body(_completion_text(result.get("body")) if result.get("ok") else None)
-    if not body:
-        _clear_acked(home)
-        return
-    sent = send_text(base, headers, chat_uid, body, http)
-    if sent.get("ok"):
-        _store_acked(home, f"sent\n{body}\n")
-    else:
-        _clear_acked(home)
-
-
-def maybe_ack(
-    event: Any,
-    *,
-    http: Http | None = None,
-    wait: bool = False,
-    home: str | None = None,
-) -> None:
-    if event is None or getattr(event, "internal", False):
-        return
-    if is_plow_setup(event):
-        return
-    spoken = spoken_text(event) or str(getattr(event, "text", None) or "").strip()
-    if not spoken or closer_only(spoken):
-        return
-    source = getattr(event, "source", None)
-    chat_uid = str(getattr(source, "chat_id", None) or "").strip() if source else ""
-    if not chat_uid.startswith("cht_"):
-        return
-    client = http or request
-
-    def run() -> None:
-        try:
-            send_ack(spoken, chat_uid, http=client, home=home)
-        except Exception:
-            return
-
-    task = threading.Thread(target=run, daemon=True, name="zoen-ack")
-    task.start()
-    if wait:
-        task.join(timeout=8)
 
 
 def group_transcript(
@@ -1230,7 +1050,6 @@ def greet_on_dispatch(
     send: Callable[..., dict[str, Any]] | None = None,
     http: Http | None = None,
     put: Put | None = None,
-    wait_ack: bool = False,
     **_: Any,
 ) -> dict[str, str]:
     if getattr(event, "internal", False):
@@ -1238,25 +1057,18 @@ def greet_on_dispatch(
     if is_plow_setup(event):
         return _after_setup(voiced=voiced, send=send, http=http, put=put)
     if is_group(event):
-        decision = group_on_dispatch(event, http=http)
-        if decision.get("action") == "allow":
-            maybe_ack(event, http=http, wait=wait_ack)
-        return decision
+        return group_on_dispatch(event, http=http)
     if voice_exists() if voiced is None else voiced:
-        maybe_ack(event, http=http, wait=wait_ack)
         return {"action": "allow"}
     text = spoken_text(event) or str(getattr(event, "text", None) or "").strip()
     if not text or text.startswith("/"):
-        maybe_ack(event, http=http, wait=wait_ack)
         return {"action": "allow"}
     try:
         payload = _call_intro(send, http, put, inbound=text)
     except (Exception, SystemExit):
-        maybe_ack(event, http=http, wait=wait_ack)
         return {"action": "allow"}
     if payload.get("ok"):
         return {"action": "skip", "reason": "zoen intro"}
-    maybe_ack(event, http=http, wait=wait_ack)
     return {"action": "allow"}
 
 

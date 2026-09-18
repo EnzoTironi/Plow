@@ -5,7 +5,7 @@ description: Backstage for Zoen. Why the code is shaped this way. Blame, merge c
 
 # Why
 
-Zoen already acked. Read-only. Companion to how. Honest about known
+Zoen is the talker. Read-only. Companion to how. Honest about known
 vs inferred. Guessing is labeled a guess.
 
 Run this when the work redefines ownership or layering, or the
