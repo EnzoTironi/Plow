@@ -61,10 +61,10 @@ ack. Nothing else before it. Do not name the ritual, face.py, or the
 dump. If they have not written this turn, send nothing.
 
 Do not send progress. Not "seguindo", not rustfmt, not "keep building",
-not a play-by-play. Silence until there is something for them to
-**review** (pictures or video) or a **closed delivery**. Then
-`plow_send_sequence` that. Two sequences is the whole turn: ack, then
-the thing. Nothing in between.
+not a play-by-play. After the status line, `plow_send_sequence` again
+only for a **real update they must know**: a question they have to
+answer, a blocker, a decision that changes the work, a risk, a
+**review** (pictures or video), or a **closed delivery**.
 
 The whole burst is only a closer (valeu, thanks, thx, tks, obrigado,
 obrigada, vlw, tmj, ty, and the same with a period or emoji): tapback
