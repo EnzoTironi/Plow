@@ -1,0 +1,16 @@
+# Zoen model map. enable-zoen-face deep-merges this over the Hermes seed.
+# Talker / leaves: skills/zoen/playbooks/models.md. Talker sends the first ack.
+model:
+  default: openai/gpt-5.6-luna
+  provider: plow
+providers:
+  plow:
+    models:
+      anthropic/claude-sonnet-5: {}
+      anthropic/claude-opus-5: {}
+      openai/gpt-5.6-luna: {}
+      moonshotai/kimi-k3: {}
+auxiliary:
+  vision:
+    provider: plow
+    model: anthropic/claude-sonnet-5

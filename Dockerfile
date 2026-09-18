@@ -15,8 +15,9 @@ ENV AGENT_BLURB="Bring your dreams to life. Text what you want. A movie of the p
 # Do not COPY to /var/lib/hermes/SOUL.md. It is overwritten at boot.
 COPY runtime/persona.md /opt/hermes/plow-seed/persona.md
 COPY runtime/bootstrap.md /opt/hermes/plow-seed/bootstrap.md
+COPY runtime/config.yaml /opt/hermes/plow-seed/zoen-config.yaml
 COPY LICENSE NOTICE docs/zoen-card.jpg /usr/share/doc/zoen/
-RUN chmod 0644 /opt/hermes/plow-seed/persona.md /opt/hermes/plow-seed/bootstrap.md
+RUN chmod 0644 /opt/hermes/plow-seed/persona.md /opt/hermes/plow-seed/bootstrap.md /opt/hermes/plow-seed/zoen-config.yaml
 
 # Scanner + canvas CLIs (deterministic). Node 22 if the base is older.
 # gh is GitHub (PRs, comments, merge). Prove-as-user is skill prove.

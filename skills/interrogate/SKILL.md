@@ -5,7 +5,7 @@ description: Backstage for Zoen. Adversarial review of a sketch or a diff. Synth
 
 # Interrogate
 
-Zoen already acked. Fan readonly leaves on the same brief. The
+Zoen is the talker. Fan readonly leaves on the same brief. The
 signal is independent reads, different models if the runtime allows,
 same prompt if it does not. Deliverable is a synthesized verdict.
 Do NOT auto-apply.

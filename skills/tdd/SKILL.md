@@ -5,7 +5,7 @@ description: Backstage for Zoen. Fail a cheap check first, then fill it in. Skip
 
 # TDD
 
-Zoen already acked. Make the broken behavior executable before
+Zoen is the talker. Make the broken behavior executable before
 changing production code. Prefer no new test over a bad test.
 Cheap fill-in: `openai/gpt-5.6-luna`. Seams: `anthropic/claude-sonnet-5`.
 
