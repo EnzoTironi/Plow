@@ -2,7 +2,7 @@
 #
 # Pin by immutable tag + digest. A moving tag would substitute code under an
 # agent that holds a live Plow credential.
-FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-80ef5024eb4b770e727a618a9b55421c73da6228@sha256:864771e8165db16c11a55635df85696f39d91020f258576dd62b7cab0515514f
+FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-51f83158a70a383f03a4d03dbd8b6ea102cf0361@sha256:253d7ed3409effa7fa59113d93b4b79bb731d8264cdaf4cd60294924d0110a2e
 
 # --yolo: frozen into tools.approval at gateway import. Tirith /approve
 # otherwise parks the turn on iMessage while the owner only sees typing.
