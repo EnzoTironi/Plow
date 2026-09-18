@@ -33,6 +33,8 @@ Já clonou? `./install.sh`
 curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | sh
 ```
 
+Sobe o mesmo `:v1` do Text this agent. Same `:v1` 1-click deploys.
+
 Sair: `./bin/plow-agents lines` e `./bin/plow-agents revoke ln_…`
 
 Docker local, com Docker aberto: `./install.sh --local`.

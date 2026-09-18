@@ -2,12 +2,14 @@
 #
 # Pin by immutable tag + digest. A moving tag would substitute code under an
 # agent that holds a live Plow credential.
-FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-51f83158a70a383f03a4d03dbd8b6ea102cf0361@sha256:253d7ed3409effa7fa59113d93b4b79bb731d8264cdaf4cd60294924d0110a2e
+FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-42cb36ed16f513e9c7461b3f355acec181c8a26d@sha256:7bb771761c075ef3736c4cc7bdc48402ce325ed35b5efb529b1b31ec7956fd40
 
 # --yolo: frozen into tools.approval at gateway import. Tirith /approve
 # otherwise parks the turn on iMessage while the owner only sees typing.
 ENV HERMES_YOLO_MODE=1
 ENV AGENT_ID=zoen
+ENV AGENT_NAME=Zoen
+ENV AGENT_BLURB="Bring your dreams to life. Text what you want. A movie of the product comes back."
 
 # plow-init composes SOUL.md on every boot as the base persona plus this file.
 # Do not COPY to /var/lib/hermes/SOUL.md. It is overwritten at boot.

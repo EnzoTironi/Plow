@@ -2,11 +2,13 @@
 # Founders: https://aiworthusing.com/agent-index/zoen → Text this agent. This script is the fallback.
 #   curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | sh
 # Local Docker instead: ./install.sh --local
+# Cloud deploy uses the same :v1 1-click publishes (plow-agents.toml). After
+# `plow-agents` image build, retag :v1. Optional: pin a digest via ZOEN_IMAGE.
 set -eu
 
 REPO="${ZOEN_REPO:-https://github.com/EnzoTironi/Plow.git}"
 RUNNER="${ZOEN_RUNNER:-https://github.com/plow-pbc/plow-agents.git}"
-IMAGE="${ZOEN_IMAGE:-ghcr.io/enzotironi/zoen/all-in-one@sha256:ffb63ba0c437e7ecb11c0fdd82fbd15a4462973a4d97939cc679e250b4f7bc7c}"
+IMAGE="${ZOEN_IMAGE:-ghcr.io/enzotironi/zoen/all-in-one:v1}"
 
 LOCAL=0
 for arg in "$@"; do

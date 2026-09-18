@@ -52,10 +52,11 @@ def test_live_dump_gains_zoen_face_and_keeps_plow_chat():
     assert "mcp_servers:" in text
     assert "_config_version: 44" in text
     if enable.yaml is not None:
-        assert "mode: off" in text
-        assert "tirith_enabled: false" in text
-        assert "interim_assistant_messages: false" in text
-        assert "long_running_notifications: false" in text
+        data = enable.yaml.safe_load(text)
+        assert data["approvals"]["mode"] == "off"
+        assert data["security"]["tirith_enabled"] is False
+        assert data["display"]["interim_assistant_messages"] is False
+        assert data["display"]["platforms"]["plow_chat"]["long_running_notifications"] is False
 
 
 def test_apply_runtime_turns_yolo_on_and_quiets_plow_chat():
@@ -78,8 +79,9 @@ def test_already_listed_still_gains_yolo():
         path = _write(folder, "config.yaml", VOICED)
         assert enable.ensure(path) is True
         text = path.read_text()
-        assert "mode: off" in text
-        assert "busy_input_mode: steer" in text
+        data = enable.yaml.safe_load(text)
+        assert data["approvals"]["mode"] == "off"
+        assert data["busy_input_mode"] == "steer"
         assert "- zoen-face" in text
 
 

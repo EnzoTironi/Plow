@@ -8,6 +8,8 @@ services:
     environment:
       # Unique Agent Index id. Guessing someone else's id files usage under them.
       AGENT_ID: ${AGENT_ID:-zoen}
+      AGENT_NAME: ${AGENT_NAME:-Zoen}
+      AGENT_BLURB: ${AGENT_BLURB:-Bring your dreams to life. Text what you want. A movie of the product comes back.}
       # Required: agentsview reports 0 tokens for Hermes; the client reads state.db here.
       HERMES_HOME: /var/lib/hermes
       HERMES_YOLO_MODE: "1"

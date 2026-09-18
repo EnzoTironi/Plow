@@ -61,10 +61,7 @@ def test_install_cloud_default_deploys_the_public_digest():
     text = (ROOT / "install.sh").read_text()
     toml = (ROOT / "plow-agents.toml").read_text()
     assert 'image = "ghcr.io/enzotironi/zoen/all-in-one:v1"' in toml
-    assert (
-        "ghcr.io/enzotironi/zoen/all-in-one@sha256:"
-        "ffb63ba0c437e7ecb11c0fdd82fbd15a4462973a4d97939cc679e250b4f7bc7c"
-    ) in text
+    assert "ghcr.io/enzotironi/zoen/all-in-one:v1" in text
     _, _, after = text.partition('[ "$LOCAL" = 1 ]')
     then_part, _, else_part = after.partition("else")
     assert 'face.py" rename' in then_part
