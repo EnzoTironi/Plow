@@ -148,6 +148,17 @@ message also waited about 34 seconds for the upstream `plow-init` home-chat star
 path before reaching the adapter. The five-second end-to-end target is therefore
 not consistently met, especially on cold startup or delayed provider transport.
 
+A final check on code revision `1c9cdfb` also failed the latency target: Plow dated
+the incoming message 19:47:23.112Z, while the reception observer saw it at
+19:48:14.241Z (51.129s later). The native chat `_on_message` enqueue has no blocking
+await before the observer; the delay precedes this custom reception path, but its
+precise source was not instrumented. Reception generation then hit its six-second
+timeout. The main request logged HTTP 504 from `api.plow.co/v1` and completed after
+139s of main-turn time. Authenticated message reads also timed out intermittently.
+The recovered turn called both connection status tools, received non-retryable
+403s, and explained that access was refused without suggesting another retry or
+starting login. This establishes error handling, not reliable provider latency.
+
 Ripwire's static scan is not a zero-finding result: it flags dynamic callbacks,
 test-double duplication and recent churn, plus size/complexity warnings in the new
 reception, connector error handling and memory code. These were reviewed alongside the runtime checks;
