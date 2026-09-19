@@ -24,6 +24,7 @@ async def verify(home):
     (Path(home) / "zoen/VOICE.md").write_text("language: pt\n")
     shutil.copy("/opt/hermes/plow-seed/config.yaml", Path(home) / "config.yaml")
     from hermes_cli.plugins import get_plugin_manager
+    from gateway.config import PlatformConfig
     manager = get_plugin_manager()
     manager.discover_and_load()
     plow = manager._plugins["plow-chat-platform"].module
@@ -33,11 +34,15 @@ async def verify(home):
     assert "zoen_connections" in manager._plugin_tool_names
     assert manager.invoke_hook("pre_gateway_dispatch", event=SimpleNamespace(internal=True)) == [{"action": "allow"}]
     assert json.loads(plugin.connections.handle({"action": "status", "connector": "google"}))["ok"] is False
-    adapter = object.__new__(plow.PlowChatAdapter)
+    adapter = plow.PlowChatAdapter(PlatformConfig())
+    plow._wake_mac_link = lambda: None
     adapter._active_turn = plow._ACTIVE_TURN
     adapter._seen, adapter._inbound = [], {}
     adapter.auth = {"Authorization": "Bearer local-test-fixture"}
     adapter._typing_last_sent = {}
+    adapter.platform = plow._platform()
+    adapter.home_chat_uid = "cht_test"
+    adapter._identity = {"lines": []}
     adapter.chat_uids = {"cht_test"}
     adapter._chats = {"cht_test": {"uid": "cht_test", "trusted": True,
         "participants": [{"type": "member", "role": "owner", "uid": "usr_test", "provider_key": "test"}]}}
@@ -95,6 +100,10 @@ async def verify(home):
     try:
         connected = json.loads(await asyncio.to_thread(plugin.connections.handle, {"action": "status", "connector": "google"}))
         assert connected["ok"] is True
+        catalog = json.loads(await asyncio.to_thread(plugin.connections.handle, {"action": "catalog"}))
+        assert {"todoist", "notion"} <= {entry["name"] for entry in catalog["connectors"]}, catalog
+        invalid = json.loads(await asyncio.to_thread(plugin.connections.handle, {"action": "connect", "connector": "https://untrusted.example/mcp"}))
+        assert invalid["error"] == "connector_not_in_native_oauth_catalog", invalid
     finally:
         plow._ACTIVE_TURN.reset(token)
     token = plow._ACTIVE_TURN.set({"owner": True, "dm": False, "chat_uid": "cht_test"})
@@ -102,6 +111,31 @@ async def verify(home):
         assert not json.loads(plugin.connections.handle({"action": "connect", "connector": "google"}))["ok"]
     finally:
         plow._ACTIVE_TURN.reset(token)
+    native_connections = sys.modules[plugin.__name__ + ".mcp_connections"]
+    await native_connections.notify(adapter, plow, "cht_test", "todoist", "Fixture connection result")
+    assert len(handed_off) == 1
+    assert handed_off[0].internal and handed_off[0].authority
+    assert handed_off[0].source.role_authorized and handed_off[0].source.chat_id == "cht_test"
+    assert manager.invoke_hook("pre_gateway_dispatch", event=handed_off[0]) == [{"action": "allow"}]
+    async def connection_turn(event):
+        turn = plow._ACTIVE_TURN.get()
+        assert turn and turn["owner"] and turn["dm"] and turn["authority"], turn
+        result = json.loads(await asyncio.to_thread(plugin.connections.handle, {"action": "status", "connector": "todoist"}))
+        assert result["ok"] and not result["credentials_saved"], result
+        return None
+
+    adapter._message_handler = connection_turn
+    await adapter._process_message_background(handed_off[0], "connection-fixture")
+    assert plow._ACTIVE_TURN.get() is None and not adapter._live_turns
+    handed_off.clear()
+    adapter._chats["cht_test"]["participants"][0]["role"] = "member"
+    try:
+        await native_connections.notify(adapter, plow, "cht_test", "todoist", "Must not be delivered")
+        raise AssertionError("revoked owner notification was allowed")
+    except PermissionError:
+        assert not handed_off
+    finally:
+        adapter._chats["cht_test"]["participants"][0]["role"] = "owner"
     message = {"uid": "msg_test", "direction": "inbound", "sender": {"type": "member", "role": "owner", "uid": "usr_test"},
                "body": "faz um resumo do documento", "attachments": [{"url": "deliberately unresolved"}]}
     await adapter._on_message(message, "cht_test")
@@ -127,7 +161,8 @@ async def verify(home):
         server.cancel()
         await asyncio.gather(server, return_exceptions=True)
     await runner.cleanup()
-    print(json.dumps({"plugin_registered": True, "owner_guard": True, "connection_tool_dispatch": True, "ack_before_attachment": True,
+    print(json.dumps({"plugin_registered": True, "owner_guard": True, "connection_tool_dispatch": True,
+                      "connection_event_native_lifecycle": True, "ack_before_attachment": True,
                       "socket_replay_deduplicated": True, "handoff_not_lost": True,
                       "ack_after_last_message_ms": round(elapsed * 1000)}))
 

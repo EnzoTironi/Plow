@@ -8,6 +8,8 @@ __pycache__/
 tools/plow-agents/
 compose.override.yml
 .siblings/
+services/oauth-relay/node_modules/
+services/oauth-relay/.wrangler/
 
 # Live bearer from `plow-agents mint`. Never commit.
 plow-credentials

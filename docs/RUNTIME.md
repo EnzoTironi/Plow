@@ -52,13 +52,18 @@ The real local agent's credential returned HTTP 403 for both status endpoints on
 state, not a disconnected account. The tool marks 401/403 as non-retryable and
 explains that the instance operator must fix Plow connector access. It must not
 start OAuth or recommend waiting as a solution to this permission error. No real
-OAuth consent or connected-account operation has been validated yet.
+Google or Slack OAuth consent has been validated with this local credential yet.
 
 Google workspace operations still use the bundled Plow integration; some operations
 depend on Latch and the owner's Mac. A connected account is not proof that all its
-tools or scopes are available. This release does not supply independent Microsoft,
-Notion or Drive OAuth clients. Additional MCP tools use Hermes' native catalog,
-authorization and connection management, subject to each provider's setup.
+tools or scopes are available. Additional MCP services use Hermes' native catalog,
+authorization and token storage through Zoen's HTTPS callback relay. Real Notion
+consent, identity verification and token reuse in a fresh process have passed with
+the local iMessage agent. Provider-specific setup and availability still apply.
+
+The [connector infrastructure validation](CONNECTORS.md) records native MCP execution
+tests, the distinction from Nous-managed accounts, the deployed callback relay,
+and the remaining hosted-instance validation.
 
 Personal workflows explicitly enable and reuse native Hermes Kanban and cron. NOW.md is a summary, while
 native tasks retain the original request, account, deadline, next action and result.

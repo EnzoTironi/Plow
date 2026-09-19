@@ -8,14 +8,14 @@ from . import quiet
 
 SCHEMA = {
     "name": "zoen_connections",
-    "description": "Check or connect the owner's Google (Gmail/Calendar) or Slack account from their private iMessage conversation. On connect, send the returned short-lived URL to the owner, then verify status and account before resuming the task. No passwords or pasted tokens.",
+    "description": "Manage the owner's accounts in their private iMessage conversation. Google/Slack use Plow. Catalog lists native Hermes OAuth services such as Todoist and Notion; connect starts a background login, whose link and completion arrive automatically. Status distinguishes saved credentials from verified account access. Cancel stops a pending login. Never ask for passwords or pasted tokens.",
     "parameters": {
         "type": "object",
         "properties": {
-            "action": {"type": "string", "enum": ["status", "connect"]},
-            "connector": {"type": "string", "enum": ["google", "slack"]},
+            "action": {"type": "string", "enum": ["catalog", "status", "connect", "cancel"]},
+            "connector": {"type": "string", "description": "google, slack, or an exact name returned by catalog. Omit for catalog."},
         },
-        "required": ["action", "connector"],
+        "required": ["action"],
         "additionalProperties": False,
     },
 }
@@ -26,7 +26,10 @@ async def authorized_connection(adapter, module, turn, args):
     await asyncio.wait_for(adapter._refresh_current_chat(chat), 5)
     if not module._owner_dm(adapter._chats.get(chat, {})) or adapter._send_guard(chat) is not None:
         return {"ok": False, "error": "requires the owner's current private chat"}
-    return await asyncio.to_thread(connection, args.get("action"), args.get("connector"))
+    if args.get("connector") in {"google", "slack"} and args.get("action") != "catalog":
+        return await asyncio.to_thread(connection, args.get("action"), args.get("connector"))
+    from . import mcp_connections
+    return await mcp_connections.dispatch(adapter, module, turn, args)
 
 
 def handle(args, **_kwargs):

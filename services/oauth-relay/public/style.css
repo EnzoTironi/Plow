@@ -1,0 +1,90 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #fff;
+  background: #071426;
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgb(6 16 31 / 12%), rgb(6 16 31 / 5%) 65%, rgb(6 16 31 / 30%)),
+    url("/sky-midnight.webp") center / cover no-repeat;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 28px 24px 0;
+  padding: 8px 22px 8px 10px;
+  border: 1px solid rgb(255 255 255 / 13%);
+  border-radius: 100px;
+  background: rgb(23 36 59 / 40%);
+  backdrop-filter: blur(16px);
+}
+
+.brand img { border-radius: 50%; }
+.wordmark { font-size: 23px; font-weight: 550; letter-spacing: -.8px; }
+.divider { height: 18px; width: 1px; margin: 0 3px; background: rgb(255 255 255 / 20%); }
+.brand-detail { color: #d4dfed; font-size: 13px; }
+
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 76px 24px 90px;
+  text-align: center;
+}
+
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 26px;
+  color: #dae6f3;
+  font-size: 13px;
+  letter-spacing: .2px;
+}
+
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: #c5dcf6; box-shadow: 0 0 16px #b0d5fc; }
+
+h1 {
+  margin: 0;
+  font-size: clamp(40px, 5.1vw, 68px);
+  line-height: 1.08;
+  font-weight: 400;
+  letter-spacing: -.055em;
+  text-wrap: balance;
+}
+
+h1 em { font-weight: 400; }
+.description { max-width: 430px; margin: 26px 0 30px; color: #dee8f4; font-size: 17px; line-height: 1.65; text-wrap: pretty; }
+.button { display: inline-flex; align-items: center; gap: 18px; padding: 17px 24px; border-radius: 100px; background: #fff; color: #0b2038; font-size: 15px; font-weight: 550; text-decoration: none; transition: background .15s, transform .15s; }
+.button:hover { background: #e6effb; transform: translateY(-1px); }
+.button:focus-visible { outline: 2px solid white; outline-offset: 6px; }
+.button span { font-size: 20px; line-height: 1; }
+.hint { max-width: 270px; margin: 18px 0 0; color: #b6c6dc; font-size: 12px; line-height: 1.6; }
+footer { padding: 0 24px 28px; color: #c6d4e5; font-size: 12px; text-align: center; }
+
+@media (max-width: 480px) {
+  .brand { margin-top: 22px; }
+  main { padding: 66px 22px 72px; }
+  h1 { font-size: clamp(35px, 9.8vw, 46px); }
+  .description { font-size: 16px; }
+  footer { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button { transition: none; }
+  .button:hover { transform: none; }
+}

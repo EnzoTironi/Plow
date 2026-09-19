@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "zoen-oauth-relay",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-19",
+  "workers_dev": true,
+  "observability": { "enabled": false },
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
+  "vars": { "FLOW_TTL_SECONDS": "300" },
+  "durable_objects": {
+    "bindings": [{ "name": "FLOWS", "class_name": "OAuthFlow" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OAuthFlow"] }],
+  "ratelimits": [{
+    "name": "CREATE_LIMITER",
+    "namespace_id": "7419321",
+    "simple": { "limit": 20, "period": 60 }
+  }]
+}

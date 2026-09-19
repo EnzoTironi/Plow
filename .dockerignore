@@ -11,6 +11,7 @@ docs/*.mp4
 docs/*.jpg
 !docs/zoen-card.jpg
 tests/
+services/
 
 # Live bearer from `plow-agents mint`. Build context is this directory.
 plow-credentials

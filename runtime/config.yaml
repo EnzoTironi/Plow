@@ -3,6 +3,7 @@
 # Native Kanban requires an explicit opt-in; platform defaults remain intact.
 zoen:
   reception_model: openai/gpt-5.6-luna
+  oauth_relay_url: https://zoen-oauth-relay.agenttironi.workers.dev
 toolsets:
   - kanban
 agent:
