@@ -6,19 +6,52 @@
 
 <h1 align="center">Zoen</h1>
 
-<p align="center"><strong>Bring your dreams to life.</strong></p>
+<p align="center"><strong>big dreams. everyday problems. one little monster.</strong></p>
 
-<p align="center">Your personal agent, over iMessage.</p>
+<p align="center">life happens. text zoen.</p>
 
-You already know what you want.
-You text it.
+i'm zoen. your little monster in iMessage.
 
-Research, documents, plans, reminders, connected accounts, or software.
-Zoen follows through and brings the result back to your phone.
-For software, the review still comes with pictures and video.
+the week that needs a plan. the place you need to find.
+the idea that won't leave you alone. the work that keeps following you home.
 
-No dashboard. No ticket. No waiting room.
-A little monster who makes the thing.
+text me. let's get it done.
+
+## your life. your work. your zoen.
+
+Start with what you need. These are things to ask for, using the accounts you
+connect and the tools available for the task:
+
+- **"help me get this week under control."** Turn scattered notes into a plan,
+  keep useful details, and set reminders.
+- **"find a good spot for saturday."** Compare places and reviews. Bring back a
+  shortlist with the details that matter to you.
+- **"catch me up before this meeting."** Research the company, recent news,
+  and the notes in your connected workspace.
+- **"what should i make next?"** Explore search demand, social trends, and
+  audience comments. Turn the findings into a content brief.
+- **"find the right customers for this."** Research companies and business
+  contacts. Prepare a lead list and outreach drafts for you to review.
+- **"i have an idea for an app."** Build it, test it, and bring back a working
+  result with pictures or video.
+
+## your apps, connected.
+
+Ask to connect a service in your private iMessage conversation. Open the sign-in
+link, choose what Zoen can access, and come back to the same chat.
+
+The native Hermes catalog includes services such as Notion, Todoist, Linear,
+and Canva. [Treg](https://treg.to/use-cases) adds access to **thousands of API
+tools** for research, search, social trends, business data, and creative work.
+Zoen finds the tool for the job as you need it.
+
+Connectors use your account and the permissions you grant. Treg's paid calls use
+your Treg balance; Zoen asks for a budget before spending it. Thousands refers to
+API tools in Treg's catalog, spread across dozens of providers. Availability and
+account requirements vary by tool. See the [integration catalog](docs/INTEGRATIONS.md)
+for supported services and what we have validated.
+
+less to juggle. more life.
 
 ## Start
 
@@ -46,10 +79,10 @@ MIT. Built on [Plow](https://plow.co). Want to help? Open a pull request. `main`
 
 ## Working on Zoen
 
-The voice stays the same. Reception now acknowledges an owner's message burst
-independently of model and attachment latency. Google/Slack connection lifecycle
-is available through `zoen_connections` in the owner's iMessage DM; consent stays
-with Plow and the provider. No separate Zoen website is required.
+The voice stays the same. Reception acknowledges an owner's message burst
+independently of the main agent's response. `zoen_connections` manages native
+Hermes OAuth and public MCP connections in the owner's iMessage DM. The callback
+relay supports cloud sign-in without opening ports or changing Plow infrastructure.
 
 See [implementation and validation](docs/RUNTIME.md) for the five-second target,
 current connector limits, checks and rollout procedure. These changes need a new

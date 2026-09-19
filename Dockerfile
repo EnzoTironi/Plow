@@ -9,7 +9,7 @@ FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-ef0019372ff8bca593611b31ebd2
 ENV HERMES_YOLO_MODE=1
 ENV AGENT_ID=zoen
 ENV AGENT_NAME=Zoen
-ENV AGENT_BLURB="Your personal agent, over iMessage. Text what you need. Zoen follows through."
+ENV AGENT_BLURB="big dreams. everyday problems. one little monster. i'm zoen. text me on iMessage. plan your week, find a place, research a company, spot trends, create content, build an app. your apps, connected. thousands of API tools through Treg. less to juggle. more life."
 
 # Scanner + canvas CLIs (deterministic). Node 22 if the base is older.
 # gh is GitHub (PRs, comments, merge). Prove-as-user is skill prove.
