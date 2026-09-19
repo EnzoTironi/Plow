@@ -1,7 +1,7 @@
 # Zoen
 
-Um monstrinho. Sua fábrica de software.
-A little monster. Your software factory.
+Um monstrinho. Seu agente pessoal no iMessage.
+A little monster. Your personal agent over iMessage.
 
 ## Um clique / One click
 
@@ -39,3 +39,7 @@ Sair: `./bin/plow-agents lines` e `./bin/plow-agents revoke ln_…`
 
 Docker local, com Docker aberto: `./install.sh --local`.
 `docker compose down` guarda a memória. `down -v` apaga tudo.
+
+Para testar as mudanças deste checkout e preparar uma atualização, veja
+[runtime e validação](RUNTIME.md). O instalador público usa a imagem publicada;
+ele não atualiza automaticamente uma instância existente com o código deste checkout.

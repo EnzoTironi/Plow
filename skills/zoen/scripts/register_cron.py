@@ -13,30 +13,24 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 HERMES = "/opt/hermes/bin/hermes"
-JOBS_FILE = "/var/lib/hermes/cron/jobs.json"
+JOBS_FILE = str(Path(os.environ.get("HERMES_HOME", "/var/lib/hermes")) / "cron/jobs.json")
 NAME = "zoen-floor"
 SCHEDULE = "0 */2 * * *"
 PROMPT = (
-    "Run skill zoen, cron section. Face: the owner never sees the machinery. "
-    "context.py dump first, then NOW.md. If the dump is a First-Run Ritual "
-    "and NOW.md is empty, [SILENT]. Never block; iMessage only "
-    "notifies, max two lines per bubble via plow_send_sequence with pauses "
-    "1.75s then 2s; more bubbles if needed. Always send pictures and video "
-    "(MEDIA: each file its own bubble). watch.py snapshot first. If alerts, "
-    "heal the worktree, never Latch never deploy production; open a PR with "
-    "zoen-review media if you can; notify then end. Then gh pr list --state open; "
-    "for each: gh pr checks and gh pr view --comments. New comments or failing "
-    "checks: skill_view babysit and prove in the container, never Latch. Merge "
-    "only if NOW risk is low and prove is green. High risk: notify, do not merge "
-    "from cron. Else if NOW.md issues or open GitHub issues, continue that station; "
-    "if empty and no PR work, [SILENT]. Do not re-ask. Never install. "
-    "Never send https://plow.co/latch from cron. Do not name tools or files "
-    "in the bubbles. No em dash, no title case, no all caps. match their casing. "
-    "lowercase if they do. never a period at the end of a bubble. "
-    "Same language as VOICE.md / their last text. Never English after "
-    "Portuguese."
+    "Run skill zoen, cron section. Keep the existing voice. Read context.py dump and "
+    "the native Kanban's active tasks. Resume only work the owner already authorized; "
+    "respect cancellation, task scope, account and deadline. Check pending connections "
+    "with connect.py status and resume only after the expected account is connected. "
+    "Use dedicated cron jobs for actual reminders, not this maintenance cadence. "
+    "Preserve legacy software work named in NOW.md or GITHUB_REPO: use the software "
+    "maintenance section for those tasks only. Never invent a project or scan unrelated repos. "
+    "Notify via plow_send_sequence only for a completed result, a meaningful change, "
+    "failure or required input. If nothing needs them, [SILENT]. No periodic check-in. "
+    "Never onboard, install, use Latch, spend money or deploy production from cron. "
+    "Use their language and casing. Short bubbles, same personality."
 )
 
 
@@ -77,11 +71,20 @@ def main(home_channel, jobs_path=JOBS_FILE, run=subprocess.run):
                 deliver,
             ]
         ).returncode
-    if job["deliver"] == deliver:
+    schedule = job.get("schedule")
+    if isinstance(schedule, dict):
+        schedule = schedule.get("expr")
+    changes = []
+    for flag, actual, desired in (("--deliver", job.get("deliver"), deliver),
+                                   ("--prompt", job.get("prompt"), PROMPT),
+                                   ("--schedule", schedule, SCHEDULE)):
+        if actual != desired:
+            changes.extend((flag, desired))
+    if not changes:
         print(f"zoen-floor: already registered for {deliver}")
         return 0
     return run(
-        [HERMES, "cron", "edit", job["id"], "--deliver", deliver]
+        [HERMES, "cron", "edit", job["id"], *changes]
     ).returncode
 
 

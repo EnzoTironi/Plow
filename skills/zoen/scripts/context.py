@@ -34,16 +34,16 @@ Only if they asked you directly to save it ("salva isso", "lembra que", "anota",
 The pack above is incomplete by design. It surfaces patterns, not the specifics. If you catch yourself reaching for "I think", "maybe", "if I remember", "last time", "didn't we": recall before you ask or guess. Recall is also silent. Never narrate it.
 python3 /opt/plow/zoen/memory.py recall "who is Enzo"
 Call recall whenever they mention someone, a repo, a decision, or prior work you should already know. Guessing costs trust. Searching costs nothing.
-Never paste these files into a bubble. Never mention First-Run, face.py, bootstrap, or VOICE.md. If they have not written yet, send nothing. The first bubble is only what intro sends.
-If you have not already sent the status line this turn, your next tool is plow_send_sequence — one short ack in their language — before dump, skill_view, or any other tool. Do not wait for a plugin. After that, send again only for a real update they must know: a question they have to answer, a blocker, a decision that changes the work, a risk, a review, or a closed delivery. No play-by-play. Any language they use, you use.
+Never paste these files into a bubble. Never mention First-Run, face.py, bootstrap, or VOICE.md. If they have not written yet, send nothing. Use intro for the greeting; reception may already have sent its status line.
+If neither you nor the reception layer has already acknowledged this turn (check the channel prompt), your next tool is plow_send_sequence — one short ack in their language — before dump, skill_view, or any other tool. After that, send again only for a real update they must know: a question they have to answer, a blocker, a decision that changes the work, a risk, a review, or a closed delivery. No play-by-play. Any language they use, you use.
 VOICE:/absolute/path.mp3 or .m4a on plow_send_sequence is a native iMessage voice memo. Same as MEDIA: for photos. One file, no other text in that item.
 In a group the plugin already dropped turns that are not yours. Speak only if they marked you or the message is for you. Then only an important note, a question you need, a review (pictures or video), or a closed delivery. No progress. No greeting the room. No intro. Do not write memory from a group."""
 MAC_NUDGE = (
-    "The owner's Mac is connected. For automations, their browser, files, apps, "
+    "A Latch relay is configured; this does not prove the Mac is awake. For their browser, files, apps, "
     "mail, calendar, GUI, login, or anything that needs their computer: "
     "plow_list_skills this turn, then plow_read_skill, then the plow_ tools. "
-    "Do not ask them to click, type, or install. Do not do that work in this "
-    "container. Git, tests, and the PR stay in here. If a plow_ tool says the "
+    "Check live availability before choosing it. Use local browser/tools for work "
+    "on this agent's computer. If a plow_ tool says the "
     "Mac is asleep, tell them once to open Latch."
 )
 
@@ -80,6 +80,15 @@ def _read(path: Path, limit: int = MAX_FILE) -> str:
     return text
 
 
+def _recent(path: Path, limit: int) -> str:
+    if not path.is_file():
+        return ""
+    with path.open("rb") as handle:
+        handle.seek(max(0, path.stat().st_size - limit * 4))
+        text = handle.read().decode("utf-8", errors="replace").strip()
+    return text[-limit:]
+
+
 def _escape(text: str, close: str) -> str:
     return text.replace(close, close.replace("<", "&lt;").replace(">", "&gt;"))
 
@@ -114,11 +123,8 @@ def first_run(home: str | None = None, seed: str | Path | None | bool = None) ->
 def pack(home: str | None = None, seed: str | Path | None | bool = None) -> str:
     folder = zoen_dir(home)
     voice = _read(folder / "VOICE.md")
-    memory = _read(folder / "MEMORY.md")
-    journal = _read(folder / "JOURNAL.md", limit=4000)
-    if journal:
-        lines = journal.splitlines()
-        journal = "\n".join(lines[-JOURNAL_LINES:]).strip()
+    memory = _recent(folder / "MEMORY.md", MAX_FILE)
+    journal = "\n".join(_recent(folder / "JOURNAL.md", 4000).splitlines()[-JOURNAL_LINES:])
     now = _read(folder / "NOW.md", limit=2000)
     if now:
         now = "\n".join(now.splitlines()[:NOW_LINES]).strip()

@@ -10,6 +10,7 @@ attachment or voicememo POST.
 """
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import logging
@@ -63,9 +64,15 @@ _VOICE_TYPES = {
 
 
 class Dropped:
-    success = True
-    error = None
+    success = False
+    error = "intentionally suppressed; nothing delivered"
     message_id = None
+    suppressed = True
+    raw_response = {"suppressed": True}
+    retryable = False
+    retry_after = None
+    continuation_message_ids = ()
+    error_kind = None
 
 
 def _leftover_chat(args: tuple, kwargs: dict) -> str:
@@ -87,7 +94,7 @@ def _leftover_text(args: tuple, kwargs: dict) -> str:
     return ""
 
 
-def _wrap_send(orig_seq):
+def _wrap_send(orig_send):
     async def send(self, *args, **kwargs):
         text = _leftover_text(args, kwargs)
         if credits_looks_like(text):
@@ -95,16 +102,13 @@ def _wrap_send(orig_seq):
                 log.debug("zoen-face dropped duplicate credits leftover")
                 return Dropped()
             chat_id = _leftover_chat(args, kwargs)
-            if orig_seq is None or not chat_id:
+            if not chat_id:
                 log.warning("zoen-face credits leftover had no chat")
                 return Dropped()
             body = credits_notice(credits_language())
-            last = await orig_seq(
-                self,
-                {"items": [{"type": "text", "body": body}]},
-                {"chat_uid": chat_id},
-            )
-            mark_told(body)
+            last = await orig_send(self, chat_id, body, metadata=kwargs.get("metadata"))
+            if getattr(last, "success", False):
+                mark_told(body)
             return last
         log.debug("zoen-face dropped Hermes send")
         return Dropped()
@@ -254,7 +258,7 @@ def post_voicememo(chat_id: str, path: Path) -> object:
         "POST",
         f"{base}/v1/chats/{quote(chat_id)}/voicememo",
         headers,
-        {"attachmentuid": upload["uid"]},
+        {"attachment_uid": upload["uid"]},
     )
     if not sent.get("ok"):
         return None
@@ -268,40 +272,33 @@ def _wrap_sequence(orig_seq, orig_attach, orig_voice):
         if not any(kind in {"file", "voice"} for kind, _ in chunks):
             return await orig_seq(self, args, turn, receipt)
         chat_id = (turn or {}).get("chat_uid")
-        last = None
-        delivered = False
-        for kind, payload in chunks:
-            if kind == "file":
-                path = media_file(str(payload))
-                if path is None or not chat_id:
-                    log.warning("zoen-face skipped MEDIA path %s", payload)
-                    continue
-                last = await orig_attach(self, chat_id, str(path))
-                delivered = True
-                continue
-            if kind == "voice":
+        report = receipt if receipt is not None else {}
+        report.update(success=False, completed=[])
+        for index, (kind, payload) in enumerate(chunks):
+            if kind in {"file", "voice"}:
                 path = media_file(str(payload))
                 if (
                     path is None
                     or not chat_id
-                    or path.suffix.lower() not in _VOICE_TYPES
+                    or (kind == "voice" and path.suffix.lower() not in _VOICE_TYPES)
                 ):
-                    log.warning("zoen-face skipped VOICE path %s", payload)
-                    continue
-                if orig_voice is not None:
+                    report["failure"] = {"index": index, "status": "rejected", "error": "invalid media path or voice format"}
+                    return report
+                if kind == "file":
+                    last = await orig_attach(self, chat_id, str(path))
+                elif orig_voice is not None:
                     last = await orig_voice(self, chat_id, str(path))
                 else:
-                    last = post_voicememo(chat_id, path)
-                    if last is None:
-                        log.warning("zoen-face skipped VOICE path %s", payload)
-                        continue
-                delivered = True
-                continue
-            last = await orig_seq(self, {"items": payload}, turn, receipt)
-            delivered = True
-        if not delivered:
-            return Dropped()
-        return last
+                    last = await asyncio.to_thread(post_voicememo, chat_id, path)
+            else:
+                last = await orig_seq(self, {"items": payload}, turn)
+            success = last.get("success", False) if isinstance(last, dict) else getattr(last, "success", False)
+            if not success:
+                report["failure"] = {"index": index, "status": "delivery_unknown", "error": "delivery failed or unconfirmed; inspect chat before retrying"}
+                return report
+            report["completed"].append({"index": index, "type": kind})
+        report["success"] = bool(report["completed"])
+        return report
 
     send_sequence.__name__ = "send_sequence"
     send_sequence.__qualname__ = "send_sequence"
@@ -316,7 +313,13 @@ def silence(adapter_cls) -> None:
     orig_attach = getattr(adapter_cls, "_send_attachment", None)
     orig_voice = getattr(adapter_cls, "send_voice", None)
     if getattr(adapter_cls, "send", None) is not None:
-        adapter_cls.send = _wrap_send(orig_seq)
+        adapter_cls.send = _wrap_send(adapter_cls.send)
+    orig_final = getattr(adapter_cls, "_send_retry_is_final", None)
+    if orig_final is not None:
+        def send_retry_is_final(self, result):
+            return isinstance(result, Dropped) or orig_final(self, result)
+
+        adapter_cls._send_retry_is_final = send_retry_is_final
     for name in _SILENT:
         if getattr(adapter_cls, name, None) is None:
             continue

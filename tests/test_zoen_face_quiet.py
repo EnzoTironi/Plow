@@ -5,6 +5,7 @@ import importlib.util
 import os
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
@@ -21,7 +22,7 @@ def _adapter():
 
         async def send(self, chat_id, content, reply_to=None, metadata=None):
             self.posted.append(("send", content))
-            return "sent"
+            return SimpleNamespace(success=True, error=None)
 
         async def send_or_update_status(self, chat_id, status_key, content, metadata=None):
             self.posted.append(("status", content))
@@ -33,15 +34,15 @@ def _adapter():
 
         async def send_voice(self, chat_id, audio_path, caption=None, **_kwargs):
             self.posted.append(("voice", audio_path))
-            return type("Result", (), {"success": True, "error": None})()
+            return SimpleNamespace(success=True, error=None)
 
         async def send_sequence(self, args, turn, receipt=None):
             self.posted.append(("sequence", args))
-            return "sequence"
+            return {"success": True, "completed": []}
 
         async def _send_attachment(self, chat_id, path, *, caption=None, filename=None):
             self.posted.append(("file", path))
-            return type("Result", (), {"success": True, "error": None})()
+            return SimpleNamespace(success=True, error=None)
 
         async def send_typing(self, chat_id, metadata=None):
             self.posted.append(("typing", chat_id))
@@ -67,20 +68,8 @@ def test_leftover_credits_error_becomes_the_dashboard_bubble():
             asyncio.run(box.send("cht_x", blob))
         finally:
             os.environ.pop("HERMES_HOME", None)
-    assert box.posted == [
-        (
-            "sequence",
-            {
-                "items": [
-                    {
-                        "type": "text",
-                        "body": quiet.credits_notice("en"),
-                    }
-                ]
-            },
-        )
-    ]
-    assert result == "sequence"
+    assert box.posted == [("send", quiet.credits_notice("en"))]
+    assert result.success is True
 
 
 def test_leftover_send_never_posts():
@@ -89,8 +78,8 @@ def test_leftover_send_never_posts():
     box = Adapter()
     result = asyncio.run(box.send("cht_x", "Still building. Ending turn."))
     assert box.posted == []
-    assert result.success is True
-    assert result.error is None
+    assert result.success is False
+    assert result.suppressed is True
 
 
 def test_send_sequence_still_runs():
@@ -99,7 +88,7 @@ def test_send_sequence_still_runs():
     box = Adapter()
     args = {"items": [{"type": "text", "body": "shipped"}]}
     result = asyncio.run(box.send_sequence(args, {"chat_uid": "cht_x"}))
-    assert result == "sequence"
+    assert result["success"] is True
     assert box.posted == [("sequence", args)]
 
 
@@ -157,7 +146,7 @@ def test_media_outside_workspace_is_not_posted_as_text():
     finally:
         quiet.log.disabled = False
     assert box.posted == []
-    assert result.success is True
+    assert result["success"] is False
 
 
 def test_silence_is_idempotent():
@@ -228,6 +217,32 @@ def test_missing_adapter_does_not_raise():
         quiet.silence_plow_adapter()
     finally:
         quiet.log.disabled = False
+
+
+def test_failed_media_does_not_become_a_successful_text_delivery(tmp_path):
+    Adapter = _adapter()
+
+    async def failed(self, *args, **kwargs):
+        self.posted.append(("failed_file", args))
+        return SimpleNamespace(success=False, error="network timeout")
+
+    Adapter._send_attachment = failed
+    saved = quiet._MEDIA_ROOTS
+    quiet._MEDIA_ROOTS = (tmp_path,)
+    path = tmp_path / "test.png"
+    path.write_bytes(b"image fixture")
+    try:
+        quiet.silence(Adapter)
+        box = Adapter()
+        result = asyncio.run(box.send_sequence({"items": [
+            {"type": "text", "body": f"MEDIA:{path}"},
+            {"type": "text", "body": "done"},
+        ]}, {"chat_uid": "cht_x"}))
+        assert result["success"] is False
+        assert result["failure"]["status"] == "delivery_unknown"
+        assert len(box.posted) == 1
+    finally:
+        quiet._MEDIA_ROOTS = saved
 
 
 if __name__ == "__main__":

@@ -8,13 +8,14 @@
 
 <p align="center"><strong>Bring your dreams to life.</strong></p>
 
-<p align="center">Your Software Factory.</p>
+<p align="center">Your personal agent, over iMessage.</p>
 
 You already know what you want.
 You text it.
 
-A movie of the product comes back to your phone.
-The same one waits on the pull request.
+Research, documents, plans, reminders, connected accounts, or software.
+Zoen follows through and brings the result back to your phone.
+For software, the review still comes with pictures and video.
 
 No dashboard. No ticket. No waiting room.
 A little monster who makes the thing.
@@ -42,3 +43,14 @@ curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | s
 ```
 
 MIT. Built on [Plow](https://plow.co). Want to help? Open a pull request. `main` stays protected.
+
+## Working on Zoen
+
+The voice stays the same. Reception now acknowledges an owner's message burst
+independently of model and attachment latency. Google/Slack connection lifecycle
+is available through `zoen_connections` in the owner's iMessage DM; consent stays
+with Plow and the provider. No separate Zoen website is required.
+
+See [implementation and validation](docs/RUNTIME.md) for the five-second target,
+current connector limits, checks and rollout procedure. These changes need a new
+image on an existing installation; changing this checkout does not update live agents.

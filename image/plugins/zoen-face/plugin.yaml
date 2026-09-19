@@ -1,5 +1,5 @@
 name: zoen-face
-version: 1.0.0
-description: Intro and leftover send wrap. Groups stay quiet unless they are for Zoen.
+version: 1.1.0
+description: Fast reception, first-contact continuity, and account connections in iMessage.
 hooks:
   - pre_gateway_dispatch

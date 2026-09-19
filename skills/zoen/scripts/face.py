@@ -1068,7 +1068,7 @@ def greet_on_dispatch(
     except (Exception, SystemExit):
         return {"action": "allow"}
     if payload.get("ok"):
-        return {"action": "skip", "reason": "zoen intro"}
+        return {"action": "allow", "reason": "zoen intro delivered; preserve first request"}
     return {"action": "allow"}
 
 

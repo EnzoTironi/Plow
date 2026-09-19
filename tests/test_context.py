@@ -123,6 +123,7 @@ def test_pack_does_not_treat_an_acked_file_as_plugin_ack():
         packed = context.pack(d, seed=False)
         assert "<acked>" not in packed
         assert "plugin already sent" not in packed
+        assert "reception layer" in packed
         assert "your next tool is plow_send_sequence" in packed
 
 
@@ -137,6 +138,23 @@ def test_pack_does_not_push_the_mac_when_latch_is_off():
     with env(PLOW_MCP_URL=None):
         packed = context.pack("/tmp/zoen-context-missing-home", seed=False)
     assert context.MAC_NUDGE not in packed
+
+
+def test_long_journal_keeps_latest_entry(tmp_path):
+    folder = tmp_path / "zoen"
+    folder.mkdir()
+    (folder / "JOURNAL.md").write_text("old entry\n" * 1000 + "latest deadline correction\n")
+    packed = context.pack(str(tmp_path), seed=False)
+    assert "latest deadline correction" in packed
+    assert packed.count("old entry") <= 11
+
+
+def test_long_memory_pack_keeps_latest_correction(tmp_path):
+    folder = tmp_path / "zoen"
+    folder.mkdir()
+    (folder / "MEMORY.md").write_text("old fact\n" * 2000 + "corrected deadline Friday\n")
+    packed = context.pack(str(tmp_path), seed=False)
+    assert "corrected deadline Friday" in packed
 
 
 if __name__ == "__main__":

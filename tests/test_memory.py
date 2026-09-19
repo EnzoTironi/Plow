@@ -37,6 +37,25 @@ def test_remember_rejects_blank_facts():
         assert wrote["ok"] is False
 
 
+def test_recent_fact_wins_search_ties(tmp_path):
+    memory.remember([f"contract deadline {i}" for i in range(20)], home=str(tmp_path))
+    found = memory.recall("contract deadline", home=str(tmp_path))
+    assert found["hits"][0]["text"].endswith("deadline 19")
+
+
+def test_correct_and_forget_remove_old_copies(tmp_path):
+    home = str(tmp_path)
+    memory.remember(["deadline Monday", "unrelated fact"], home=home)
+    (tmp_path / "zoen" / "JOURNAL.md").write_text("deadline Monday\nkeep this last line")
+    assert memory.revise("deadline Monday", "deadline Friday", home)["changed"] == 2
+    assert memory.recall("Monday", home)["hits"] == []
+    assert memory.recall("Friday", home)["hits"]
+    assert "keep this last line\n- " in (tmp_path / "zoen" / "JOURNAL.md").read_text()
+    assert memory.revise("deadline Friday", home=home)["changed"] == 2
+    assert memory.recall("Friday", home)["hits"] == []
+    assert memory.recall("unrelated", home)["hits"]
+
+
 if __name__ == "__main__":
     test_remember_writes_facts_that_recall_finds()
     test_recall_returns_no_hits_in_an_empty_home()
