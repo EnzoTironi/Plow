@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 """Run: python3 tests/test_agent_index_service.py (no dependencies)."""
 import json
-import os
 import pathlib
-import re
-import subprocess
-import tempfile
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -13,25 +9,19 @@ SERVICE = ROOT / "image/s6-overlay/s6-rc.d/agent-index"
 
 
 def test_wiring():
-    assert (SERVICE / "type").read_text().strip() == "longrun"
-    assert (SERVICE / "dependencies.d/plow-init").exists()
-    assert (ROOT / "image/s6-overlay/s6-rc.d/user/contents.d/agent-index").exists()
+    # The base image ships the usage reporter; a copy here would shadow it.
+    assert not SERVICE.exists()
+    assert not (ROOT / "image/s6-overlay/s6-rc.d/user/contents.d/agent-index").exists()
     assert (ROOT / "image/s6-overlay/s6-rc.d/user/contents.d/zoen-floor-cron").exists()
-    pin = (ROOT / "vendor/client.pin").read_text()
-    assert re.search(r"^sha=[0-9a-f]{40}$", pin, re.M)
-    assert re.search(r"^sha256=[0-9a-f]{64}$", pin, re.M)
     dockerfile = (ROOT / "Dockerfile").read_text()
-    assert "vendor/client.pin" in dockerfile and "sha256sum" in dockerfile
+    assert "vendor/client.pin" not in dockerfile
     assert "lid.176.ftz" in dockerfile
     assert "COPY skills/zoen/scripts/" in dockerfile
     assert "ENV AGENT_ID=zoen" in dockerfile
     assert "ENV AGENT_NAME=Zoen" in dockerfile
     assert "ENV AGENT_BLURB=" in dockerfile
-    assert "base-42cb36ed16f513e9c7461b3f355acec181c8a26d" in dockerfile
-    assert "sha256:7bb771761c075ef3736c4cc7bdc48402ce325ed35b5efb529b1b31ec7956fd40" in dockerfile
-    run = (SERVICE / "run").read_text()
-    assert "PLOW_AGENT_TOKEN" + "=" not in run
-    assert "--name" in run and "--blurb" in run
+    assert "base-ef0019372ff8bca593611b31ebd2e08f9f1458ff" in dockerfile
+    assert "sha256:a8a2f97ad78b8192d80a984dce81d3bf5a9a883d18cb7b677704913a09b56aee" in dockerfile
     compose = (ROOT / "compose.yml").read_text()
     assert "AGENT_ID: ${AGENT_ID:-zoen}" in compose
     assert "AGENT_NAME: ${AGENT_NAME:-Zoen}" in compose
@@ -42,24 +32,6 @@ def test_wiring():
     assert 'image = "ghcr.io/enzotironi/zoen/all-in-one:v1"' in (
         ROOT / "plow-agents.toml"
     ).read_text()
-
-
-def test_stands_down_without_agent_id():
-    script = (SERVICE / "run").read_text()
-    with tempfile.TemporaryDirectory() as d:
-        sandbox = pathlib.Path(d) / "run.sh"
-        sandbox.write_text(script)
-        sandbox.chmod(0o755)
-        env = {"PATH": os.environ["PATH"], "PLOW_AGENT_TOKEN": "plow_atokenshapedthing"}
-        try:
-            done = subprocess.run(["sh", str(sandbox)], capture_output=True,
-                                  timeout=2, env=env)
-            said = (done.stdout or b"") + (done.stderr or b"")
-        except subprocess.TimeoutExpired as expired:
-            said = (expired.stdout or b"") + (expired.stderr or b"")
-        text = said.decode() if isinstance(said, bytes) else said
-        assert "standing down" in text
-        assert "AGENT_ID" in text
 
 
 def test_gitignore_blocks_credentials():
@@ -99,7 +71,6 @@ def test_stories_and_install_lead_with_one_click():
 
 if __name__ == "__main__":
     test_wiring()
-    test_stands_down_without_agent_id()
     test_gitignore_blocks_credentials()
     test_stories_and_install_lead_with_one_click()
     time.sleep(0)
