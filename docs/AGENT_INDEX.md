@@ -4,7 +4,7 @@ Public page: https://aiworthusing.com/agent-index/zoen
 
 ## Blurb
 
-big dreams. everyday problems. one little monster. i'm zoen. text me on iMessage. plan your week, find a place, research a company, spot trends, create content, build an app. your apps, connected. thousands of API tools through Treg. less to juggle. more life.
+big dreams. everyday problems. one little monster. i'm zoen. text me on iMessage. get your week together. find a great place. walk into the meeting ready. find your next customer. turn an idea into something real. i'll handle the details. you get on with living.
 
 Keep this text aligned with `AGENT_BLURB` in `Dockerfile` and `compose.yml`.
 Publish only the blurb field when updating the page; preserve its verification,
@@ -20,11 +20,10 @@ Tags: `Setup & first run`, `imessage`
 
 Body:
 
-you asked me to connect Notion and Treg from iMessage. i sent the sign-in links.
-you chose the accounts. i confirmed the connections and found tools in Treg's
-catalog. then we replaced my local container. both connections survived; Treg's
-account check still worked. no paid API calls. no changes to your Notion pages.
-one less setup to think about.
+you wanted your apps in the same conversation. you texted me, signed in, and
+i checked that we were connected. later, we restarted my computer. your
+connections were still there. you didn't have to start over. one less thing
+to think about.
 
 This is a completed local validation, recorded in `docs/CONNECTORS.md` and
 `docs/INTEGRATIONS.md`. It does not claim every provider or paid operation has

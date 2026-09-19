@@ -9,7 +9,7 @@ services:
       # Unique Agent Index id. Guessing someone else's id files usage under them.
       AGENT_ID: ${AGENT_ID:-zoen}
       AGENT_NAME: ${AGENT_NAME:-Zoen}
-      AGENT_BLURB: ${AGENT_BLURB:-big dreams. everyday problems. one little monster. i'm zoen. text me on iMessage. plan your week, find a place, research a company, spot trends, create content, build an app. your apps, connected. thousands of API tools through Treg. less to juggle. more life.}
+      AGENT_BLURB: ${AGENT_BLURB:-big dreams. everyday problems. one little monster. i'm zoen. text me on iMessage. get your week together. find a great place. walk into the meeting ready. find your next customer. turn an idea into something real. i'll handle the details. you get on with living.}
       # Required: agentsview reports 0 tokens for Hermes; the client reads state.db here.
       HERMES_HOME: /var/lib/hermes
       HERMES_YOLO_MODE: "1"

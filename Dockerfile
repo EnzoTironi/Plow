@@ -9,7 +9,6 @@ FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-ef0019372ff8bca593611b31ebd2
 ENV HERMES_YOLO_MODE=1
 ENV AGENT_ID=zoen
 ENV AGENT_NAME=Zoen
-ENV AGENT_BLURB="big dreams. everyday problems. one little monster. i'm zoen. text me on iMessage. plan your week, find a place, research a company, spot trends, create content, build an app. your apps, connected. thousands of API tools through Treg. less to juggle. more life."
 
 # Scanner + canvas CLIs (deterministic). Node 22 if the base is older.
 # gh is GitHub (PRs, comments, merge). Prove-as-user is skill prove.
@@ -104,6 +103,9 @@ RUN chmod 0644 /opt/hermes/plugins/zoen-face/plugin.yaml /opt/hermes/plugins/zoe
  && chmod 0755 /opt/hermes/plow-init-then-face.sh \
  && chmod 0755 /etc/s6-overlay/s6-rc.d/zoen-floor-cron/run \
  && /opt/hermes/.venv/bin/python /opt/hermes/enable-zoen-face.py
+
+# Public page copy does not invalidate the tool-install layers.
+ENV AGENT_BLURB="big dreams. everyday problems. one little monster. i'm zoen. text me on iMessage. get your week together. find a great place. walk into the meeting ready. find your next customer. turn an idea into something real. i'll handle the details. you get on with living."
 
 ARG ZOEN_REVISION=unknown
 LABEL org.opencontainers.image.source="https://github.com/EnzoTironi/plow" \

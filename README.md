@@ -19,37 +19,28 @@ text me. let's get it done.
 
 ## your life. your work. your zoen.
 
-Start with what you need. These are things to ask for, using the accounts you
-connect and the tools available for the task:
+the thing you keep putting off? start there.
 
-- **"help me get this week under control."** Turn scattered notes into a plan,
-  keep useful details, and set reminders.
-- **"find a good spot for saturday."** Compare places and reviews. Bring back a
-  shortlist with the details that matter to you.
-- **"catch me up before this meeting."** Research the company, recent news,
-  and the notes in your connected workspace.
-- **"what should i make next?"** Explore search demand, social trends, and
-  audience comments. Turn the findings into a content brief.
-- **"find the right customers for this."** Research companies and business
-  contacts. Prepare a lead list and outreach drafts for you to review.
-- **"i have an idea for an app."** Build it, test it, and bring back a working
-  result with pictures or video.
+- **"my week is a mess."** let's turn the pile into a plan. and keep the
+  important things from slipping through.
+- **"find us somewhere good for saturday."** the place, the reviews, the
+  shortlist. you bring your people.
+- **"i have a meeting in an hour."** who's coming. what they're working on.
+  what you need to know. walk in ready.
+- **"what should i make next?"** find what people care about. turn it into
+  something worth sharing.
+- **"who needs what i'm building?"** find the right companies and people.
+  bring you a list worth talking to.
+- **"this app should exist."** oh, we're doing this. from the first idea
+  to something you can actually use.
 
-## your apps, connected.
+## one conversation. a little less on your plate.
 
-Ask to connect a service in your private iMessage conversation. Open the sign-in
-link, choose what Zoen can access, and come back to the same chat.
+your notes. your work. the things you already use.
+bring them along. tell me what you need.
 
-The native Hermes catalog includes services such as Notion, Todoist, Linear,
-and Canva. [Treg](https://treg.to/use-cases) adds access to **thousands of API
-tools** for research, search, social trends, business data, and creative work.
-Zoen finds the tool for the job as you need it.
-
-Connectors use your account and the permissions you grant. Treg's paid calls use
-your Treg balance; Zoen asks for a budget before spending it. Thousands refers to
-API tools in Treg's catalog, spread across dozens of providers. Availability and
-account requirements vary by tool. See the [integration catalog](docs/INTEGRATIONS.md)
-for supported services and what we have validated.
+you don't have to keep every detail in your head.
+i'll take it from here.
 
 less to juggle. more life.
 
