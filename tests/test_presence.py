@@ -16,6 +16,7 @@ spec.loader.exec_module(presence)
 class Adapter:
     def __init__(self):
         self._chats = {"cht_owner": {"owner": True}}
+        self.auth = {}
         self.typed = []
         self.posts = []
 
@@ -36,12 +37,17 @@ def message(uid, text="faz uma pesquisa", attachments=None):
 def receiver(tmp_path, monkeypatch):
     monkeypatch.setattr(presence, "SILENCE", .025)
     monkeypatch.setattr(presence, "MAX_WAIT", .06)
-    monkeypatch.setattr(presence, "prior_language", lambda: "pt")
+    monkeypatch.setattr(presence, "DRAFT_DELAY", .001)
+
+    async def model_draft(messages, **kwargs):
+        return "vou olhar aquele documento"
+
+    monkeypatch.setattr(presence, "draft", model_draft)
     adapter = Adapter()
-    module = SimpleNamespace(_owner_dm=lambda chat: chat.get("owner", False))
+    module = SimpleNamespace(BASE="http://fixture", _owner_dm=lambda chat: chat.get("owner", False))
     result = presence.Presence(adapter, module, presence.Receipts(tmp_path / "receipts.db"))
 
-    async def post(chat, endpoint, payload):
+    async def post(chat, endpoint, payload, http):
         adapter.posts.append((chat, endpoint, payload))
         return "sent"
 
@@ -69,10 +75,9 @@ def test_burst_one_status_and_reaction_on_last_message(tmp_path, monkeypatch):
 
     asyncio.run(run())
     assert adapter.typed == ["cht_owner"]
-    assert adapter.posts == [
-        ("cht_owner", "messages", {"body": "tô nisso"}),
-        ("cht_owner", "messages/msg_2/reactions", {"operation": "add", "type": "like"}),
-    ]
+    assert len(adapter.posts) == 2
+    assert ("cht_owner", "messages", {"body": "vou olhar aquele documento", "format": "none"}) in adapter.posts
+    assert ("cht_owner", "messages/msg_2/reactions", {"operation": "add", "type": "like"}) in adapter.posts
 
 
 def test_attachment_does_not_block_status_with_real_debounce(tmp_path, monkeypatch):
@@ -87,7 +92,7 @@ def test_attachment_does_not_block_status_with_real_debounce(tmp_path, monkeypat
         await drain(receiving)
         assert 1.9 <= time.monotonic() - started < 5
         assert not unresolved.is_set()
-        assert adapter.posts[0][1] == "messages"
+        assert any(p[1] == "messages" for p in adapter.posts)
 
     asyncio.run(run())
 
@@ -143,6 +148,58 @@ def test_revoked_membership_does_not_send(tmp_path, monkeypatch):
     assert adapter.posts == []
 
 
+def test_permission_read_overlaps_the_burst_window(tmp_path, monkeypatch):
+    receiving, adapter = receiver(tmp_path, monkeypatch)
+    monkeypatch.setattr(presence, "SILENCE", .15)
+
+    async def slow_refresh(chat):
+        await asyncio.sleep(.1)
+
+    adapter._refresh_current_chat = slow_refresh
+
+    async def run():
+        started = time.monotonic()
+        await send_one(receiving)
+        assert time.monotonic() - started < .23
+
+    asyncio.run(run())
+    assert any(p[1] == "messages" for p in adapter.posts)
+
+
+def test_new_message_rechecks_membership_before_sending(tmp_path, monkeypatch):
+    receiving, adapter = receiver(tmp_path, monkeypatch)
+    reads = []
+
+    async def refresh(chat):
+        reads.append(chat)
+        adapter._chats[chat] = {"owner": len(reads) == 1}
+
+    adapter._refresh_current_chat = refresh
+
+    async def run():
+        receiving.accept(message("msg_1"), "cht_owner")
+        await asyncio.sleep(.005)
+        receiving.accept(message("msg_2"), "cht_owner")
+        await drain(receiving)
+
+    asyncio.run(run())
+    assert len(reads) == 2
+    assert adapter.posts == []
+
+
+def test_permission_timeout_never_uses_the_cached_owner(tmp_path, monkeypatch):
+    receiving, adapter = receiver(tmp_path, monkeypatch)
+    monkeypatch.setattr(presence, "REFRESH_TIMEOUT", .01)
+
+    async def unavailable(chat):
+        await asyncio.sleep(.1)
+
+    adapter._refresh_current_chat = unavailable
+    asyncio.run(send_one(receiving))
+    assert adapter.posts == []
+    assert receiving.receipts.state("cht_owner", "msg_1") is None
+
+
 def test_sad_content_does_not_receive_a_like():
     assert presence.reaction("preciso de ajuda, meu pai morreu") is None
 
@@ -176,23 +233,66 @@ def test_status_while_previous_work_is_busy(tmp_path, monkeypatch):
     receiving, adapter = receiver(tmp_path, monkeypatch)
     adapter._live_turns = {"previous": {"chat_uid": "cht_owner", "reply_delivered": False}}
     asyncio.run(send_one(receiving))
-    assert adapter.posts[0][1] == "messages"
+    assert any(p[1] == "messages" for p in adapter.posts)
 
 
-def test_slow_language_detection_uses_prior_without_blocking_receipt(tmp_path, monkeypatch):
+def test_failed_generation_never_sends_a_canned_status(tmp_path, monkeypatch):
     receiving, adapter = receiver(tmp_path, monkeypatch)
-    monkeypatch.setattr(presence, "LANGUAGE_TIMEOUT", .01)
 
-    def slow_language(*args):
-        time.sleep(.15)
-        return "en"
+    async def unavailable(*args, **kwargs):
+        return None
 
-    monkeypatch.setattr(presence, "detect_language", slow_language)
+    monkeypatch.setattr(presence, "draft", unavailable)
 
     async def run():
-        started = time.monotonic()
         await send_one(receiving)
-        assert time.monotonic() - started < .1
+        event = SimpleNamespace(source=SimpleNamespace(chat_id="cht_owner"), message_id="msg_1", channel_prompt="")
+        await receiving.annotate(event)
+        assert "No status line was sent" in event.channel_prompt
+        assert "do not repeat the reaction" in event.channel_prompt
 
     asyncio.run(run())
-    assert adapter.posts[0][2] == {"body": "tô nisso"}
+    assert adapter.posts == [("cht_owner", "messages/msg_1/reactions", {"operation": "add", "type": "like"})]
+    assert receiving.receipts.state("cht_owner", "msg_1") == "reacted"
+
+
+def test_new_message_cancels_the_outdated_opening(tmp_path, monkeypatch):
+    receiving, adapter = receiver(tmp_path, monkeypatch)
+
+    async def model_draft(messages, **kwargs):
+        if len(messages) == 1:
+            await asyncio.sleep(.2)
+            return "a stale opening"
+        return "vou focar no pedido corrigido"
+
+    monkeypatch.setattr(presence, "draft", model_draft)
+
+    async def run():
+        receiving.accept(message("msg_1", "faz uma pesquisa sobre viagens"), "cht_owner")
+        await asyncio.sleep(.01)
+        receiving.accept(message("msg_2", "na verdade, sobre restaurantes"), "cht_owner")
+        await drain(receiving)
+
+    asyncio.run(run())
+    assert [p[2]["body"] for p in adapter.posts if p[1] == "messages"] == ["vou focar no pedido corrigido"]
+
+
+def test_reaction_does_not_wait_for_status_generation(tmp_path, monkeypatch):
+    receiving, adapter = receiver(tmp_path, monkeypatch)
+
+    async def run():
+        release = asyncio.Event()
+
+        async def slow_draft(*args, **kwargs):
+            await release.wait()
+            return "vou separar as opções de viagem"
+
+        monkeypatch.setattr(presence, "draft", slow_draft)
+        receiving.accept(message("msg_1"), "cht_owner")
+        await asyncio.sleep(.08)
+        assert adapter.posts == [("cht_owner", "messages/msg_1/reactions", {"operation": "add", "type": "like"})]
+        release.set()
+        await drain(receiving)
+
+    asyncio.run(run())
+    assert adapter.posts[-1][2]["body"] == "vou separar as opções de viagem"

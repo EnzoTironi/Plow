@@ -17,21 +17,16 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
-from credits import language as prior_language
-from lang import detect_language
+import aiohttp
+
+from statusline import draft
 
 log = logging.getLogger("zoen-presence")
 SILENCE = 2.0
 MAX_WAIT = 3.0
-HTTP_TIMEOUT = 1.4
-REFRESH_TIMEOUT = 0.5
-LANGUAGE_TIMEOUT = 0.2
-ACK = {
-    "pt": "tô nisso", "en": "on it", "es": "voy con eso",
-    "fr": "je m’en occupe", "de": "ich kümmere mich", "it": "ci penso io",
-    "nl": "ik kijk ernaar", "ja": "確認するね", "ko": "확인할게",
-    "zh": "我看看", "ru": "сейчас посмотрю", "ar": "سأرى ذلك",
-}
+HTTP_TIMEOUT = 3.0
+REFRESH_TIMEOUT = 3.0
+DRAFT_DELAY = .3
 CLOSER = re.compile(r"^(?:valeu|thanks|thank you|thx|tks|obrigad[oa]|vlw|tmj|ty|gracias|merci)[\s.!❤️♥👍🙏]*$", re.I)
 REQUEST = re.compile(r"\b(faz|faça|ajuda|pode|consegue|procura|pesquisa|organiza|lembra|cria|quero|preciso|please|can you|could you|help me|find|create|remind|schedule)\b", re.I)
 SENSITIVE = re.compile(r"\b(morreu|morte|suicid\w*|câncer|cancer|abuso|acidente|died|dead|hurt|abuse|assault|kill)\b", re.I)
@@ -87,6 +82,8 @@ class Presence:
         self.adapter, self.module = adapter, module
         home = Path(os.environ.get("HERMES_HOME", "/var/lib/hermes"))
         self.receipts = receipts or Receipts(home / "zoen" / "reception.db")
+        self.home = home
+        self.recent = {}
         self.bursts = {}
         self.tasks = set()
         self.waiting = {}
@@ -111,12 +108,21 @@ class Presence:
                                            "received_at": time.time()}))
         burst = self.bursts.get(chat)
         if burst is None:
-            burst = {"last": now, "messages": [], "changed": asyncio.Event()}
+            burst = {"last": now, "messages": [], "changed": asyncio.Event(),
+                     "http": aiohttp.ClientSession(base_url=self.module.BASE, headers=self.adapter.auth)}
             self.bursts[chat] = burst
             self.spawn(self.typing(chat))
             self.spawn(self.collect(chat, burst))
         burst["messages"].append(message)
         burst["last"] = now
+        # Use the burst's quiet window for the permission read. Restart it on
+        # new input so a long burst never authorizes against an old roster.
+        if burst.get("refresh"):
+            burst["refresh"].cancel()
+        burst["refresh"] = asyncio.create_task(self.refresh(chat))
+        if burst.get("draft"):
+            burst["draft"].cancel()
+        burst["draft"] = asyncio.create_task(self.opening(chat, list(burst["messages"]), burst["http"]))
         burst["changed"].set()
         self.waiting[(chat, message["uid"])] = asyncio.Event()
 
@@ -126,21 +132,44 @@ class Presence:
         except (TimeoutError, OSError):
             log.debug("typing unavailable")
 
+    async def refresh(self, chat):
+        try:
+            await asyncio.wait_for(self.adapter._refresh_current_chat(chat), REFRESH_TIMEOUT)
+            return True
+        except (TimeoutError, OSError, RuntimeError, aiohttp.ClientError) as error:
+            log.warning("reception permission read failed: %s", type(error).__name__)
+            return False
+
+    async def opening(self, chat, messages, http):
+        if all(CLOSER.fullmatch(m["body"].strip()) and not m.get("attachments") for m in messages):
+            return None
+        # Coalesce rapid frames before spending a model request. Both drafting
+        # and authorization run during the normal two-second burst window.
+        await asyncio.sleep(DRAFT_DELAY)
+        return await draft(messages, http=http, home=self.home, recent=self.recent.get(chat, []))
+
     async def collect(self, chat, burst):
-        while True:
-            delay = burst["last"] + SILENCE - time.monotonic()
-            if delay <= 0:
-                break
-            burst["changed"].clear()
-            try:
-                await asyncio.wait_for(burst["changed"].wait(), delay)
-            except TimeoutError:
-                break
-        self.bursts.pop(chat, None)
         messages = burst["messages"]
         try:
-            await self.acknowledge(chat, messages)
+            while True:
+                delay = burst["last"] + SILENCE - time.monotonic()
+                if delay <= 0:
+                    break
+                burst["changed"].clear()
+                try:
+                    await asyncio.wait_for(burst["changed"].wait(), delay)
+                except TimeoutError:
+                    break
+            self.bursts.pop(chat, None)
+            if await burst["refresh"]:
+                await self.acknowledge(chat, messages, burst["draft"], burst["http"])
         finally:
+            if self.bursts.get(chat) is burst:
+                self.bursts.pop(chat)
+            burst["refresh"].cancel()
+            burst["draft"].cancel()
+            await asyncio.gather(burst["refresh"], burst["draft"], return_exceptions=True)
+            await burst["http"].close()
             for message in messages:
                 ready = self.waiting.pop((chat, message["uid"]), None)
                 if ready:
@@ -148,9 +177,8 @@ class Presence:
             log.info("reception %s", json.dumps({"chat": chat, "last_message": messages[-1]["uid"],
                 "elapsed_ms": round((time.monotonic() - burst["last"]) * 1000), "messages": len(messages)}))
 
-    async def acknowledge(self, chat, messages):
-        # Refresh before sending: cached membership alone is not authority.
-        await asyncio.wait_for(self.adapter._refresh_current_chat(chat), REFRESH_TIMEOUT)
+    async def acknowledge(self, chat, messages, opening, http):
+        # collect() has awaited this burst's fresh membership read.
         if not self.module._owner_dm(self.adapter._chats.get(chat, {})):
             return
         if self.adapter._send_guard(chat) is not None:
@@ -160,41 +188,48 @@ class Presence:
         text = "\n".join(m["body"] for m in messages)
         only_closer = all(CLOSER.fullmatch(m["body"].strip()) and not m.get("attachments") for m in messages)
         kind = "like" if only_closer else reaction(text)
-        body = None
-        if not only_closer:
-            language = prior_language()
-            try:
-                language = await asyncio.wait_for(
-                    asyncio.to_thread(detect_language, text[:4096], language), LANGUAGE_TIMEOUT)
-            except TimeoutError:
-                log.debug("language detection timed out; using the owner's prior language")
-            body = ACK.get(language, "on it")
-        results = await asyncio.gather(
-            self.post(chat, "messages", {"body": body}) if body else self.no_post(),
-            self.post(chat, f"messages/{messages[-1]['uid']}/reactions", {"operation": "add", "type": kind}) if kind else self.no_post(),
-        )
+        reaction_task = asyncio.create_task(
+            self.post(chat, f"messages/{messages[-1]['uid']}/reactions", {"operation": "add", "type": kind}, http) if kind else self.no_post())
+        try:
+            body = await opening
+            results = await asyncio.gather(
+                self.post(chat, "messages", {"body": body, "format": "none"}, http) if body else self.no_post(),
+                reaction_task,
+            )
+        finally:
+            reaction_task.cancel()
+            await asyncio.gather(reaction_task, return_exceptions=True)
         state = results[0] if body else results[1]
+        if body and state in ("sent", "uncertain"):
+            self.recent[chat] = (self.recent.get(chat, []) + [body])[-3:]
+        if not body and not only_closer and state in ("sent", "uncertain"):
+            state = "reacted" if state == "sent" else "reaction_uncertain"
         self.receipts.finish(chat, messages, state)
+        log.info("receipt_result %s", json.dumps({"chat": chat, "last_message": messages[-1]["uid"],
+                                                 "status": results[0], "reaction": results[1]}))
 
     async def no_post(self):
         return "skipped"
 
-    async def post(self, chat, endpoint, payload):
-        import aiohttp
+    async def post(self, chat, endpoint, payload, http):
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=HTTP_TIMEOUT)) as http:
-                async with http.post(f"{self.module.BASE}/v1/chats/{chat}/{endpoint}", json=payload, headers=self.adapter.auth) as response:
-                    if response.status in (408, 424) or response.status >= 500:
+            async with http.post(f"/v1/chats/{chat}/{endpoint}", json=payload,
+                                 timeout=aiohttp.ClientTimeout(total=HTTP_TIMEOUT)) as response:
+                if response.status in (408, 424) or response.status >= 500:
+                    return "uncertain"
+                if response.status >= 400:
+                    log.warning("reception POST rejected: endpoint=%s status=%s", endpoint, response.status)
+                    return "failed"
+                if endpoint == "messages":
+                    result = await response.json()
+                    if not isinstance(result, dict) or not result.get("uid"):
                         return "uncertain"
-                    if response.status >= 400:
-                        return "failed"
-                    if endpoint == "messages":
-                        result = await response.json()
-                        if not isinstance(result, dict) or not result.get("uid"):
-                            return "uncertain"
-                        log.info("status_accepted %s", json.dumps({"chat": chat, "message": result["uid"],
-                                                                   "accepted_at": time.time()}))
-                    return "sent"
+                    log.info("status_accepted %s", json.dumps({"chat": chat, "message": result["uid"],
+                                                               "accepted_at": time.time()}))
+                else:
+                    log.info("reaction_accepted %s", json.dumps({"chat": chat, "endpoint": endpoint,
+                                                                 "accepted_at": time.time()}))
+                return "sent"
         except (aiohttp.ClientError, TimeoutError, ValueError):
             return "uncertain"
 
@@ -203,10 +238,16 @@ class Presence:
         ready = self.waiting.get(key)
         if ready:
             try:
-                await asyncio.wait_for(ready.wait(), MAX_WAIT + REFRESH_TIMEOUT + LANGUAGE_TIMEOUT + HTTP_TIMEOUT)
+                await asyncio.wait_for(ready.wait(), MAX_WAIT + REFRESH_TIMEOUT + HTTP_TIMEOUT)
             except TimeoutError:
                 log.warning("reception wait expired; checking durable delivery state")
         state = self.receipts.state(*key)
+        if state in ("reacted", "reaction_uncertain"):
+            event.channel_prompt = (event.channel_prompt or "") + (
+                "\n[Zoen reception]\nOnly a tapback was attempted; do not repeat the reaction. "
+                "No status line was sent. Write your own brief, contextual opening before the work.")
+            event.zoen_reception = state
+            return
         if state not in ("sent", "uncertain", "pending"):
             return
         note = ("Reception already acknowledged this burst. Do not send another status line or tapback. "

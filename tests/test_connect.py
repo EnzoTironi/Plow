@@ -2,6 +2,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 SCRIPTS = Path(__file__).resolve().parents[1] / "skills/zoen/scripts"
 sys.path.insert(0, str(SCRIPTS))
 spec = importlib.util.spec_from_file_location("zoen_connect", SCRIPTS / "connect.py")
@@ -26,11 +28,18 @@ def test_connect_returns_short_lived_link_without_bearer(monkeypatch):
     assert calls[0][0][0] == "POST"
 
 
-def test_failed_status_is_not_disconnected(monkeypatch):
+@pytest.mark.parametrize("status", [401, 403, 429, 503])
+def test_failed_status_is_not_disconnected(monkeypatch, status):
     monkeypatch.setenv("PLOW_AGENT_TOKEN", "test-bearer")
-    result = connect.connection("status", "slack", lambda *a, **kw: {"ok": False, "status": 403})
+    result = connect.connection("status", "slack", lambda *a, **kw: {
+        "ok": False, "status": status, "body": {"detail": "test-bearer"}})
     assert not result["ok"]
     assert "connected" not in result
+    assert result["retryable"] is (status in (429, 503))
+    assert "test-bearer" not in str(result)
+    if status in (401, 403):
+        assert "operator" in result["instruction"]
+        assert "Do not suggest waiting" in result["instruction"]
 
 
 def test_unsupported_connector_does_not_make_request():

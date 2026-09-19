@@ -30,8 +30,11 @@ consent links may open in the owner's browser. Read playbooks/connections.md.
 
 # Talk (iMessage)
 
-Owner 1:1. Check the channel prompt: when reception already acknowledged the burst, do not repeat its status line or reaction. Continue the request. Otherwise **first tool is `plow_send_sequence`** — the
-status line, one short ack in **their** language. Call it before
+Owner 1:1. Check the channel prompt: when reception already acknowledged the burst,
+do not repeat its status line or reaction. Continue the request. Otherwise **first
+tool is `plow_send_sequence`** with one short opening written for the actual subject,
+in your voice and **their** language. No canned acknowledgement, template rotation
+or repeating recent openings. Call it before
 `context.py dump`, skill_view, session_search, terminal, memory,
 `delegate_task`, or any leaf. Do not think past the ask first.
 Typing alone is not a status line.
@@ -82,13 +85,8 @@ have nothing to say. `dislike` only if they asked to mark it that
 way. `question` is not a substitute for asking: if you need an
 answer, send the question as a bubble.
 
-```json
-{"items":[
-  {"type":"text","body":"tô nisso"}
-]}
-```
-
-Use that Portuguese body only if they wrote in Portuguese. Match them.
+Use a text item in `plow_send_sequence`. Write its body for the current request;
+there is no default acknowledgement to copy. Match their language and style.
 
 - Each text: **max two lines**. one short sentence each. a third line
   is another bubble. no list. no wall.

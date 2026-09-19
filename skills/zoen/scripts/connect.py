@@ -36,8 +36,16 @@ def connection(action, connector, http=request):
                   f"{base}/v1/connectors/{slug}/{endpoint}",
                   headers={"Authorization": f"Bearer {token}"}, timeout=10)
     if not result.get("ok"):
-        return {"ok": False, "status": result.get("status"),
-                "error": "Plow connection unavailable or this credential lacks connector permission"}
+        status = result.get("status")
+        if status in (401, 403):
+            return {"ok": False, "status": status, "retryable": False,
+                    "error": "Plow rejected this instance's connector credential or permission",
+                    "instruction": "The instance operator must fix its Plow connector access. "
+                    "Explain that account state could not be checked. Do not suggest waiting "
+                    "and retrying, start an account login, or call the account disconnected."}
+        return {"ok": False, "status": status,
+                "retryable": status in (0, 408, 429) or isinstance(status, int) and status >= 500,
+                "error": "Plow connection service unavailable; account state is unknown"}
     body = result.get("body")
     if not isinstance(body, dict):
         return {"ok": False, "error": "invalid Plow connection response"}

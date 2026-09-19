@@ -50,6 +50,9 @@ async def verify(home):
 
     async def serve(request):
         if request.method == "GET":
+            # Real Plow reads took 0.96–2.49s from the local container. A
+            # zero-latency fixture hid the former 500ms permission timeout.
+            await asyncio.sleep(.8)
             return web.json_response(adapter._chats[request.match_info["chat"]])
         endpoint = request.match_info["endpoint"]
         posted.append((endpoint, await request.json()))
@@ -64,6 +67,14 @@ async def verify(home):
         handed_off.append(event)
 
     api = web.Application()
+
+    async def completion(request):
+        payload = await request.json()
+        assert "msg_last" not in payload["messages"][-1]["content"]
+        assert "faz um resumo do documento" in payload["messages"][-1]["content"]
+        return web.json_response({"choices": [{"message": {"content": "vou olhar o documento e separar o que importa"}}]})
+
+    api.router.add_post("/v1/chat/completions", completion)
     api.router.add_get("/v1/chats/{chat}", serve)
     api.router.add_post("/v1/chats/{chat}/{endpoint:.*}", serve)
     runner = web.AppRunner(api)
@@ -102,6 +113,7 @@ async def verify(home):
     await asyncio.wait_for(asyncio.gather(*adapter._zoen_reception.tasks), 5)
     elapsed = time.monotonic() - last_received
     assert len([p for p in posted if p[0] == "messages"]) == 1, posted
+    assert [p[1]["body"] for p in posted if p[0] == "messages"] == ["vou olhar o documento e separar o que importa"]
     assert [p[0] for p in posted if p[0].endswith("/reactions")] == ["messages/msg_last/reactions"], posted
     assert 1.9 <= elapsed < 5, elapsed
     assert not handed_off, "attachment unexpectedly resolved"
