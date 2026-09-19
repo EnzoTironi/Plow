@@ -9,9 +9,17 @@ Hermes' bundled Google API command implementations are reused through
 
 The implementation and provider-simulated tests are in this branch. Real Google
 account consent and warning-free public authorization have **not** been verified.
-Google remains disabled until operator configuration and the applicable Google
-verification are complete. The agent reports that state instead of offering a
+Public Google capabilities remain disabled until the applicable Google
+verification is complete. The agent reports that state instead of offering a
 broken login link or reverting to Plow.
+
+The dedicated **Zoen iMessage** web client was created in `zoen-506921`, with
+`https://auth.zoen.tironi.xyz/callback` as its only redirect. Its client ID,
+client secret and a stable encryption key are configured as Worker secrets.
+The temporary downloaded credential file was removed after configuration; no
+secret is included in this repository or the image. The custom hostname's
+HTTPS endpoint was checked with certificate validation enabled. The Worker
+capability allowlist is still empty.
 
 The existing Google Cloud project `zoen-506921` was inspected in the owner's
 Console. It is External / Testing, with two existing web clients belonging to the
