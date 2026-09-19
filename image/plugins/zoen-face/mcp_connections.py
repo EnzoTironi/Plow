@@ -123,7 +123,7 @@ class ConnectionJob:
             authorization = "OAuth completed; credentials are saved by Hermes." if self.flow else "Public service enabled; no personal account was connected."
             await self.announce(f"{authorization} Tool loading: {self.status}. "
                                 "Before claiming success, perform one small read; for an account connector verify the account or workspace. "
-                                "For Treg verify identity/team with balance and read catalog_search; do not spend credits for verification. "
+                                "For Treg verify identity/team with balance and query catalog_search for a capability such as web search; do not spend credits for verification. "
                                 "Then resume only the owner's previously requested task, respecting its scope and any cancellation. "
                                 "If no task is pending, report the verified connection concisely. Never substitute a different account.")
         except asyncio.CancelledError:

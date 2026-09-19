@@ -139,7 +139,12 @@ similar speed, not a claim that Luna is always faster. The
 $0.20/M input and $1.20/M output tokens, versus Sonnet at $2/M and $10/M, for the
 short-context pricing tier on 2026-09-19. These are catalog rates, not a guarantee
 of Plow billing. Luna is the main and reception default; only reception explicitly
-disables reasoning. The vision auxiliary remains Sonnet.
+disables reasoning. The vision auxiliary remains Sonnet. The main agent also has
+a native Hermes fallback to Sonnet through the same Plow provider when Luna is
+unavailable. This uses Sonnet's rates when activated. Live Treg validation exposed
+temporary upstream Luna rate limits; a streamed Sonnet response through Plow was
+verified before enabling the fallback. This cannot bypass an outage of Plow itself,
+and the reception call still uses Luna.
 
 With Luna and a reused HTTP session, live measurements were:
 

@@ -47,7 +47,8 @@ Treg is available as `treg` using its official catalog MCP at `/mcp/v2/`. It add
 external API capabilities (research, enrichment, SEO, social data and media), not
 automatic access to all of the owner's personal accounts. Authorize the owner's
 own Treg account/team with the same iMessage flow. Verify using `balance` (identity
-and team) and `catalog_search`, which do not purchase provider calls. Discover by
+and team) and `catalog_search` for a capability such as `web search`; these do not
+purchase provider calls. Discover by
 capability, then inspect `catalog_get` for parameters, provider and current price,
 including any overflow price. Use only the endpoint returned by that catalog.
 

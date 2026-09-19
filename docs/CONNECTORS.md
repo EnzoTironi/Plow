@@ -317,3 +317,10 @@ login; the same read passed again after the expanded-catalog container update.
 One initial page-list read failed because the model supplied an empty cursor;
 the agent recovered with the identity read. No Notion writes were made. Todoist
 consent after the fix and hosted Plow rollout remain unvalidated.
+
+Treg also completed real consent from iMessage. The agent read `balance` and
+`catalog_search`, then confirmed the connection through `plow_send_sequence`.
+A fresh process reused the token, verified the same identity/team and retrieved
+three catalog matches for `web search`. The agent's initial verification query
+matched no endpoints; the account read still succeeded. No `catalog_call_read` or
+`catalog_call_write` was invoked, and no provider calls were purchased.

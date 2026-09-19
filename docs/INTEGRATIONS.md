@@ -10,9 +10,9 @@ Notion has completed real phone consent, an identity read and token reuse in a f
 
 ## Treg
 
-The official `https://treg.to/mcp/v2/` surface uses the same native Hermes OAuth flow and our callback relay. Live preflight passed discovery, dynamic registration, S256 PKCE and the V2 resource audience. No Treg account was authorized and no provider call was purchased in that preflight.
+The official `https://treg.to/mcp/v2/` surface uses the same native Hermes OAuth flow and our callback relay. Live preflight passed discovery, dynamic registration, S256 PKCE and the V2 resource audience. Real iMessage consent then completed: Zoen read the selected identity/team with `balance` and queried the catalog. A fresh process reused the saved token, read the same identity/team and found three catalog results for `web search`. No provider calls were purchased.
 
-Five native tools are enabled after consent: `catalog_search`, `catalog_get`, `catalog_call_read`, `catalog_call_write` and `balance`. They expose the curated API catalog on demand. This is not automatic authorization to the owner's Gmail, Slack or other personal accounts. Verify the selected Treg identity/team with `balance` and browse the catalog before executing a provider call.
+Five Treg tools are enabled after consent: `catalog_search`, `catalog_get`, `catalog_call_read`, `catalog_call_write` and `balance`. Hermes also registers its four standard resource/prompt utilities; feedback, review and catalog-request tools were confirmed absent from discovery. The selected Treg tools expose the curated API catalog on demand. This is not automatic authorization to the owner's Gmail, Slack or other personal accounts. Verify the selected Treg identity/team with `balance` and browse the catalog before executing a provider call.
 
 A read can cost credits. Zoen must inspect the current endpoint/overflow price and use an explicit budget for the task before paid calls. No automatic top-ups, shared operator token, local key uploads, CLI installation or imported remote skills are configured. The V2 surface also avoids arbitrary team-owned tool execution. Feedback/review/request tools are excluded by the manifest.
 
@@ -81,7 +81,7 @@ Sources: [Treg architecture](https://github.com/superdesigndev/treg/blob/main/do
 | [stripe](https://docs.stripe.com/mcp) | OAuth via iMessage | Catalog routing available; account not tested |
 | [supabase](https://supabase.com/docs/guides/ai-tools/mcp) | OAuth via iMessage | Catalog routing available; account not tested |
 | [todoist](https://www.todoist.com/help/articles/todoist-mcp-server) | OAuth via iMessage | Catalog routing available; account not tested |
-| [treg](https://github.com/superdesigndev/treg/blob/main/docs/context/architecture/mcp-oauth.md) | OAuth via iMessage | Native OAuth preflight passed; real account consent pending |
+| [treg](https://github.com/superdesigndev/treg/blob/main/docs/context/architecture/mcp-oauth.md) | OAuth via iMessage | Real consent, identity/team read, catalog query and fresh-process reuse passed; no paid calls |
 | [trivago](https://mcp.trivago.com/mcp) | Public HTTPS | Live tool discovery passed (3 tools) |
 | [twelve-data](https://twelvedata.com/docs) | OAuth via iMessage | Catalog routing available; account not tested |
 | [twilio-docs](https://www.twilio.com/docs/ai/mcp) | Public HTTPS | Live tool discovery passed (2 tools) |

@@ -22,6 +22,10 @@ MODELS = {
         "default": "openai/gpt-5.6-luna",
         "provider": "plow",
     },
+    "fallback_model": {
+        "provider": "plow",
+        "model": "anthropic/claude-sonnet-5",
+    },
     "providers": {
         "plow": {
             "models": {
