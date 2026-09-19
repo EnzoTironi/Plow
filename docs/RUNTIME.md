@@ -64,6 +64,8 @@ the local iMessage agent. Provider-specific setup and availability still apply.
 The [connector infrastructure validation](CONNECTORS.md) records native MCP execution
 tests, the distinction from Nous-managed accounts, the deployed callback relay,
 and the remaining hosted-instance validation.
+The [integration inventory](INTEGRATIONS.md) lists available OAuth/public services,
+the Treg catalog connection, and entries requiring separate operator setup.
 
 Personal workflows explicitly enable and reuse native Hermes Kanban and cron. NOW.md is a summary, while
 native tasks retain the original request, account, deadline, next action and result.

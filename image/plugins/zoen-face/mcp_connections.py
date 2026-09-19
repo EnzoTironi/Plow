@@ -1,52 +1,34 @@
-"""Owner-requested catalog OAuth jobs on the existing gateway loop."""
+"""Owner-requested catalog connections on the existing gateway loop."""
 import asyncio
 import contextvars
 import logging
-import os
 import uuid
+
+from .connection_catalog import catalog_result, server_config
 
 log = logging.getLogger(__name__)
 _jobs = {}
 
 
-def catalog():
-    from hermes_cli.mcp_catalog import list_catalog
-    return [entry for entry in list_catalog()
-            if entry.auth.type == "oauth" and entry.transport.type == "http"
-            and entry.transport.url.startswith("https://") and entry.install is None
-            and not entry.auth.env and not entry.transport.env]
-
-
-def server_config(name):
-    from hermes_cli.mcp_catalog import _build_server_config
-    from hermes_cli.mcp_config import _get_mcp_servers
-    entry = next((entry for entry in catalog() if entry.name == name), None)
-    if entry is None:
-        raise ValueError("connector_not_in_native_oauth_catalog")
-    cfg = _build_server_config(entry, None)
-    prior = _get_mcp_servers().get(name, {})
-    if prior and (prior.get("url") != cfg["url"] or prior.get("auth") != "oauth" or prior.get("headers") or prior.get("command")):
-        raise ValueError("existing_connector_configuration_conflicts")
-    cfg.update(prior)
-    cfg["enabled"] = True
-    if "tools" not in cfg:
-        selection = {}
-        if entry.tools.default_enabled is not None:
-            selection["include"] = list(entry.tools.default_enabled)
-        if entry.tools.default_excluded:
-            selection["exclude"] = list(entry.tools.default_excluded)
-        if selection:
-            cfg["tools"] = selection
-    if (cfg.get("oauth") or {}).get("flow", "browser") != "browser":
-        raise ValueError("device_flow_not_available_in_imessage")
-    return cfg
-
-
-def cached_status(name):
+def cached_status(name, config):
     from tools.mcp_oauth import HermesTokenStorage
     from tools.mcp_tool_discovery import get_registered_mcp_server_names
-    return {"credentials_saved": HermesTokenStorage(name).has_cached_tokens(),
-            "tools_loaded": name in get_registered_mcp_server_names(), "account_verified": False}
+    oauth = config.get("auth") == "oauth"
+    saved = HermesTokenStorage(name).has_cached_tokens() if oauth else None
+    loaded = name in get_registered_mcp_server_names()
+    status = "tools_ready" if loaded else "credentials_saved" if saved else "not_started"
+    return {"credentials_saved": saved, "tools_loaded": loaded, "account_verified": None, "status": status,
+            "authentication": "oauth" if oauth else "public",
+            "instruction": "Account verification requires a live read; cached credentials alone do not establish access."}
+
+
+def connect_public(name, config):
+    from hermes_cli.mcp_config import _probe_single_server, _save_mcp_server
+    tools = _probe_single_server(name, {**config, "connect_timeout": 12}, connect_timeout=15)
+    if not tools:
+        raise RuntimeError("public_connector_has_no_tools")
+    if not _save_mcp_server(name, config):
+        raise RuntimeError("public_connector_configuration_rejected")
 
 
 async def notify(adapter, module, chat_uid, name, details):
@@ -86,75 +68,96 @@ def activate_tools(name):
 
 
 class ConnectionJob:
-    def __init__(self, adapter, module, chat, flow, cfg):
+    def __init__(self, adapter, module, chat, name, cfg, flow=None):
         self.adapter, self.module, self.chat = adapter, module, chat
-        self.flow, self.cfg = flow, cfg
+        self.name, self.flow, self.cfg = name, flow, cfg
         self.status = "starting"
         self.task = None
 
     async def announce(self, text):
-        await notify(self.adapter, self.module, self.chat, self.flow.server_name, text)
+        await notify(self.adapter, self.module, self.chat, self.name, text)
+
+    async def wait_authorization(self, worker):
+        announced = False
+        while not worker.done():
+            snapshot = self.flow.snapshot()
+            if snapshot["status"] == "error":
+                self.status = self.flow.failure_code or "authorization_failed"
+            else:
+                self.status = "verifying_connection" if snapshot["status"] == "approved" else self.flow.phase
+            if snapshot["authorization_url"] and snapshot["status"] != "error" and not announced:
+                announced = True
+                self.status = "awaiting_consent"
+                await self.announce("Send this authorization link once in the owner's private iMessage conversation, using your own voice. "
+                                    "Ask them to check the account and requested permissions on the provider's page. "
+                                    "This link expires in five minutes. "
+                                    "Do not claim the account is connected yet. The result will arrive automatically; do not poll or start another login.\n"
+                                    + snapshot["authorization_url"])
+            await asyncio.sleep(.2)
+        await worker
+        if self.flow.snapshot()["status"] == "approved":
+            return True
+        self.status = self.flow.failure_code or "authorization_failed"
+        if self.status != "authorization_cancelled":
+            await self.announce(f"Connection did not complete ({self.status}). Explain this briefly; no account access was verified. "
+                                "Keep the task awaiting access. Offer a fresh link if they want to retry. "
+                                "Do not guess that the provider or Plow configuration caused the failure.")
+        return False
 
     async def run(self):
         from .oauth_runner import run_authorization
-        worker = asyncio.create_task(asyncio.to_thread(run_authorization, self.flow, self.cfg))
-        announced = False
+        worker = None
         try:
-            while not worker.done():
-                snapshot = self.flow.snapshot()
-                if snapshot["status"] == "error":
-                    self.status = self.flow.failure_code or "authorization_failed"
-                else:
-                    self.status = "verifying_connection" if snapshot["status"] == "approved" else self.flow.phase
-                if snapshot["authorization_url"] and snapshot["status"] != "error" and not announced:
-                    announced = True
-                    self.status = "awaiting_consent"
-                    await self.announce("Send this authorization link once in the owner's private iMessage conversation, using your own voice. "
-                                        "Ask them to check the account and requested permissions on the provider's page. "
-                                        "This link expires in five minutes. "
-                                        "Do not claim the account is connected yet. The result will arrive automatically; do not poll or start another login.\n"
-                                        + snapshot["authorization_url"])
-                await asyncio.sleep(.2)
-            await worker
-            if self.flow.snapshot()["status"] != "approved":
-                self.status = self.flow.failure_code or "authorization_failed"
-                if self.status != "authorization_cancelled":
-                    await self.announce(f"Connection did not complete ({self.status}). Explain this briefly; no account access was verified. "
-                                        "Keep the task awaiting access. Offer a fresh link if they want to retry. "
-                                        "Do not guess that the provider or Plow configuration caused the failure.")
-                return
+            if self.flow:
+                worker = asyncio.create_task(asyncio.to_thread(run_authorization, self.flow, self.cfg))
+                if not await self.wait_authorization(worker):
+                    return
+            else:
+                self.status = "checking_connection"
+                await asyncio.to_thread(connect_public, self.name, self.cfg)
             # Refresh only this connector. Hermes refreshes cached agents from
             # the registry between turns, preserving history and tool filters.
-            loaded = await asyncio.to_thread(activate_tools, self.flow.server_name)
-            self.status = "tools_ready" if loaded else "authorized_tools_unavailable"
-            await self.announce(f"OAuth completed; credentials are saved by Hermes. Tool loading: {self.status}. "
-                                "Before claiming success, use the connector to verify the account or workspace and perform one small read. "
+            self.status = "loading_tools"
+            loaded = await asyncio.to_thread(activate_tools, self.name)
+            self.status = "tools_ready" if loaded else "tools_unavailable"
+            authorization = "OAuth completed; credentials are saved by Hermes." if self.flow else "Public service enabled; no personal account was connected."
+            await self.announce(f"{authorization} Tool loading: {self.status}. "
+                                "Before claiming success, perform one small read; for an account connector verify the account or workspace. "
+                                "For Treg verify identity/team with balance and read catalog_search; do not spend credits for verification. "
                                 "Then resume only the owner's previously requested task, respecting its scope and any cancellation. "
                                 "If no task is pending, report the verified connection concisely. Never substitute a different account.")
         except asyncio.CancelledError:
-            self.flow.cancel()
+            if self.flow:
+                self.flow.cancel()
             self.status = "authorization_cancelled"
             raise
         except Exception as exc:
-            self.flow.cancel()
-            self.status = "connection_delivery_failed"
+            if self.flow:
+                self.flow.cancel()
+            self.status = "connection_failed"
             log.warning("connection job failed (%s)", type(exc).__name__)
+            try:
+                await self.announce("Connection setup could not complete. Keep the pending task awaiting access. "
+                                    "Check saved credentials and tool availability before suggesting a retry; do not guess the cause.")
+            except Exception as delivery_error:
+                log.warning("connection result could not be delivered (%s)", type(delivery_error).__name__)
         finally:
             try:
-                await self.flow.relay.finish(consumed=self.flow.snapshot()["status"] == "approved")
+                if self.flow:
+                    await self.flow.relay.finish(consumed=self.flow.snapshot()["status"] == "approved")
             except Exception as exc:
                 # Relay records expire independently even if cleanup is offline.
                 log.warning("connection cleanup deferred to expiry (%s)", type(exc).__name__)
-            await worker
+            if worker:
+                await worker
 
 
 async def dispatch(adapter, module, turn, args):
     from hermes_constants import get_hermes_home
-    from hermes_cli.config import load_config
+    from .oauth_relay import authorization_flow, RelayError
     action, name = args.get("action"), args.get("connector")
     if action == "catalog":
-        return {"ok": True, "connectors": [{"name": entry.name, "description": entry.description,
-                                            "availability": "requires_provider_authorization"} for entry in catalog()]}
+        return catalog_result(args.get("query", ""))
     if not isinstance(name, str):
         return {"ok": False, "error": "connector_required"}
     try:
@@ -166,9 +169,12 @@ async def dispatch(adapter, module, turn, args):
     job = _jobs.get(key)
     pending = job is not None and not job.task.done()
     if action == "status":
-        return {"ok": True, "connector": name, "status": job.status if job else "not_started", **cached_status(name)}
+        cached = cached_status(name, cfg)
+        if job:
+            cached["status"] = job.status
+        return {"ok": True, "connector": name, **cached}
     if action == "cancel":
-        cancelled = pending and job.flow.cancel()
+        cancelled = pending and job.flow is not None and job.flow.cancel()
         if cancelled:
             job.status = "authorization_cancelled"
         return {"ok": True, "cancelled": bool(cancelled), "instruction": "If the code exchange already started, wait for status; cancellation does not disconnect a saved account."}
@@ -178,17 +184,13 @@ async def dispatch(adapter, module, turn, args):
         return {"ok": True, "status": job.status, "instruction": "The existing login is still active. Do not start another or duplicate the link."}
     if any(existing_home == home and not existing.task.done() for (existing_home, _), existing in _jobs.items()):
         return {"ok": False, "error": "another_connection_in_progress", "instruction": "Complete or cancel the current login first."}
-    settings = load_config().get("zoen", {})
-    relay_url = os.environ.get("ZOEN_OAUTH_RELAY_URL") or settings.get("oauth_relay_url")
-    if not relay_url:
-        return {"ok": False, "error": "operator_must_configure_oauth_relay_url"}
-    from .oauth_relay import RelayOAuthFlow
-    flow = RelayOAuthFlow(relay_url=relay_url, flow_id=uuid.uuid4().hex, server_name=name,
-                          profile=None, hermes_home=home)
-    cfg["oauth"] = {**(cfg.get("oauth") or {}), "redirect_uri": flow.redirect_uri}
-    job = ConnectionJob(adapter, module, turn["chat_uid"], flow, cfg)
+    try:
+        flow = authorization_flow(name, home, cfg)
+    except RelayError as exc:
+        return {"ok": False, "error": str(exc)}
+    job = ConnectionJob(adapter, module, turn["chat_uid"], name, cfg, flow)
     context = contextvars.copy_context()
     context.run(module._ACTIVE_TURN.set, None)
     job.task = asyncio.create_task(job.run(), context=context)
     _jobs[key] = job
-    return {"ok": True, "status": "starting", "instruction": "Keep the pending task in Kanban. The authorization link and result will arrive as connection events; do not poll, invent a link, or start another login."}
+    return {"ok": True, "status": "starting", "instruction": "Keep the pending task in Kanban. The result will arrive as a connection event; OAuth services also send an authorization link. Public services require no login. Do not poll, invent a link, or start another connection."}

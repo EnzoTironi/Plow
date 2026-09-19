@@ -15,6 +15,60 @@ sys.path.insert(0, "/opt/hermes")
 sys.path.insert(0, "/opt/plow/zoen")
 
 
+async def public_mcp(request):
+    message = await request.json()
+    if "id" not in message:
+        return web.Response(status=202)
+    if message["method"] == "initialize":
+        result = {"protocolVersion": message["params"]["protocolVersion"], "capabilities": {"tools": {}},
+                  "serverInfo": {"name": "public-fixture", "version": "1"}}
+    elif message["method"] == "tools/list":
+        result = {"tools": [] if request.path == "/empty/mcp" else [
+            {"name": "lookup", "description": "Read public fixture data", "inputSchema": {"type": "object", "properties": {}}}]}
+    else:
+        assert message["method"] == "tools/call" and message["params"]["name"] == "lookup"
+        result = {"content": [{"type": "text", "text": "public-fixture-response"}]}
+    return web.json_response({"jsonrpc": "2.0", "id": message["id"], "result": result})
+
+
+async def verify_public_connector(adapter, plow, connections):
+    from hermes_cli.mcp_config import _get_mcp_servers
+    from tools.mcp_oauth import HermesTokenStorage
+    from tools.mcp_tool_lifecycle import shutdown_mcp_servers
+    from tools.mcp_tool_schema import mcp_prefixed_tool_name
+    from tools.registry import registry
+
+    job = connections.ConnectionJob(adapter, plow, "cht_test", "public-fixture", {"url": plow.BASE + "/mcp"})
+    job.task = asyncio.create_task(job.run())
+    try:
+        await asyncio.wait_for(job.task, 25)
+        assert job.status == "tools_ready", job.status
+        assert "public-fixture" in _get_mcp_servers()
+        assert not HermesTokenStorage("public-fixture").has_cached_tokens()
+        result = await asyncio.to_thread(registry.dispatch, mcp_prefixed_tool_name("public-fixture", "lookup"), {})
+        assert "public-fixture-response" in str(result), result
+        try:
+            await asyncio.to_thread(connections.connect_public, "empty-fixture", {"url": plow.BASE + "/empty/mcp"})
+            raise AssertionError("empty public connector was saved")
+        except RuntimeError as exc:
+            assert str(exc) == "public_connector_has_no_tools"
+        assert "empty-fixture" not in _get_mcp_servers()
+    finally:
+        await asyncio.to_thread(shutdown_mcp_servers)
+
+
+async def verify_catalog(handle):
+    catalog = json.loads(await asyncio.to_thread(handle, {"action": "catalog"}))
+    assert {"todoist", "notion", "treg", "kiwi", "google", "slack"} <= {entry["name"] for entry in catalog["connectors"]}, catalog
+    states = {entry["name"]: entry["availability"] for entry in catalog["connectors"]}
+    assert states["kiwi"] == "no_login_required" and states["n8n"] == "requires_operator_setup"
+    assert states["unreal-engine"] == "requires_local_application"
+    searched = json.loads(await asyncio.to_thread(handle, {"action": "catalog", "query": "treg"}))
+    assert [entry["name"] for entry in searched["connectors"]] == ["treg"]
+    invalid = json.loads(await asyncio.to_thread(handle, {"action": "connect", "connector": "https://untrusted.example/mcp"}))
+    assert invalid["error"] == "connector_not_in_remote_catalog", invalid
+
+
 async def verify(home):
     os.environ["HERMES_HOME"] = home
     os.environ["PLOW_AGENT_TOKEN"] = "local-test-fixture"
@@ -80,6 +134,8 @@ async def verify(home):
         return web.json_response({"choices": [{"message": {"content": "vou olhar o documento e separar o que importa"}}]})
 
     api.router.add_post("/v1/chat/completions", completion)
+    api.router.add_post("/mcp", public_mcp)
+    api.router.add_post("/empty/mcp", public_mcp)
     api.router.add_get("/v1/chats/{chat}", serve)
     api.router.add_post("/v1/chats/{chat}/{endpoint:.*}", serve)
     runner = web.AppRunner(api)
@@ -100,10 +156,7 @@ async def verify(home):
     try:
         connected = json.loads(await asyncio.to_thread(plugin.connections.handle, {"action": "status", "connector": "google"}))
         assert connected["ok"] is True
-        catalog = json.loads(await asyncio.to_thread(plugin.connections.handle, {"action": "catalog"}))
-        assert {"todoist", "notion"} <= {entry["name"] for entry in catalog["connectors"]}, catalog
-        invalid = json.loads(await asyncio.to_thread(plugin.connections.handle, {"action": "connect", "connector": "https://untrusted.example/mcp"}))
-        assert invalid["error"] == "connector_not_in_native_oauth_catalog", invalid
+        await verify_catalog(plugin.connections.handle)
     finally:
         plow._ACTIVE_TURN.reset(token)
     token = plow._ACTIVE_TURN.set({"owner": True, "dm": False, "chat_uid": "cht_test"})
@@ -112,6 +165,9 @@ async def verify(home):
     finally:
         plow._ACTIVE_TURN.reset(token)
     native_connections = sys.modules[plugin.__name__ + ".mcp_connections"]
+    treg = native_connections.server_config("treg")
+    assert treg["url"] == "https://treg.to/mcp/v2/" and treg["auth"] == "oauth"
+    assert set(treg["tools"]["include"]) == {"catalog_search", "catalog_get", "catalog_call_read", "catalog_call_write", "balance"}
     await native_connections.notify(adapter, plow, "cht_test", "todoist", "Fixture connection result")
     assert len(handed_off) == 1
     assert handed_off[0].internal and handed_off[0].authority
@@ -127,6 +183,9 @@ async def verify(home):
     adapter._message_handler = connection_turn
     await adapter._process_message_background(handed_off[0], "connection-fixture")
     assert plow._ACTIVE_TURN.get() is None and not adapter._live_turns
+    handed_off.clear()
+    await verify_public_connector(adapter, plow, native_connections)
+    assert len(handed_off) == 1 and "no personal account was connected" in handed_off[0].text
     handed_off.clear()
     adapter._chats["cht_test"]["participants"][0]["role"] = "member"
     try:
@@ -163,6 +222,7 @@ async def verify(home):
     await runner.cleanup()
     print(json.dumps({"plugin_registered": True, "owner_guard": True, "connection_tool_dispatch": True,
                       "connection_event_native_lifecycle": True, "ack_before_attachment": True,
+                      "public_connector_native_read": True, "treg_manifest_valid": True,
                       "socket_replay_deduplicated": True, "handoff_not_lost": True,
                       "ack_after_last_message_ms": round(elapsed * 1000)}))
 

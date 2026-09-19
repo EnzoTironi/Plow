@@ -96,6 +96,7 @@ RUN chown -R root:root /opt/plow \
  && find /opt/plow -type f -exec chmod 0644 {} +
 
 COPY image/plugins/zoen-face/ /opt/hermes/plugins/zoen-face/
+COPY image/optional-mcps/ /opt/hermes/optional-mcps/
 COPY image/enable-zoen-face.py /opt/hermes/enable-zoen-face.py
 COPY image/plow-init-then-face.sh /opt/hermes/plow-init-then-face.sh
 COPY image/s6-overlay/ /etc/s6-overlay/

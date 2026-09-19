@@ -8,12 +8,13 @@ from . import quiet
 
 SCHEMA = {
     "name": "zoen_connections",
-    "description": "Manage the owner's accounts in their private iMessage conversation. Google/Slack use Plow. Catalog lists native Hermes OAuth services such as Todoist and Notion; connect starts a background login, whose link and completion arrive automatically. Status distinguishes saved credentials from verified account access. Cancel stops a pending login. Never ask for passwords or pasted tokens.",
+    "description": "Find and connect services in the owner's private iMessage conversation. Catalog supports a query by name or capability and identifies OAuth, public services, and operator setup. Google/Slack use Plow; native Hermes covers accounts, public tools and Treg's API catalog. Connect activates only the chosen service in the background; OAuth links and completion arrive automatically. Status reports cached state; verify accounts with a live read. Cancel stops pending consent. Never ask for passwords or pasted tokens.",
     "parameters": {
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["catalog", "status", "connect", "cancel"]},
             "connector": {"type": "string", "description": "google, slack, or an exact name returned by catalog. Omit for catalog."},
+            "query": {"type": "string", "maxLength": 100, "description": "Optional catalog filter by service name or capability words (catalog descriptions are in English). Omit to list all."},
         },
         "required": ["action"],
         "additionalProperties": False,

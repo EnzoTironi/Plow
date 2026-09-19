@@ -190,10 +190,20 @@ console; a relay does not remove that requirement.
    saved task in the same conversation.
 
 No separate Zoen website or user dashboard is needed. `zoen_connections` provides
-`catalog`, `connect`, `status` and `cancel` in the owner's private chat. Only native
-catalog entries using remote HTTPS OAuth, with no installer or required environment
-setup, are accepted. Arbitrary URLs and conflicting existing configurations fail
-closed. Catalog presence is not a provider compatibility guarantee.
+`catalog` (with an optional search query), `connect`, `status` and `cancel` in the
+owner's private chat. The catalog shows native entries, Zoen additions and existing
+Plow connections. Remote HTTPS OAuth and public services with no installer or
+required environment setup can be activated. Operator/local entries are listed
+with their limitations. Arbitrary URLs and conflicting existing configurations fail
+closed. Catalog presence is not a provider compatibility guarantee. The complete
+[integration inventory](INTEGRATIONS.md) records the service-by-service evidence.
+
+Public services are probed before their configuration is saved, then registered
+through native discovery and announced through the same guarded event queue. They
+do not create a personal-account login. Treg's official catalog MCP is a native
+manifest addition; its five selected tools expose the external API catalog without
+installing its CLI or transferring local credentials. Paid calls require a budget
+authorized for the owner's task, even when the operation only reads data.
 
 Login runs in a background task. Its link and completion return through Plow's
 normal event queue with a freshly checked owner-only DM. The model writes the
@@ -235,7 +245,8 @@ host callbacks for the services it covers.
 
 Before calling this ready for users, one hosted instance must complete phone consent,
 a real account read, token reuse after restart and reconnection after revocation.
-Local tests do not establish hosted Plow egress or live provider-account consent.
+Local tests do not establish hosted Plow egress. Real account consent has been
+validated only for the providers recorded below.
 
 ## Operator setup (no Plow infrastructure changes)
 
@@ -282,13 +293,15 @@ SDK against a loopback OAuth/MCP fixture. It uses no real account credentials:
 docker run --rm --platform linux/amd64 \
   --entrypoint /opt/hermes/.venv/bin/python \
   -e ZOEN_OAUTH_RELAY_URL=https://zoen-oauth-relay.agenttironi.workers.dev \
-  -v "$PWD:/workspace:ro" zoen:oauth-relay /workspace/tests/integration_oauth.py
+  -v "$PWD:/workspace:ro" zoen:connectors /workspace/tests/integration_oauth.py
 ```
 
 The companion `tests/integration_image.py` checks the real plugin registration,
 catalog routing, rejection of arbitrary URLs, fresh owner-DM permission checks and
 Plow event delivery through the native processing lifecycle, alongside the existing
-reception and duplicate-message checks. The OAuth fixture delays consent past its
+reception and duplicate-message checks. It also exercises public-service activation
+through a native MCP fixture, rejects empty tool lists before saving configuration,
+and checks the Treg manifest's selected tools. The OAuth fixture delays consent past its
 one-second normal handshake timeout, checks PKCE and issuer validation, invokes a
 native read tool, and renews an expired token in a fresh process. Denial, cancellation
 and issuer mismatch preserve any previously connected credentials.
@@ -300,6 +313,7 @@ After that fix, real Notion consent completed from the iMessage link. The runnin
 agent loaded 49 native Notion tools, verified the owner's identity through
 `notion_get_users`, and confirmed the connection in the same conversation. A fresh
 Python process reused the persisted token and read the same account without a new
-login. One initial page-list read failed because the model supplied an empty cursor;
+login; the same read passed again after the expanded-catalog container update.
+One initial page-list read failed because the model supplied an empty cursor;
 the agent recovered with the identity read. No Notion writes were made. Todoist
 consent after the fix and hosted Plow rollout remain unvalidated.

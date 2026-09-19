@@ -1,8 +1,10 @@
 """Transport only: native Hermes still owns PKCE, tokens and issuer validation."""
 import asyncio
 import hashlib
+import os
 import secrets
 import time
+import uuid
 from urllib.parse import parse_qs, urlsplit
 
 import aiohttp
@@ -12,6 +14,21 @@ from tools.mcp_dashboard_oauth import DashboardOAuthFlow
 
 class RelayError(OAuthFlowError):
     """Safe error code; never includes a URL, callback or credential."""
+
+
+def authorization_flow(name, home, config):
+    """Public services need no relay; OAuth gets a private, per-attempt flow."""
+    if config.get("auth") != "oauth":
+        return None
+    from hermes_cli.config import load_config
+    settings = load_config().get("zoen", {})
+    relay_url = os.environ.get("ZOEN_OAUTH_RELAY_URL") or settings.get("oauth_relay_url")
+    if not relay_url:
+        raise RelayError("operator_must_configure_oauth_relay_url")
+    flow = RelayOAuthFlow(relay_url=relay_url, flow_id=uuid.uuid4().hex, server_name=name,
+                          profile=None, hermes_home=home)
+    config["oauth"] = {**(config.get("oauth") or {}), "redirect_uri": flow.redirect_uri}
+    return flow
 
 
 class RelayClient:
