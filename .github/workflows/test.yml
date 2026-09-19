@@ -60,6 +60,8 @@ jobs:
         run: |
           docker run --rm --entrypoint /opt/hermes/.venv/bin/python \
             -v "$PWD:/workspace:ro" zoen:oauth-test /workspace/tests/integration_image.py
+          docker run --rm --entrypoint /opt/hermes/.venv/bin/python \
+            -v "$PWD:/workspace:ro" zoen:oauth-test /workspace/tests/integration_google.py
           docker run --rm --network host --entrypoint /opt/hermes/.venv/bin/python \
             -e ZOEN_OAUTH_RELAY_URL=http://127.0.0.1:8791 \
             -v "$PWD:/workspace:ro" zoen:oauth-test /workspace/tests/integration_oauth.py

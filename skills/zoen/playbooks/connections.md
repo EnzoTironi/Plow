@@ -1,22 +1,22 @@
 # Connected accounts and tools
 
-For Google and Slack lifecycle, use `zoen_connections` with action `status` and
-connector `google` or `slack`. On the owner's request to connect, use action `connect`
-and send its short-lived connect_url in the owner's iMessage DM. OAuth stays
-with Plow and the provider; there is no Zoen website or localhost callback.
-Never send the link in a group. Record the blocked task and connector in native
-Kanban. Check status on the owner's return; the maintenance job can also resume
-pending tasks once access appears. A URL alone is not evidence of authorization.
+For Google use `zoen_connections` with connector `google` and read the bundled
+`google-workspace` skill. Zoen owns this Google OAuth flow; Plow's connector and
+the owner's Mac are not involved. Request only the capabilities needed for the
+current task. If operator setup or Google verification is pending, report that
+state; do not fabricate a link or instruct the user to bypass a security warning.
+Use `/opt/plow/zoen/google_workspace.py` for account reads and authorized actions.
 
-Discover existing account tools first. Connection configuration is not evidence of
-a healthy session: perform a small read of the requested resource and verify account
-identity. A 401/403 is a reconnection/permission state, not an empty mailbox or calendar.
-Never print tokens, cookies or credential files into the conversation.
+For Slack lifecycle, use `zoen_connections` with connector `slack`. On the owner's
+request to connect, use `connect` and send the returned short-lived connect_url in
+the owner's private iMessage conversation. Slack still uses the Plow connection.
+Read the bundled plow-connectors skill for the available account tools.
 
-For Gmail, Calendar and Drive, read the bundled google-workspace skill and inspect
-what is actually connected. For Slack read the bundled plow-connectors skill. Prefer
-the existing authorized connector to implementing another OAuth client. Latch-based
-access requires the owner's Mac to be online; continue independent work if it is not.
+Connection configuration is not evidence of a healthy session: perform a small
+read of the requested resource and verify account identity. A 401/403 is a
+reconnection/permission state, not an empty mailbox or calendar. Never print tokens,
+cookies or credential files into the conversation. Record the blocked task and
+connector in native Kanban and resume only after verifying access.
 
 For more services, use `zoen_connections` action `catalog`, optionally with a `query`
 by service name or capability (the descriptions use English). It lists the complete
@@ -35,7 +35,8 @@ polling shell loops, repeat the link, invent a URL or ask the user to paste a to
 
 The owner checks their account and permissions on the provider's page on their
 phone. Our HTTPS callback relay returns the authorization code to this instance;
-Hermes owns PKCE, token exchange, storage and refresh. No Plow hosting changes or
+Hermes owns PKCE, token exchange, storage and refresh for native MCP accounts.
+Google uses the separately documented Zoen OAuth broker and private account store. No Plow hosting changes or
 ports are needed. On the completion event, verify identity and a small read before
 claiming success or resuming the pending task. Native tools become available between
 turns without erasing conversation history. `status` reports saved credentials and

@@ -40,26 +40,23 @@ phone must be verified separately through the provider/real conversation.
 
 ## Accounts, work and memory
 
-`zoen_connections` exposes `status` and `connect` for Google and Slack. The plugin
-requires a live owner DM, refreshes membership and uses Plow's existing authority.
-It creates a short-lived provider authorization link and reports account state
-after consent. The CLI `connect.py` is also available to the instance operator and
-for owner-authorized scheduled status checks. Neither returns bearer credentials.
-The REST contracts are from [Plow's API schema](https://api.plow.co/openapi.json).
+`zoen_connections` requires a current private owner DM. Google now uses Zoen's
+independent OAuth broker and the bundled Hermes API commands through
+`google_workspace.py`; it does not use Plow's Google connection or the owner's Mac.
+Its capabilities remain disabled pending operator setup, real consent and Google
+verification. See [Google auth](GOOGLE_AUTH.md) for the exact release gates.
 
-The real local agent's credential returned HTTP 403 for both status endpoints on
-2026-09-19: missing `gmail:status` and `slack:status` access. That is unknown account
-state, not a disconnected account. The tool marks 401/403 as non-retryable and
-explains that the instance operator must fix Plow connector access. It must not
-start OAuth or recommend waiting as a solution to this permission error. No real
-Google or Slack OAuth consent has been validated with this local credential yet.
+Slack retains Plow's existing connection lifecycle. Its local status call returned
+403 for missing `slack:status` on 2026-09-19, so account state remains unknown. The
+legacy Google path also returned 403 before it was replaced. Those errors were
+permissions failures, not evidence of disconnected user accounts. The operator
+CLI `connect.py` retains the legacy Plow interface for older installations; the
+current agent routes Google exclusively to Zoen OAuth.
 
-Google workspace operations still use the bundled Plow integration; some operations
-depend on Latch and the owner's Mac. A connected account is not proof that all its
-tools or scopes are available. Additional MCP services use Hermes' native catalog,
-authorization and token storage through Zoen's HTTPS callback relay. Real Notion
-consent, identity verification and token reuse in a fresh process have passed with
-the local iMessage agent. Provider-specific setup and availability still apply.
+Other MCP services use Hermes' native catalog, authorization and token storage
+through Zoen's HTTPS callback relay. Real Notion consent, identity verification and
+token reuse in a fresh process have passed locally. Provider-specific setup and
+availability still apply. Never equate cached credentials with a verified live read.
 
 The [connector infrastructure validation](CONNECTORS.md) records native MCP execution
 tests, the distinction from Nous-managed accounts, the deployed callback relay,

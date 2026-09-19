@@ -12,7 +12,10 @@ let process, folder;
 before(async () => {
   folder = await mkdtemp(join(tmpdir(), "zoen-relay-"));
   process = spawn("node", ["node_modules/wrangler/bin/wrangler.js", "dev", "--local", "--ip", "127.0.0.1",
-    "--port", "18791", "--persist-to", folder, "--var", "FLOW_TTL_SECONDS:3", "--log-level", "error"],
+    "--port", "18791", "--persist-to", folder, "--var", "FLOW_TTL_SECONDS:3",
+    "--var", "GOOGLE_CLIENT_ID:fixture.apps.googleusercontent.com", "--var", "GOOGLE_CLIENT_SECRET:fixture-secret",
+    "--var", "GOOGLE_ENCRYPTION_KEY:" + "ab".repeat(32), "--var", "GOOGLE_REDIRECT_URI:https://auth.example.com/callback",
+    "--var", "GOOGLE_ENABLED_CAPABILITIES:identity,calendar_read", "--log-level", "error"],
   { stdio: ["ignore", "ignore", "pipe"], env: { ...globalThis.process.env, WRANGLER_SEND_METRICS: "false" } });
   let errors = "";
   process.stderr.on("data", (data) => { errors += data; });
@@ -110,4 +113,29 @@ test("expires pending and completed flows, rejects oversized requests", async ()
   await pause(3200);
   assert.equal((await fetch(flow.url, { headers: flow.headers })).status, 410);
   assert.equal((await callback(flow)).status, 410);
+});
+
+test("Google registration and PKCE rejection use the real isolated Durable Object", async () => {
+  const state = randomBytes(32).toString("base64url"), poll_token = randomBytes(32).toString("base64url");
+  const verifier = randomBytes(48).toString("base64url");
+  const code_challenge = createHash("sha256").update(verifier).digest("base64url");
+  const register = (capabilities) => fetch(`${base}/google/flows`, { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state, poll_token, code_challenge, capabilities }) });
+  assert.equal((await register(["gmail_read"])).status, 403);
+  const result = await register(["calendar_read"]);
+  assert.equal(result.status, 201);
+  const data = await result.json(), url = new URL(data.authorization_url);
+  assert.equal(url.origin, "https://accounts.google.com");
+  assert.equal(url.searchParams.get("code_challenge"), code_challenge);
+  assert.equal(url.searchParams.get("code_challenge_method"), "S256");
+  assert.ok(!url.href.includes(poll_token) && !url.href.includes("fixture-secret"));
+  assert.ok(!url.searchParams.get("scope").includes("gmail"));
+  assert.equal((await callback({ state })).status, 200);
+  const exchange = (headers) => fetch(`${base}/google/flows/${data.flow_id}/exchange`, { method: "POST",
+    headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify({ code_verifier: "wrong".repeat(12) }) });
+  assert.equal((await exchange({})).status, 403);
+  assert.equal((await exchange({ Authorization: `Bearer ${poll_token}` })).status, 403);
+  const headers = { Authorization: `Bearer ${poll_token}` };
+  assert.equal((await fetch(`${base}/flows/${data.flow_id}`, { method: "DELETE", headers })).status, 200);
+  assert.equal((await callback({ state })).status, 409);
 });

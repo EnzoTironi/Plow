@@ -41,11 +41,11 @@ class RelayClient:
         self.secret = secrets.token_urlsafe(32)
         self.path = None
 
-    async def request(self, method, path, body=None):
+    async def request(self, method, path, body=None, *, timeout=8):
         # Native MCP runs its own event loop. Do not share an aiohttp session
         # with the gateway loop, or follow a redirect carrying our poll secret.
         try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8)) as http:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as http:
                 async with http.request(method, self.base + path, json=body, allow_redirects=False,
                                         headers={"Authorization": f"Bearer {self.secret}"}) as result:
                     if result.status == 410:

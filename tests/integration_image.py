@@ -156,6 +156,8 @@ async def verify(home):
     try:
         connected = json.loads(await asyncio.to_thread(plugin.connections.handle, {"action": "status", "connector": "google"}))
         assert connected["ok"] is True
+        assert connected["authentication"] == "zoen_oauth"
+        assert "connected" not in connected  # The legacy Plow stub was not called.
         await verify_catalog(plugin.connections.handle)
     finally:
         plow._ACTIVE_TURN.reset(token)

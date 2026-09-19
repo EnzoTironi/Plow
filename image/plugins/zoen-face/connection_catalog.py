@@ -21,8 +21,8 @@ def catalog_result(query=""):
     entries = [{"name": entry.name, "description": entry.description, "source": entry.source,
                 "auth": entry.auth.type, "availability": availability(entry)} for entry in list_catalog()]
     entries.extend([
-        {"name": "google", "description": "Gmail and Google Calendar through the existing Plow connection.",
-         "auth": "plow", "availability": "requires_plow_connector_access"},
+        {"name": "google", "description": "Google Gmail, Calendar, Drive, Docs, Sheets and Contacts through Zoen's own OAuth app; permissions are enabled by the operator after Google verification.",
+         "auth": "zoen_oauth", "availability": "requires_zoen_google_setup_and_verification"},
         {"name": "slack", "description": "Slack messages and workspaces through the existing Plow connection.",
          "auth": "plow", "availability": "requires_plow_connector_access"},
     ])

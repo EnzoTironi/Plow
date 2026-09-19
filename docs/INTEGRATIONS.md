@@ -2,7 +2,7 @@
 
 Snapshot: 2026-09-19, Hermes 0.21.2 plus the Zoen Treg manifest.
 
-The iMessage catalog exposes 68 entries: 55 remote OAuth services, 9 public HTTPS services, two existing Plow connections and two entries requiring operator/local setup.
+The iMessage catalog exposes 68 entries: 55 remote OAuth services, 9 public HTTPS services, one existing Plow connection, Zoen’s independent Google OAuth connector and two entries requiring operator/local setup.
 
 Only a service selected for the owner's task is enabled. Listing a service does not install software, authorize an account or preload its tools. `zoen_connections` supports `catalog` with an optional `query`, `connect`, `status` and `cancel`.
 
@@ -50,7 +50,7 @@ Sources: [Treg architecture](https://github.com/superdesigndev/treg/blob/main/do
 | [gamma](https://developers.gamma.app/docs/gamma-mcp-server) | OAuth via iMessage | Catalog routing available; account not tested |
 | [gitlab](https://docs.gitlab.com/user/model_context_protocol/mcp_server/) | OAuth via iMessage | Catalog routing available; account not tested |
 | [globalping](https://github.com/jsdelivr/globalping-mcp-server) | OAuth via iMessage | Catalog routing available; account not tested |
-| google | Existing Plow connection | Local credential lacks Plow status permission; account unknown |
+| google | Zoen OAuth, independent of Plow | Implementation and simulated-provider tests; disabled pending operator setup, real consent and Google verification. See [Google auth](GOOGLE_AUTH.md). |
 | [grafana](https://grafana.com/docs/grafana-cloud/ai-tools/mcp-servers/cloud-mcp/) | OAuth via iMessage | Catalog routing available; account not tested |
 | [hugging_face](https://huggingface.co/docs/hub/agents-mcp) | OAuth via iMessage | Catalog routing available; account not tested |
 | [indeed](https://docs.indeed.com/indeed-mcp) | OAuth via iMessage | Catalog routing available; account not tested |

@@ -8,13 +8,17 @@ from . import quiet
 
 SCHEMA = {
     "name": "zoen_connections",
-    "description": "Find and connect services in the owner's private iMessage conversation. Catalog supports a query by name or capability and identifies OAuth, public services, and operator setup. Google/Slack use Plow; native Hermes covers accounts, public tools and Treg's API catalog. Connect activates only the chosen service in the background; OAuth links and completion arrive automatically. Status reports cached state; verify accounts with a live read. Cancel stops pending consent. Never ask for passwords or pasted tokens.",
+    "description": "Find and connect services in the owner's private iMessage conversation. Google uses Zoen's independent OAuth; request only Google capabilities needed for the task. Slack uses Plow. Native Hermes covers other accounts and public tools. Connect activates only the chosen service in the background; OAuth links and completion arrive automatically. Status reports cached state; verify accounts with a live read. Cancel stops pending consent. Never ask for passwords or pasted tokens.",
     "parameters": {
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["catalog", "status", "connect", "cancel"]},
             "connector": {"type": "string", "description": "google, slack, or an exact name returned by catalog. Omit for catalog."},
             "query": {"type": "string", "maxLength": 100, "description": "Optional catalog filter by service name or capability words (catalog descriptions are in English). Omit to list all."},
+            "capabilities": {"type": "array", "uniqueItems": True, "maxItems": 12,
+                             "description": "Google only: permissions needed for this task. Omit for identity-only login. Each capability must be enabled by the operator after the required Google verification.",
+                             "items": {"type": "string", "enum": ["identity", "calendar_read", "calendar_write", "gmail_read", "gmail_send", "drive_files", "drive_read", "contacts_read", "sheets_read", "sheets_write", "docs_read", "docs_write"]}},
+            "replace_account": {"type": "boolean", "description": "Google only. True solely when the owner explicitly asked to replace the previously connected Google account; adding permissions does not authorize an account switch."},
         },
         "required": ["action"],
         "additionalProperties": False,
@@ -27,7 +31,10 @@ async def authorized_connection(adapter, module, turn, args):
     await asyncio.wait_for(adapter._refresh_current_chat(chat), 5)
     if not module._owner_dm(adapter._chats.get(chat, {})) or adapter._send_guard(chat) is not None:
         return {"ok": False, "error": "requires the owner's current private chat"}
-    if args.get("connector") in {"google", "slack"} and args.get("action") != "catalog":
+    if args.get("connector") == "google" and args.get("action") != "catalog":
+        from . import google_connections
+        return await google_connections.dispatch(adapter, module, turn, args)
+    if args.get("connector") == "slack" and args.get("action") != "catalog":
         return await asyncio.to_thread(connection, args.get("action"), args.get("connector"))
     from . import mcp_connections
     return await mcp_connections.dispatch(adapter, module, turn, args)

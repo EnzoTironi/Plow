@@ -1,5 +1,10 @@
 # Connectors on Plow: runtime validation
 
+Current Google implementation: [independent Zoen OAuth and verification gates](GOOGLE_AUTH.md).
+The first sections below preserve the original infrastructure audit; later sections
+record the implemented native MCP flow. Google no longer routes through Plow in
+this branch, and remains disabled until its own setup/review is complete.
+
 Validated on 2026-09-19 against the existing `zoen:personal-agent` image, code
 revision `1c9cdfb300db0424209d2fb6a7b3686507a7faa7`. The installed runtime is
 Hermes 0.21.2 with MCP SDK 2.0.0. Tests used separate, disposable Docker containers
@@ -238,8 +243,8 @@ permissions do not isolate it from the agent process that owns it; the existing
 broad execution permissions remain a separate limitation.
 
 Todoist and Notion are the initial personal-service candidates for native MCP,
-our callback relay and this iMessage adapter. Continue using Plow for
-Google/Slack after its permission issue is resolved. Evaluate Nous-managed
+our callback relay and this iMessage adapter. Slack remains on Plow; Google now
+uses the independent implementation described in [Google auth](GOOGLE_AUTH.md). Evaluate Nous-managed
 connections if a per-user identity is eligible: that path may remove the need to
 host callbacks for the services it covers.
 

@@ -10,6 +10,8 @@ compose.override.yml
 .siblings/
 services/oauth-relay/node_modules/
 services/oauth-relay/.wrangler/
+services/oauth-relay/.dev.vars*
+client_secret_*.json
 
 # Live bearer from `plow-agents mint`. Never commit.
 plow-credentials

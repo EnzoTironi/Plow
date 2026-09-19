@@ -1,38 +1,8 @@
 import { page } from "./page.js";
 
-const HEADERS = {
-  "Cache-Control": "no-store",
-  "Referrer-Policy": "no-referrer",
-  "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
-  "X-Content-Type-Options": "nosniff",
-};
+import { HEADERS, capability, response, digest, readBody } from "./http.js";
+import { googleRoute, exchangeGoogleFlow } from "./google.js";
 const ASSETS = new Set(["/style.css", "/sky-midnight.webp", "/zoen-avatar.webp"]);
-const capability = (value, min = 32) => typeof value === "string"
-  && value.length >= min && value.length <= 256 && /^[A-Za-z0-9_-]+$/.test(value);
-const response = (data, status = 200) => Response.json(data, { status, headers: HEADERS });
-const digest = async (value) => Array.from(new Uint8Array(
-  await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
-), (byte) => byte.toString(16).padStart(2, "0")).join("");
-
-async function readBody(request) {
-  if (!request.headers.get("Content-Type")?.startsWith("application/json")) throw new Error("json required");
-  const reader = request.body?.getReader();
-  if (!reader) throw new Error("body required");
-  let text = "", size = 0;
-  const decoder = new TextDecoder();
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.length;
-      if (size > 4096) throw new Error("body too large");
-      text += decoder.decode(value, { stream: true });
-    }
-    return JSON.parse(text + decoder.decode());
-  } finally {
-    await reader.cancel();
-  }
-}
 
 function callbackFrom(url) {
   if (url.search.length > 16384) throw new Error("callback too large");
@@ -70,6 +40,7 @@ export default {
       return result;
     }
     try {
+      if (url.pathname.startsWith("/google/")) return await googleRoute(request, env);
       if (url.pathname === "/flows" && request.method === "POST") {
         const { success } = await env.CREATE_LIMITER.limit({ key: request.headers.get("CF-Connecting-IP") || "local" });
         if (!success) return response({ error: "rate_limited" }, 429);
@@ -113,15 +84,7 @@ export class OAuthFlow {
         await this.ctx.storage.deleteAll();
         flow = null;
       }
-      if (path === "/register") {
-        const body = await request.json();
-        if (flow) return response({ status: flow.status, expires_at: flow.expires }, flow.secretHash === body.secretHash ? 200 : 409);
-        const ttl = Math.min(600, Math.max(1, Number(this.env.FLOW_TTL_SECONDS) || 300));
-        flow = { ...body, expires: Date.now() + ttl * 1000, status: "pending" };
-        await this.ctx.storage.put("flow", flow);
-        await this.ctx.storage.setAlarm(flow.expires);
-        return response({ status: flow.status, expires_at: flow.expires }, 201);
-      }
+      if (path === "/register") return this.register(await request.json(), flow);
       if (!flow) return response({ error: "expired_or_unknown" }, 410);
       if (path === "/callback") {
         const callback = await request.json();
@@ -133,16 +96,32 @@ export class OAuthFlow {
         return response({ ok: true });
       }
       if (request.headers.get("X-Secret-Hash") !== flow.secretHash) return response({ error: "unauthorized" }, 403);
+      if (path === "/google/exchange" && request.method === "POST") {
+        return exchangeGoogleFlow(request, this.env, this.ctx, flow);
+      }
       if (path === "/" && request.method === "GET") return response({ status: flow.status, callback: flow.callback });
       if ((path === "/ack" && request.method === "POST") || (path === "/" && request.method === "DELETE")) {
         if (path === "/ack" && flow.status === "pending") return response({ error: "not_ready" }, 409);
         delete flow.callback;
+        delete flow.delivery;
         flow.status = path === "/ack" ? "consumed" : "cancelled";
         await this.ctx.storage.put("flow", flow);
         return response({ status: flow.status });
       }
       return response({ error: "not_found" }, 404);
     });
+  }
+
+  async register(body, flow) {
+    if (flow) {
+      const same = flow.secretHash === body.secretHash && flow.provider === body.provider && flow.challenge === body.challenge;
+      return response({ status: flow.status, expires_at: flow.expires }, same ? 200 : 409);
+    }
+    const ttl = Math.min(600, Math.max(1, Number(this.env.FLOW_TTL_SECONDS) || 300));
+    flow = { ...body, expires: Date.now() + ttl * 1000, status: "pending" };
+    await this.ctx.storage.put("flow", flow);
+    await this.ctx.storage.setAlarm(flow.expires);
+    return response({ status: flow.status, expires_at: flow.expires }, 201);
   }
 
   async alarm() { await this.ctx.storage.deleteAll(); }

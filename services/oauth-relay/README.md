@@ -45,7 +45,9 @@ the native SDK's responsibility; the adapter creates the independent poll token.
 Only its hash is stored. Expiration is five minutes, checked on every request and
 backed by a Durable Object alarm. There is no shared relay administrator key.
 
-No access tokens, refresh tokens or PKCE verifier belong here. Request logging and
+The native MCP callback transport never receives provider tokens or the PKCE
+verifier. The optional Google broker below has a different credential boundary.
+Request logging and
 Workers observability are disabled; don't enable them when investigating production
 OAuth callbacks. Reads and repeated identical callbacks are retryable; conflicting
 callbacks and callbacks after consumption are refused. Platform storage deletion
@@ -57,3 +59,21 @@ dedicated stable domain and operational monitoring that records only aggregate
 counts/statuses are appropriate before a wider launch.
 
 See [the connector integration and validation notes](../../docs/CONNECTORS.md).
+
+## Optional Google broker
+
+Google web OAuth requires a confidential client secret. The separate
+`/google/flows`, `/google/flows/<id>/exchange` and `/google/refresh` routes keep that
+secret in Cloudflare, outside every public agent image. Google is disabled by
+default; `/google/config` reports the actual configured state and enabled
+capabilities. Existing native MCP callbacks keep their original protocol.
+
+Google exchange requires both the flow's poll capability and S256 verifier.
+Refresh tokens are returned only inside authenticated AES-GCM handles, bound to
+the OAuth client. The temporary exchange response is encrypted for retry until
+acknowledgement or the five-minute expiry. The Worker does handle Google tokens
+in memory during exchange/refresh; it does not fetch Google account contents.
+
+Use [the Google setup and verification guide](../../docs/GOOGLE_AUTH.md) before
+enabling any Google capability. A successful Worker deployment is not evidence
+of Google verification or a working user account.
