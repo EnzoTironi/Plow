@@ -2,7 +2,7 @@
 #
 # Pin by immutable tag + digest. A moving tag would substitute code under an
 # agent that holds a live Plow credential.
-FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-42cb36ed16f513e9c7461b3f355acec181c8a26d@sha256:7bb771761c075ef3736c4cc7bdc48402ce325ed35b5efb529b1b31ec7956fd40
+FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-ef0019372ff8bca593611b31ebd2e08f9f1458ff@sha256:a8a2f97ad78b8192d80a984dce81d3bf5a9a883d18cb7b677704913a09b56aee
 
 # --yolo: frozen into tools.approval at gateway import. Tirith /approve
 # otherwise parks the turn on iMessage while the owner only sees typing.
@@ -60,17 +60,6 @@ RUN set -eu; \
     fi; \
     command -v gh >/dev/null
 
-# Usage reporter: fetch the commit vendor/client.pin names, refuse any other hash.
-COPY vendor/client.pin /opt/plow/agent-index-client.pin
-RUN set -eu; \
-    sha="$(sed -n 's/^sha=//p' /opt/plow/agent-index-client.pin)"; \
-    want="$(sed -n 's/^sha256=//p' /opt/plow/agent-index-client.pin)"; \
-    path="$(sed -n 's/^path=//p' /opt/plow/agent-index-client.pin)"; \
-    curl -fsS --max-time 60 -o /opt/plow/agent-index-client.py \
-      "https://raw.githubusercontent.com/plow-pbc/agent-index-client/${sha}/${path}"; \
-    got="$(sha256sum /opt/plow/agent-index-client.py | cut -d' ' -f1)"; \
-    [ "$got" = "$want" ] || { echo "agent-index client is $got, pin says $want" >&2; exit 1; }
-
 # Language id for the ack. Algorithm in-process; not an LLM.
 # fasttext-wheel has no cp313 wheel; source needs <cstdint> on newer gcc.
 RUN set -eu; \
@@ -103,6 +92,5 @@ COPY image/plow-init-then-face.sh /opt/hermes/plow-init-then-face.sh
 COPY image/s6-overlay/ /etc/s6-overlay/
 RUN chmod 0644 /opt/hermes/plugins/zoen-face/plugin.yaml /opt/hermes/plugins/zoen-face/__init__.py /opt/hermes/plugins/zoen-face/quiet.py /opt/hermes/enable-zoen-face.py \
  && chmod 0755 /opt/hermes/plow-init-then-face.sh \
- && chmod 0755 /etc/s6-overlay/s6-rc.d/agent-index/run \
  && chmod 0755 /etc/s6-overlay/s6-rc.d/zoen-floor-cron/run \
  && /opt/hermes/.venv/bin/python /opt/hermes/enable-zoen-face.py
