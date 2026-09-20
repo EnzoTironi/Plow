@@ -123,10 +123,109 @@ def test_seed_text_keeps_indent_and_neighbors():
         )
 
 
+def test_refresh_replaces_stale_home_face_and_reopens_first_contact():
+    with tempfile.TemporaryDirectory() as folder:
+        bundled = Path(folder) / "bundled"
+        bundled.mkdir()
+        (bundled / "face.py").write_text("HELLO = ('new',)\n")
+        home = Path(folder) / "home"
+        scripts = home / "skills" / "zoen" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "face.py").write_text("HELLO = ('old',)\n")
+        voice = home / "zoen" / "VOICE.md"
+        voice.parent.mkdir(parents=True)
+        voice.write_text("language: pt\n")
+        (voice.parent / "BOOTSTRAP.md").write_text("old ritual\n")
+        assert enable.refresh_image_scripts(
+            str(home), bundled=bundled, face=bundled / "face.py"
+        ) is True
+        assert (scripts / "face.py").read_text() == "HELLO = ('new',)\n"
+        assert not voice.exists()
+        assert not (home / "zoen" / "BOOTSTRAP.md").exists()
+        assert enable.refresh_image_scripts(
+            str(home), bundled=bundled, face=bundled / "face.py"
+        ) is False
+        voice.parent.mkdir(parents=True, exist_ok=True)
+        voice.write_text("language: pt\n")
+        assert enable.refresh_image_scripts(
+            str(home), bundled=bundled, face=bundled / "face.py"
+        ) is False
+        assert voice.read_text() == "language: pt\n"
+
+
+def test_refresh_removes_stale_layout_and_bak():
+    with tempfile.TemporaryDirectory() as folder:
+        bundled = Path(folder) / "bundled"
+        (bundled / "scripts").mkdir(parents=True)
+        (bundled / "SKILL.md").write_text("name: zoen\n")
+        (bundled / "scripts" / "face.py").write_text("HELLO = ('new',)\n")
+        home = Path(folder) / "home"
+        dest = home / "skills" / "zoen"
+        dest.mkdir(parents=True)
+        (dest / "face.py").write_text(
+            'HELLO = ("a gente te ajuda. +55 31 99994-1160",)\n'
+        )
+        (dest / "scripts").mkdir()
+        (dest / "scripts" / "face.py").write_text("HELLO = ('old',)\n")
+        bak = home / "skills" / "zoen.bak"
+        bak.mkdir()
+        (bak / "face.py").write_text("old\n")
+        plugin = home / "plugins" / "zoen-face"
+        plugin.mkdir(parents=True)
+        (plugin / "presence.py").write_text("kick\n")
+        assert enable.refresh_image_scripts(
+            str(home), bundled=bundled, face=bundled / "scripts" / "face.py"
+        ) is True
+        assert (dest / "scripts" / "face.py").read_text() == "HELLO = ('new',)\n"
+        assert (dest / "SKILL.md").read_text() == "name: zoen\n"
+        assert not (dest / "face.py").exists()
+        assert not bak.exists()
+        assert not plugin.exists()
+
+
+def test_refresh_keeps_voice_when_official_face_is_already_there():
+    with tempfile.TemporaryDirectory() as folder:
+        bundled = Path(folder) / "bundled"
+        bundled.mkdir()
+        (bundled / "face.py").write_text("HELLO = ('new',)\n")
+        home = Path(folder) / "home"
+        scripts = home / "skills" / "zoen" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "face.py").write_text("HELLO = ('new',)\n")
+        voice = home / "zoen" / "VOICE.md"
+        voice.parent.mkdir(parents=True)
+        voice.write_text("language: pt\n")
+        assert enable.refresh_image_scripts(
+            str(home), bundled=bundled, face=bundled / "face.py"
+        ) is False
+        assert voice.read_text() == "language: pt\n"
+
+
+def test_refresh_pins_workspace_leftover_face():
+    with tempfile.TemporaryDirectory() as folder:
+        bundled = Path(folder) / "bundled"
+        bundled.mkdir()
+        (bundled / "face.py").write_text("HELLO = ('new',)\n")
+        home = Path(folder) / "home"
+        workspace = home / "workspace" / "Plow" / "skills" / "zoen" / "scripts"
+        workspace.mkdir(parents=True)
+        (workspace / "face.py").write_text(
+            'HELLO = (f"a gente te ajuda. {ENZO_TEL_DISPLAY}",)\n'
+        )
+        assert enable.refresh_image_scripts(
+            str(home), bundled=bundled, face=bundled / "face.py"
+        ) is True
+        assert not (home / "workspace").exists()
+
+
 if __name__ == "__main__":
     test_live_dump_gains_zoen_face_and_keeps_plow_chat()
     test_apply_runtime_turns_yolo_on_and_quiets_plow_chat()
     test_apply_runtime_pins_talker_and_leaf_catalog()
     test_already_listed_still_gains_yolo()
     test_seed_text_keeps_indent_and_neighbors()
+    test_refresh_replaces_stale_home_face_and_reopens_first_contact()
+    test_refresh_keeps_voice_when_official_face_is_already_there()
+    test_refresh_removes_stale_layout_and_bak()
+    test_refresh_pins_workspace_leftover_face()
     print("ok")

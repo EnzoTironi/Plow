@@ -29,18 +29,6 @@ REFRESH_TIMEOUT = 3.0
 DRAFT_DELAY = .15
 
 
-def _kick_intro(message, chat):
-    try:
-        if face.voice_exists():
-            return
-        text = str(message.get("body") or "").strip()
-        if not text or text.startswith("/") or face.is_setup_text(text):
-            return
-        face.intro(inbound=text, chat=chat)
-    except Exception:
-        log.exception("early intro failed")
-
-
 class Receipts:
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -93,6 +81,7 @@ class Presence:
         home = Path(os.environ.get("HERMES_HOME", "/var/lib/hermes"))
         self.receipts = receipts or Receipts(home / "zoen" / "reception.db")
         self.home = home
+        self.voiced = face.voice_exists()
         self.recent = {}
         self.context = {}
         self.bursts = {}
@@ -157,6 +146,8 @@ class Presence:
             return False
 
     async def opening(self, chat, burst):
+        if not self.voiced:
+            return {}
         messages = list(burst["messages"])
         await asyncio.sleep(DRAFT_DELAY)
         return await draft(messages, http=burst["http"], home=self.home, recent=self.recent.get(chat, []),
@@ -283,9 +274,6 @@ def install(adapter_cls, module, prepare_dispatch=None):
             if not hasattr(self, "_zoen_reception"):
                 self._zoen_reception = Presence(self, module)
             self._zoen_reception.accept(message, chat)
-            if not getattr(self, "_zoen_early_intro", False):
-                self._zoen_early_intro = True
-                asyncio.get_running_loop().run_in_executor(None, _kick_intro, message, chat)
         except (OSError, sqlite3.Error):
             log.exception("reception unavailable; input remains queued")
 

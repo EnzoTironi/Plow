@@ -93,7 +93,9 @@ RUN find /opt/hermes/skills -mindepth 1 -type d -exec chmod 0755 {} + \
 COPY skills/zoen/scripts/ /opt/plow/zoen/
 RUN chown -R root:root /opt/plow \
  && find /opt/plow -type d -exec chmod 0755 {} + \
- && find /opt/plow -type f -exec chmod 0644 {} +
+ && find /opt/plow -type f -exec chmod 0644 {} + \
+ && python3 /opt/plow/zoen/face.py bake --dest /usr/share/doc/zoen \
+ && chmod 0644 /usr/share/doc/zoen/Zoen.vcf /usr/share/doc/zoen/Enzo.vcf
 
 COPY image/plugins/zoen-face/ /opt/hermes/plugins/zoen-face/
 COPY image/optional-mcps/ /opt/hermes/optional-mcps/

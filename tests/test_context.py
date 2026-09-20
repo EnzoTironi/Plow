@@ -59,14 +59,15 @@ def test_pack_drops_the_ritual_after_voice_has_content():
         assert packed.rstrip().endswith(context.REMINDER_CLOSE)
 
 
-def test_living_bootstrap_wins_until_voice_exists():
+def test_image_seed_wins_over_a_leftover_home_bootstrap():
     with tempfile.TemporaryDirectory() as d:
         zoen = Path(d) / "zoen"
         zoen.mkdir()
-        (zoen / "BOOTSTRAP.md").write_text("custom first run")
+        (zoen / "BOOTSTRAP.md").write_text("custom first run\npython3 /opt/plow/zoen/face.py intro")
         packed = context.pack(d, seed=SEED)
-        assert "custom first run" in packed
-        assert "One shot" not in packed
+        assert "custom first run" not in packed
+        assert "One shot" in packed
+        assert "zoen_imessage" in packed
 
 
 def test_pack_layers_voice_memory_journal_then_now():
@@ -161,7 +162,7 @@ if __name__ == "__main__":
     test_pack_is_reminder_only_when_home_and_seed_are_missing()
     test_pack_includes_the_ritual_until_voice_has_content()
     test_pack_drops_the_ritual_after_voice_has_content()
-    test_living_bootstrap_wins_until_voice_exists()
+    test_image_seed_wins_over_a_leftover_home_bootstrap()
     test_pack_layers_voice_memory_journal_then_now()
     test_now_keeps_the_first_ten_lines()
     test_pack_escapes_close_tags_inside_memory()

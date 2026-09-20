@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Name the iMessage card Zoen and put the monster on it.
 
-    face.py intro
+    face.py cards
     face.py rename
     face.py card --force
+    face.py bake
 
-Intro is the first message: hello, then the card. Rename is install.
+Cards are the vCards. The image bakes them; send only fills Zoen's number.
+The agent writes first contact itself.
+Rename is install. `intro` is a retired alias and sends nothing.
 Auth: PLOW_API_BASE + PLOW_AGENT_TOKEN, optional PLOW_ACCOUNT_TOKEN
 or ~/.config/plow/token.
 """
@@ -18,7 +21,6 @@ import os
 import re
 import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote
@@ -36,6 +38,8 @@ ENZO_NAME = "Enzo"
 ENZO_CARD_NAME = "Enzo.vcf"
 ENZO_TEL = "+5531999941160"
 ENZO_TEL_DISPLAY = "+55 31 99994-1160"
+BAKED_TEL = "__ZOEN_TEL__"
+CARD_DIR = Path("/usr/share/doc/zoen")
 HELLO = {
     "en": (
         "hey, I'm Zoen, your little monster that makes your dreams come true",
@@ -48,10 +52,48 @@ HELLO = {
         "Enzo me criou. salva o cartão dele pra dúvida ou problema",
     ),
 }
-_INTRO_LOCK = threading.Lock()
 SETUP_NAMES = {"plow setup"}
 SETUP_PREFIX = "plow, not your owner"
-HELLO_MARKERS = ("I'm Zoen", "eu sou o Zoen")
+HELLO_MARKERS = (
+    "I'm Zoen",
+    "eu sou o Zoen",
+    "a gente te ajuda",
+    "we'll help.",
+    "+55 31 99994-1160",
+)
+_RETIRED_HELLO = (
+    "a gente te ajuda",
+    "we'll help.",
+    "+55 31 99994-1160",
+    "+5531999941160",
+    "me criou o enzo",
+    "o monstrinho que faz seus sonhos acontecerem",
+    "your little monster that makes your dreams come true",
+    "salva meu cartão pra você saber que sou eu",
+    "save my card so you know it's me",
+    "salva o cartão dele pra dúvida ou problema",
+    "save his card for questions or trouble",
+)
+
+
+def first_contact_prompt() -> str:
+    return (
+        "\n[Zoen first contact]\n"
+        "VOICE.md is missing. Answer them normally via zoen_imessage, in "
+        "their language, like @tryZoen: short stacked thoughts, slightly "
+        "lowercase, dry, a little witty. This turn they need to know: you "
+        "are Zoen, the little monster that makes their dreams happen; they "
+        "should save your card so they know it's you; Enzo made you; they "
+        "should save his card for questions or trouble; you can connect "
+        "their apps — more than a thousand connections and MCPs — wherever "
+        "they need. How you say it is yours. Not a menu. Do not copy an "
+        "older intro from this chat. Never send a phone number or 'a gente "
+        "te ajuda'. Then `python3 /opt/plow/zoen/face.py cards`. Handle "
+        "their request. This session, learn what to call them: "
+        "zoen_owner_profile action=save if the name is already in the "
+        "message or memory, else action=ask and ask only if ask=true. "
+        "Write VOICE.md this turn."
+    )
 CARD_AFTER = 2
 DIRECTED = (
     "Zoen is a software-factory agent in this iMessage group. "
@@ -126,6 +168,41 @@ def credentials() -> tuple[str, dict[str, str]]:
         "Authorization": f"Bearer {token}",
         "Accept": "application/json",
     }
+
+
+def card_root() -> Path:
+    env = (os.environ.get("ZOEN_CARD_DIR") or "").strip()
+    return Path(env) if env else CARD_DIR
+
+
+def baked_card(filename: str) -> Path | None:
+    here = Path(__file__).resolve()
+    for root in (card_root(), CARD_DIR, here.parents[3] / "docs", here.parent):
+        path = root / filename
+        if path.is_file():
+            return path
+    return None
+
+
+def card_bytes(name: str, tel: str, *, filename: str, photo: bool) -> bytes:
+    path = baked_card(filename)
+    if path is not None:
+        data = path.read_bytes()
+        if BAKED_TEL.encode("ascii") in data:
+            return data.replace(BAKED_TEL.encode("ascii"), tel.encode("ascii"))
+        return data
+    jpeg = photo_path().read_bytes() if photo else None
+    return vcard(name, tel, jpeg)
+
+
+def bake_cards(dest: str | Path | None = None) -> dict[str, Any]:
+    root = Path(dest) if dest else card_root()
+    root.mkdir(parents=True, exist_ok=True)
+    zoen = vcard(NAME, BAKED_TEL, photo_path().read_bytes())
+    enzo = vcard(ENZO_NAME, ENZO_TEL)
+    (root / CARD_NAME).write_bytes(zoen)
+    (root / ENZO_CARD_NAME).write_bytes(enzo)
+    return {"ok": True, "dir": str(root), "cards": [CARD_NAME, ENZO_CARD_NAME]}
 
 
 def photo_path() -> Path:
@@ -717,8 +794,7 @@ def upload_card(
     filename: str = CARD_NAME,
     photo: bool = True,
 ) -> dict[str, Any]:
-    jpeg = photo_path().read_bytes() if photo else None
-    card = vcard(name, tel, jpeg)
+    card = card_bytes(name, tel, filename=filename, photo=photo)
     declared = http(
         "POST",
         f"{base}/v1/chats/{quote(chat_uid)}/attachments",
@@ -823,6 +899,8 @@ def send_text(
     body: str,
     http: Http,
 ) -> dict[str, Any]:
+    if any(needle in (body or "").lower() for needle in _RETIRED_HELLO):
+        return {"ok": True, "status": 200, "error": None, "skipped": "retired hello"}
     sent = http(
         "POST",
         f"{base}/v1/chats/{quote(chat_uid)}/messages",
@@ -867,21 +945,9 @@ def apply(
     return sent
 
 
-def intro(
+def cards(
     force: bool = False,
     chat: str | None = None,
-    inbound: str | None = None,
-    http: Http = request,
-    put: Put = put_bytes,
-) -> dict[str, Any]:
-    with _INTRO_LOCK:
-        return _intro(force=force, chat=chat, inbound=inbound, http=http, put=put)
-
-
-def _intro(
-    force: bool = False,
-    chat: str | None = None,
-    inbound: str | None = None,
     http: Http = request,
     put: Put = put_bytes,
 ) -> dict[str, Any]:
@@ -898,132 +964,43 @@ def _intro(
         headers=headers,
     )
     history = listed.get("body") if listed.get("ok") else {}
-    spoken = (inbound or "").strip() or latest_inbound(history)
-    if not force and is_setup_text(spoken):
-        return {
-            "ok": True,
-            "skipped": "plow setup",
-            "chat": chat_uid,
-            "name": NAME,
-            "language": "pt",
-            "rename": renamed,
-        }
-    if not force and not spoken:
-        return {
-            "ok": True,
-            "skipped": "waiting for inbound",
-            "chat": chat_uid,
-            "name": NAME,
-            "language": "pt",
-            "rename": renamed,
-        }
-    if not force and not (inbound or "").strip() and not newest_is_inbound(history):
-        return {
-            "ok": True,
-            "skipped": "waiting for inbound",
-            "chat": chat_uid,
-            "name": NAME,
-            "language": "pt",
-            "rename": renamed,
-        }
-    voiced = voice_exists()
-    want_hello = force or not (hello_sent(history) and voiced)
-    want_card = force or not (already_sent(history) and voiced)
-    if not want_hello and not want_card:
-        voice = stamp_voice(pick_language(spoken))
-        return {
-            "ok": True,
-            "skipped": "already sent",
-            "chat": chat_uid,
-            "name": NAME,
-            "language": pick_language(spoken),
-            "rename": renamed,
-            "voice": voice,
-        }
-    sent_hello: list[str] = []
-
-    def fail(result: dict[str, Any]) -> dict[str, Any]:
-        result.update({
-            "chat": chat_uid,
-            "name": NAME,
-            "hello": sent_hello,
-            "rename": renamed,
-        })
-        return result
-
-    def say(bubble: str) -> dict[str, Any] | None:
-        result = send_text(base, headers, chat_uid, bubble, http)
-        if not result.get("ok"):
-            return fail(result)
-        sent_hello.append(bubble)
-        return None
-
-    def judge() -> str:
-        try:
-            return pick_language(spoken, http=http, base=base, headers=headers)
-        except Exception:
-            return "pt"
-
-    def pack() -> dict[str, Any]:
-        return upload_card(base, headers, chat_uid, tel, http, put)
-
-    peek_owner(home=os.environ.get("HERMES_HOME"))
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        lang_job = pool.submit(judge)
-        card_job = pool.submit(pack) if want_card else None
-        enzo_job = pool.submit(
-            lambda: upload_card(
-                base, headers, chat_uid, ENZO_TEL, http, put,
-                name=ENZO_NAME, filename=ENZO_CARD_NAME, photo=False,
-            )
-        ) if want_hello else None
-        lang = lang_job.result()
-        bubbles = hello_for(lang, spoken, http=http, base=base, headers=headers)
-        before, after = bubbles[:CARD_AFTER], bubbles[CARD_AFTER:]
-        if want_hello:
-            for bubble in before:
-                failed = say(bubble)
-                if failed:
-                    return failed
-        attachment = None
-        if want_card:
-            assert card_job is not None
-            try:
-                uploaded = card_job.result()
-            except Exception as exc:
-                return fail({"ok": False, "error": str(exc), "status": 0})
-            if not uploaded.get("ok"):
-                return fail(uploaded)
-            posted = attach_card(base, headers, chat_uid, str(uploaded["uid"]), http)
-            if not posted.get("ok"):
-                return fail(posted)
-            attachment = posted.get("attachment")
-        if want_hello:
-            for bubble in after:
-                failed = say(bubble)
-                if failed:
-                    return failed
-            assert enzo_job is not None
-            try:
-                enzo = enzo_job.result()
-            except Exception as exc:
-                return fail({"ok": False, "error": str(exc), "status": 0})
-            if not enzo.get("ok"):
-                return fail(enzo)
-            posted = attach_card(base, headers, chat_uid, str(enzo["uid"]), http)
-            if not posted.get("ok"):
-                return fail(posted)
-    voice = stamp_voice(lang)
+    sent: list[str] = []
+    for number, name, filename, photo in (
+        (tel, NAME, CARD_NAME, True),
+        (ENZO_TEL, ENZO_NAME, ENZO_CARD_NAME, False),
+    ):
+        if not force and already_sent(history, filename):
+            continue
+        uploaded = upload_card(
+            base, headers, chat_uid, number, http, put,
+            name=name, filename=filename, photo=photo,
+        )
+        if not uploaded.get("ok"):
+            uploaded.update({"chat": chat_uid, "name": NAME, "cards": sent, "rename": renamed})
+            return uploaded
+        posted = attach_card(base, headers, chat_uid, str(uploaded["uid"]), http)
+        if not posted.get("ok"):
+            posted.update({"chat": chat_uid, "name": NAME, "cards": sent, "rename": renamed})
+            return posted
+        sent.append(filename)
     return {
         "ok": True,
         "chat": chat_uid,
         "name": NAME,
-        "language": lang,
-        "hello": sent_hello,
-        "attachment": attachment,
+        "cards": sent,
         "rename": renamed,
-        "voice": voice,
     }
+
+
+def intro(
+    force: bool = False,
+    chat: str | None = None,
+    inbound: str | None = None,
+    http: Http = request,
+    put: Put = put_bytes,
+) -> dict[str, Any]:
+    del force, chat, inbound, http, put
+    return {"ok": True, "skipped": "retired hello", "hello": []}
 
 
 def is_setup_text(text: str) -> bool:
@@ -1061,6 +1038,42 @@ def _call_intro(
     return intro(**kwargs)
 
 
+def chat_history(event: Any, http: Http | None = None) -> Any:
+    for attr in ("messages", "history"):
+        rows = getattr(event, attr, None)
+        if rows:
+            return rows
+    client = http or request
+    try:
+        base, headers = credentials()
+    except SystemExit:
+        return None
+    source = getattr(event, "source", None)
+    chat_uid = str(getattr(source, "chat_id", None) or "").strip() if source else ""
+    if not chat_uid.startswith("cht_"):
+        try:
+            _base, _headers, me = load_me(client)
+            chat_uid = home_chat(me)
+        except (SystemExit, KeyError, TypeError, ValueError):
+            return None
+    if not chat_uid.startswith("cht_"):
+        return None
+    listed = client(
+        "GET",
+        f"{base}/v1/chats/{quote(chat_uid)}/messages?limit=20",
+        headers=headers,
+    )
+    return listed.get("body") if listed.get("ok") else None
+
+
+def already_introduced(event: Any, http: Http | None = None) -> bool:
+    try:
+        history = chat_history(event, http)
+    except (SystemExit, OSError, TypeError, ValueError, KeyError):
+        return False
+    return bool(history) and hello_sent(history)
+
+
 def greet_on_dispatch(
     event: Any = None,
     *,
@@ -1078,25 +1091,17 @@ def greet_on_dispatch(
         return {"action": "skip", "reason": "plow setup"}
     if is_group(event):
         return group_on_dispatch(event, http=http)
-    if voice_exists() if voiced is None else voiced:
+    live = voice_exists() if voiced is None else voiced
+    if not live and already_introduced(event, http):
+        stamp_voice("pt")
+        return {"action": "allow"}
+    if live:
         return {"action": "allow"}
     text = spoken_text(event) or str(getattr(event, "text", None) or "").strip()
     if not text or text.startswith("/"):
         return {"action": "allow"}
-    try:
-        payload = _call_intro(send, http, put, inbound=text)
-    except (Exception, SystemExit):
-        return {"action": "allow"}
-    if payload.get("ok"):
-        event.channel_prompt = (getattr(event, "channel_prompt", "") or "") + (
-            "\n[Zoen first contact]\nYour introduction and contact card were already handled. "
-            "Do not greet again or ask what to build. Continue the owner's actual request. "
-            "After handling it, follow the first-contact name guidance: save a name they "
-            "already provided with zoen_owner_profile, or use its ask action to reserve the "
-            "one optional name question. Ask only if ask=true. Save their supplied name "
-            "without another confirmation. Do not add a dream question.")
-        return {"action": "allow", "reason": "zoen intro delivered; preserve first request"}
-    return {"action": "allow"}
+    event.channel_prompt = (getattr(event, "channel_prompt", "") or "") + first_contact_prompt()
+    return {"action": "allow", "reason": "zoen onboarding"}
 
 
 def rename(
@@ -1121,12 +1126,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "mode",
         nargs="?",
-        default="intro",
-        choices=("intro", "rename", "card"),
-        help="intro is the first message, rename is install, card is the vCard only",
+        default="cards",
+        choices=("intro", "cards", "rename", "card", "bake"),
+        help="cards are the vCards, intro is the retired scripted hello, rename is install",
     )
     parser.add_argument("--force", action="store_true", help="send even if one already went")
     parser.add_argument("--chat", help="cht_... (default home DM)")
+    parser.add_argument("--dest", help="directory for bake (default /usr/share/doc/zoen)")
     return parser
 
 
@@ -1136,10 +1142,14 @@ def main(
     put: Put = put_bytes,
 ) -> int:
     args = build_parser().parse_args(argv)
+    if args.mode == "bake":
+        return _out(bake_cards(args.dest))
     if args.mode == "rename":
         return _out(rename(http=http))
     if args.mode == "card":
         return _out(apply(force=args.force, chat=args.chat, http=http, put=put))
+    if args.mode == "cards":
+        return _out(cards(force=args.force, chat=args.chat, http=http, put=put))
     return _out(intro(force=args.force, chat=args.chat, http=http, put=put))
 
 

@@ -2,8 +2,10 @@
 """Run: python3 tests/test_zoen_face_quiet.py"""
 import asyncio
 import importlib.util
+import json
 import os
 import tempfile
+import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -96,6 +98,54 @@ def test_contract_renames_send_and_forbids_leftover():
     assert "not delivered" in module._ANSWER_LAST
     assert "Never skip" in module._ANSWER_LAST
     assert "delivered automatically" not in module._ANSWER_LAST
+
+
+def test_sitecustomize_drops_retired_hello_in_any_python():
+    spec = importlib.util.spec_from_file_location(
+        "zoen_sitecustomize", ROOT / "image/sitecustomize.py"
+    )
+    hook = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(hook)
+    for body in (
+        "a gente te ajuda. +55 31 99994-1160",
+        "oi, eu sou o Zoen, o monstrinho que faz seus sonhos acontecerem",
+        "salva meu cartão pra você saber que sou eu",
+    ):
+        req = urllib.request.Request(
+            "https://example.invalid/v1/chats/cht_x/messages",
+            data=json.dumps({"body": body, "format": "none"}).encode(),
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=1) as resp:
+            assert resp.status == 200
+            assert json.loads(resp.read()) == {}
+
+
+def test_retired_hello_http_post_is_dropped():
+    quiet.install_http_filter()
+    req = urllib.request.Request(
+        "https://example.invalid/v1/chats/cht_x/messages",
+        data=json.dumps({"body": "a gente te ajuda. +55 31 99994-1160", "format": "none"}).encode(),
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=1) as resp:
+        assert resp.status == 200
+        assert json.loads(resp.read()) == {}
+
+
+def test_retired_hello_is_dropped():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    args = {
+        "items": [
+            {"type": "text", "body": "a gente te ajuda. +55 31 99994-1160"},
+            {"type": "text", "body": "shipped"},
+        ]
+    }
+    result = asyncio.run(box.send_sequence(args, {"chat_uid": "cht_x"}))
+    assert result["success"] is True
+    assert box.posted == [("sequence", {"items": [{"type": "text", "body": "shipped"}]})]
 
 
 def test_send_sequence_still_runs():
@@ -346,6 +396,9 @@ if __name__ == "__main__":
     test_normal_final_is_dropped()
     test_contract_renames_send_and_forbids_leftover()
     test_leftover_credits_error_becomes_the_dashboard_bubble()
+    test_sitecustomize_drops_retired_hello_in_any_python()
+    test_retired_hello_http_post_is_dropped()
+    test_retired_hello_is_dropped()
     test_send_sequence_still_runs()
     test_native_final_media_and_typing_are_preserved_status_chatter_is_dropped()
     test_media_sequence_uploads_file_instead_of_the_path()

@@ -1,19 +1,38 @@
 """First inbound is the Zoen intro. Groups stay quiet unless they are for Zoen."""
 from __future__ import annotations
 
+import importlib.util
 import sys
 from pathlib import Path
 
 from . import quiet
 
+_ENABLE = Path("/opt/hermes/enable-zoen-face.py")
+
 SCRIPTS = Path("/opt/plow/zoen")
-if str(SCRIPTS) not in sys.path:
+if SCRIPTS.is_dir():
+    sys.modules.pop("face", None)
+    if str(SCRIPTS) in sys.path:
+        sys.path.remove(str(SCRIPTS))
+    sys.path.insert(0, str(SCRIPTS))
+elif str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import face  # noqa: E402
 from . import presence  # noqa: E402
 from . import connections  # noqa: E402
 from . import owner_profile  # noqa: E402
+
+
+def _reset_home_skill() -> None:
+    if not _ENABLE.is_file():
+        return
+    spec = importlib.util.spec_from_file_location("enable_zoen_face", _ENABLE)
+    if spec is None or spec.loader is None:
+        return
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.refresh_image_scripts()
 
 
 def configure_adapters():
@@ -27,6 +46,11 @@ def configure_adapters():
 
 
 def register(ctx) -> None:
+    quiet.install_http_filter()
+    try:
+        _reset_home_skill()
+    except Exception:
+        pass
     # The pinned Hermes defers platform imports. Materialize Plow before
     # wrapping its adapter, so reception covers the very first inbound burst.
     from gateway.platform_registry import platform_registry

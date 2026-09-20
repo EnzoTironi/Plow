@@ -35,6 +35,10 @@ def message(uid, text="faz uma pesquisa", attachments=None):
 
 
 def receiver(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    zoen = tmp_path / "zoen"
+    zoen.mkdir(exist_ok=True)
+    (zoen / "VOICE.md").write_text("language: pt\n")
     monkeypatch.setattr(presence, "SILENCE", .025)
     monkeypatch.setattr(presence, "DRAFT_DELAY", .001)
 
@@ -57,6 +61,36 @@ def receiver(tmp_path, monkeypatch):
 async def drain(receiving):
     while receiving.tasks:
         await asyncio.gather(*receiving.tasks)
+
+
+def test_first_contact_skips_reception_opening(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    (tmp_path / "zoen").mkdir()
+    monkeypatch.setattr(presence, "SILENCE", .025)
+    monkeypatch.setattr(presence, "DRAFT_DELAY", .001)
+
+    async def model_draft(messages, **kwargs):
+        return {"line": "tô aqui, manda", "reaction": "like"}
+
+    monkeypatch.setattr(presence, "draft", model_draft)
+    adapter = Adapter()
+    module = SimpleNamespace(BASE="http://fixture", _owner_dm=lambda chat: chat.get("owner", False))
+    receiving = presence.Presence(
+        adapter, module, presence.Receipts(tmp_path / "receipts.db")
+    )
+
+    async def post(chat, endpoint, payload, http, deadline):
+        adapter.posts.append((chat, endpoint, payload))
+        return "sent"
+
+    receiving.post = post
+
+    async def run():
+        receiving.accept(message("msg_1", "Fala comigo"), "cht_owner")
+        await drain(receiving)
+
+    asyncio.run(run())
+    assert adapter.posts == []
 
 
 def test_burst_one_status_and_reaction_on_last_message(tmp_path, monkeypatch):

@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import sys
+import urllib.request
 from contextlib import nullcontext
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -29,6 +30,19 @@ from credits import (  # noqa: E402
 )
 
 log = logging.getLogger("zoen-face")
+_RETIRED_HELLO = (
+    "a gente te ajuda",
+    "we'll help.",
+    "+55 31 99994-1160",
+    "+5531999941160",
+    "me criou o enzo",
+    "o monstrinho que faz seus sonhos acontecerem",
+    "your little monster that makes your dreams come true",
+    "salva meu cartão pra você saber que sou eu",
+    "save my card so you know it's me",
+    "salva o cartão dele pra dúvida ou problema",
+    "save his card for questions or trouble",
+)
 
 _SILENT = ("send_or_update_status",)
 
@@ -355,9 +369,80 @@ def post_voicememo(chat_id: str, path: Path) -> object:
     return type("Result", (), {"success": True, "error": None, "message_id": None})()
 
 
+def _retired_hello(item: object) -> bool:
+    if not isinstance(item, dict):
+        return False
+    body = str(item.get("body") or item.get("text") or "").lower()
+    return any(needle in body for needle in _RETIRED_HELLO)
+
+
+def _retired_text(text: str) -> bool:
+    body = (text or "").lower()
+    return any(needle in body for needle in _RETIRED_HELLO)
+
+
+def _retired_payload(raw: object) -> bool:
+    if not raw:
+        return False
+    text = raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        payload = None
+    body = str(payload.get("body") or "") if isinstance(payload, dict) else text
+    return _retired_text(body)
+
+
+class _DroppedHTTP:
+    status = 200
+
+    def read(self) -> bytes:
+        return b"{}"
+
+    def __enter__(self) -> "_DroppedHTTP":
+        return self
+
+    def __exit__(self, *_args: object) -> bool:
+        return False
+
+
+_HTTP_FILTERED = False
+
+
+def install_http_filter() -> None:
+    """Drop retired hello POSTs that bypass zoen_imessage (face.py intro)."""
+    global _HTTP_FILTERED
+    if _HTTP_FILTERED:
+        return
+    _HTTP_FILTERED = True
+    orig = urllib.request.urlopen
+
+    def urlopen_filtered(*args, **kwargs):
+        req = args[0] if args else kwargs.get("url")
+        method = "GET"
+        raw = kwargs.get("data")
+        target = ""
+        if isinstance(req, Request):
+            method = req.get_method() or "GET"
+            if raw is None:
+                raw = req.data
+            target = req.full_url
+        elif req is not None:
+            target = str(req)
+        if method.upper() == "POST" and "/messages" in target and _retired_payload(raw):
+            log.warning("zoen-face dropped retired hello HTTP POST")
+            return _DroppedHTTP()
+        return orig(*args, **kwargs)
+
+    urllib.request.urlopen = urlopen_filtered
+
+
 def _wrap_sequence(orig_seq, orig_attach, orig_voice):
     async def send_sequence(self, args, turn, receipt=None):
-        items = list((args or {}).get("items") or [])
+        items = [item for item in list((args or {}).get("items") or []) if not _retired_hello(item)]
+        args = {**(args or {}), "items": items}
+        if not items:
+            return {"success": True, "completed": []}
         chunks = expand_items(items)
         if not any(kind in {"file", "voice"} for kind, _ in chunks):
             return await orig_seq(self, args, turn, receipt)
@@ -399,6 +484,7 @@ def silence(adapter_cls) -> None:
     if getattr(adapter_cls, "_zoen_quiet", False):
         return
     adapter_cls._zoen_quiet = True
+    install_http_filter()
     orig_seq = getattr(adapter_cls, "send_sequence", None)
     orig_attach = getattr(adapter_cls, "_send_attachment", None)
     orig_voice = getattr(adapter_cls, "send_voice", None)

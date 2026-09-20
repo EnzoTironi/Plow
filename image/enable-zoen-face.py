@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -17,6 +18,8 @@ SEED = Path("/opt/hermes/plow-seed/config.yaml")
 OVERLAY = Path("/opt/hermes/plow-seed/zoen-config.yaml")
 REPO_OVERLAY = Path(__file__).resolve().parents[1] / "runtime/config.yaml"
 LIVE = Path(os.environ.get("HERMES_HOME", "/var/lib/hermes")) / "config.yaml"
+BUNDLED_SKILL = Path("/opt/hermes/skills/zoen")
+BUNDLED_SCRIPTS = Path("/opt/hermes/skills/zoen/scripts")
 MODELS = {
     "model": {
         "default": "openai/gpt-5.6-luna",
@@ -178,11 +181,93 @@ def ensure(path: Path, *, text_only: bool = False) -> bool:
     return ensure_yaml(path)
 
 
+def _same_tree(src: Path, dest: Path) -> bool:
+    if not dest.is_dir():
+        return False
+    src_rels = {path.relative_to(src) for path in src.rglob("*") if path.is_file()}
+    dest_rels = {path.relative_to(dest) for path in dest.rglob("*") if path.is_file()}
+    if src_rels != dest_rels:
+        return False
+    return all(
+        (dest / rel).read_bytes() == (src / rel).read_bytes() for rel in src_rels
+    )
+
+
+def _install_skill(src: Path, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(src, dest)
+    for path in dest.rglob("*"):
+        if path.is_file():
+            path.chmod(0o755 if path.stat().st_mode & 0o111 else 0o644)
+
+
+def _drop(path: Path) -> bool:
+    if not path.exists():
+        return False
+    if path.is_dir():
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        path.unlink()
+    return True
+
+
+def refresh_image_scripts(
+    home: str | None = None,
+    *,
+    bundled: Path | None = None,
+    face: Path | None = None,
+) -> bool:
+    """Wipe leftover Zoen files on this line's volume and install the image skill.
+
+    Plow keeps HERMES_HOME across revoke/redeploy. That leftover is the old hello.
+    """
+    del face
+    env_home = (os.environ.get("HERMES_HOME") or "").strip()
+    root = Path(home or env_home or "/var/lib/hermes")
+    src = bundled if bundled is not None else (
+        BUNDLED_SKILL if BUNDLED_SKILL.is_dir() else BUNDLED_SCRIPTS
+    )
+    dirty = False
+    for path in (
+        root / "skills" / "zoen.bak",
+        root / "plugins" / "zoen-face",
+        root / "workspace",
+    ):
+        dirty = _drop(path) or dirty
+    extra = Path("/workspace")
+    if extra.is_dir() and Path("/.dockerenv").exists():
+        for path in extra.rglob("face.py"):
+            dirty = _drop(path) or dirty
+    dest_skill = root / "skills" / "zoen"
+    dest = (
+        dest_skill
+        if src.is_dir() and ((src / "scripts").is_dir() or (src / "SKILL.md").is_file())
+        else dest_skill / "scripts"
+    )
+    stale_root = dest_skill / "face.py"
+    if dest != dest_skill and stale_root.is_file():
+        stale_root.unlink()
+        dirty = True
+    if src.is_dir() and not _same_tree(src, dest):
+        _install_skill(src, dest)
+        dirty = True
+    if dirty:
+        _drop(root / "zoen" / "BOOTSTRAP.md")
+        _drop(root / "zoen" / "VOICE.md")
+    return dirty
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
+    refresh_image_scripts()
     if args:
         for raw in args:
-            ensure(Path(raw))
+            path = Path(raw)
+            if path.name == "config.yaml":
+                refresh_image_scripts(str(path.resolve().parent))
+            ensure(path)
         return 0
     if SEED.is_file():
         if yaml is None:
