@@ -199,26 +199,67 @@ def configure_contract(module):
     _publish_imessage(schema)
 
 
+def _tool_maps(registry):
+    maps = []
+    tools = getattr(registry, "_tools", None)
+    if isinstance(tools, dict):
+        maps.append(tools)
+    scoped = getattr(registry, "_scoped_tools", None)
+    if isinstance(scoped, dict):
+        maps.extend(slot for slot in scoped.values() if isinstance(slot, dict))
+    return maps
+
+
+def _rename_entry(entry, schema):
+    entry.name = IMESSAGE
+    entry.schema = schema
+    if getattr(entry, "description", None) is not None:
+        entry.description = IMESSAGE_DESCRIPTION
+    return entry
+
+
+def watch_registry():
+    """Rename plow_send_sequence at registration; Plow scopes tools to HERMES_HOME."""
+    try:
+        from tools.registry import registry
+    except ImportError:
+        return
+    if getattr(registry, "_zoen_imessage_wrap", False):
+        return
+    original = registry.register
+
+    def register(name, *args, **kwargs):
+        if name == _FACTORY_SEND:
+            name = IMESSAGE
+            schema = kwargs.get("schema")
+            if schema is None and len(args) >= 2 and isinstance(args[1], dict):
+                schema = args[1]
+            if isinstance(schema, dict):
+                schema["name"] = IMESSAGE
+                schema["description"] = IMESSAGE_DESCRIPTION
+        return original(name, *args, **kwargs)
+
+    registry.register = register
+    registry._zoen_imessage_wrap = True
+
+
 def _publish_imessage(schema):
     try:
         from tools.registry import registry
     except ImportError:
         return
-    tools = getattr(registry, "_tools", None)
-    if not isinstance(tools, dict):
-        return
+    watch_registry()
     lock = getattr(registry, "_lock", None)
     with lock if lock is not None else nullcontext():
-        entry = tools.get(IMESSAGE) or tools.pop(_FACTORY_SEND, None)
-        if entry is None:
-            return
-        entry.name = IMESSAGE
-        entry.schema = schema
-        if getattr(entry, "description", None) is not None:
-            entry.description = IMESSAGE_DESCRIPTION
-        tools[IMESSAGE] = entry
-        tools.pop(_FACTORY_SEND, None)
-        if hasattr(registry, "_generation"):
+        moved = False
+        for tools in _tool_maps(registry):
+            entry = tools.get(IMESSAGE) or tools.pop(_FACTORY_SEND, None)
+            if entry is None:
+                continue
+            tools[IMESSAGE] = _rename_entry(entry, schema)
+            tools.pop(_FACTORY_SEND, None)
+            moved = True
+        if moved and hasattr(registry, "_generation"):
             registry._generation += 1
 
 

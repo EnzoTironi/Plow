@@ -53,6 +53,7 @@ def register(ctx) -> None:
         pass
     # The pinned Hermes defers platform imports. Materialize Plow before
     # wrapping its adapter, so reception covers the very first inbound burst.
+    quiet.watch_registry()
     from gateway.platform_registry import platform_registry
     platform_registry.get("plow-chat")
 
