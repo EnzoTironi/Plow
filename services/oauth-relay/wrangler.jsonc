@@ -12,9 +12,9 @@
     // is pending; Google's warning, user cap and account policies still apply.
     "GOOGLE_AUTH_MODE": "unverified",
     "GOOGLE_ENABLED_CAPABILITIES": "identity,calendar_read,calendar_write,gmail_read,gmail_send,drive_files,drive_read,contacts_read,sheets_read,sheets_write,docs_read,docs_write",
-    "GOOGLE_REDIRECT_URI": "https://auth.zoen.tironi.xyz/callback"
+    "GOOGLE_REDIRECT_URI": "https://auth.tryzoen.com/callback"
   },
-  "routes": [{ "pattern": "auth.zoen.tironi.xyz", "custom_domain": true }],
+  "routes": [{ "pattern": "auth.tryzoen.com", "custom_domain": true }],
   "durable_objects": {
     "bindings": [{ "name": "FLOWS", "class_name": "OAuthFlow" }]
   },

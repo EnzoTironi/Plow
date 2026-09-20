@@ -70,7 +70,7 @@ export function page(kind, headers, status = 200) {
   </main>
   <footer><p>${copy.article ? "A little less to figure out alone." : "Um pouco menos para resolver sozinho."}</p>
     <nav aria-label="${copy.article ? "About Zoen" : "Sobre o Zoen"}">
-      <a href="https://zoen.tironi.xyz/welcome">Zoen</a>
+      <a href="https://tryzoen.com">Zoen</a>
       <a href="/privacy">${copy.article ? "Privacy" : "Privacidade"}</a>
       <a href="/terms">${copy.article ? "Terms" : "Termos"}</a>
       <a href="mailto:enzo@zoen.space">${copy.article ? "Contact" : "Contato"}</a>

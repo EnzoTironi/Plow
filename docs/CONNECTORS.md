@@ -143,9 +143,11 @@ that injects Plow authorization. It has no role in our callback transport.
 
 The implemented service is a Cloudflare Worker with a short-lived Durable Object per
 pending login. Source, local tests and deployment configuration are in
-[`services/oauth-relay`](../services/oauth-relay/). The current deployment is
-`https://zoen-oauth-relay.agenttironi.workers.dev`, with `/callback` as the stable
-redirect URI and `/health` as its public health check.
+[`services/oauth-relay`](../services/oauth-relay/). The current API origin is
+`https://zoen-oauth-relay.agenttironi.workers.dev`, with `/callback` as the native
+MCP redirect URI and `/health` as its public health check. Google's browser
+redirect and branding pages use `https://auth.tryzoen.com`; see
+[GOOGLE_AUTH.md](GOOGLE_AUTH.md).
 A [workers.dev endpoint](https://developers.cloudflare.com/workers/configuration/routing/workers-dev/)
 is sufficient for an initial test if the provider accepts it; production should use
 a stable dedicated domain controlled by us. This requires our Cloudflare deployment,

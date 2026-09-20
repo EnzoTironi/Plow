@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { configured, seal, unseal, exchangeGoogleFlow, refreshGoogle, googleRoute } from "../src/google.js";
 
 const env = {
@@ -19,6 +20,16 @@ const makeFlow = () => ({ provider: "google", challenge, status: "ready", callba
 } });
 const tokenResponse = () => Response.json({ access_token: "fixture-access", refresh_token: "fixture-refresh",
   token_type: "Bearer", expires_in: 3600, scope: "openid email https://www.googleapis.com/auth/calendar.events.readonly" });
+
+test("production Worker redirect uses the tryzoen auth host", () => {
+  const wrangler = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
+  assert.match(wrangler, /"GOOGLE_REDIRECT_URI": "https:\/\/auth\.tryzoen\.com\/callback"/);
+  assert.match(wrangler, /"pattern": "auth\.tryzoen\.com"/);
+  assert.doesNotMatch(wrangler, /auth\.zoen\.tironi\.xyz/);
+  assert.equal(configured({ ...env, GOOGLE_REDIRECT_URI: "https://auth.tryzoen.com/callback" }), true);
+  assert.equal(configured({ ...env, GOOGLE_REDIRECT_URI: "http://auth.tryzoen.com/callback" }), false);
+  assert.equal(configured({ ...env, GOOGLE_REDIRECT_URI: "https://auth.tryzoen.com/callback?next=1" }), false);
+});
 
 test("Google requires operator secrets, enabled capabilities and an explicit audience mode", async () => {
   assert.equal(configured({}), false);
