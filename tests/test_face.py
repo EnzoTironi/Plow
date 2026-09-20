@@ -192,7 +192,7 @@ def test_vcard_names_the_contact_zoen_with_the_line_number_and_photo():
 
 def test_hello_copy_fits_imessage():
     for bubbles in face.HELLO.values():
-        assert len(bubbles) == 3
+        assert len(bubbles) == 2
         for bubble in bubbles:
             assert not bubble.endswith(".")
             assert len(bubble.splitlines()) <= 2
@@ -200,12 +200,9 @@ def test_hello_copy_fits_imessage():
     assert "\n" not in face.HELLO["en"][0]
     assert "I'm Zoen" in face.HELLO["en"][0]
     assert "save my card" in face.HELLO["en"][1]
-    assert face.HELLO["en"][2] == "what's your dream?"
-    assert "what do I call you" not in face.HELLO["en"][2]
     assert "\n" not in face.HELLO["pt"][0]
     assert "eu sou o Zoen" in face.HELLO["pt"][0]
-    assert face.HELLO["pt"][2] == "qual é o seu sonho?"
-    assert "como te chamo" not in face.HELLO["pt"][2]
+    assert not any("?" in bubble for bubbles in face.HELLO.values() for bubble in bubbles)
 
 
 def test_intro_waits_if_they_have_not_written():
@@ -259,7 +256,7 @@ def test_intro_force_sends_without_waiting():
     assert payload["hello"] == list(face.HELLO["pt"])
 
 
-def test_intro_sends_hello_then_the_card_then_the_dream():
+def test_intro_sends_hello_and_card_without_a_competing_question():
     plow = FakePlow(history=said("hey"))
     with tempfile.TemporaryDirectory() as d, face_env(home=d):
         payload = face.intro(http=plow.http, put=plow.put)
@@ -282,7 +279,7 @@ def test_intro_uses_portuguese_when_the_inbound_is_portuguese():
     assert payload["language"] == "pt"
     assert payload["hello"][0] == face.HELLO["pt"][0]
     assert "\n" not in payload["hello"][0]
-    assert payload["hello"][-1] == "qual é o seu sonho?"
+    assert payload["hello"][-1] == face.HELLO["pt"][1]
     assert plow.text_bodies() == list(face.HELLO["pt"])
 
 
@@ -652,7 +649,7 @@ def test_intro_uses_inbound_text_even_when_history_is_still_empty():
         )
     assert payload["ok"] is True
     assert payload["language"] == "pt"
-    assert payload["hello"][-1] == "qual é o seu sonho?"
+    assert payload["hello"][-1] == face.HELLO["pt"][1]
     assert plow.judged == []
 
 
@@ -675,7 +672,6 @@ def test_intro_renders_hello_when_the_judge_names_another_language():
     plow.hello = [
         "hola, soy Zoen\ntu monstruo que hace sueños",
         "guarda mi tarjeta para saber que soy yo",
-        "como te llamo?\ncual es tu sueño?",
     ]
     with tempfile.TemporaryDirectory() as d, face_env(home=d):
         payload = face.intro(http=plow.http, put=plow.put)
@@ -820,7 +816,7 @@ if __name__ == "__main__":
     test_intro_still_sends_if_the_newest_message_is_a_shutdown()
     test_intro_waits_if_we_already_greeted_in_this_chat()
     test_intro_force_sends_without_waiting()
-    test_intro_sends_hello_then_the_card_then_the_dream()
+    test_intro_sends_hello_and_card_without_a_competing_question()
     test_intro_uses_portuguese_when_the_inbound_is_portuguese()
     test_intro_still_sends_hello_if_the_only_outbound_is_a_status_line()
     test_intro_skips_hello_if_im_zoen_and_voice_already_exist()
