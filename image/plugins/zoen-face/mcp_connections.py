@@ -39,7 +39,7 @@ async def notify(adapter, module, chat_uid, name, details):
     chat = await adapter.get_chat_info(chat_uid)
     authority, recall = module._authority(chat, True, human=False)
     event = module.MessageEvent(
-        text=f"[Zoen connection event: {name}]\n{details}\nThis is the result of the owner's earlier connection request, not a new human message. Use the existing conversation and task context.",
+        text=f"[Zoen connection event: {name}]\n{details}\nThis is the result of the owner's earlier connection request, not a new human message. Use the existing conversation and task context. Send the useful result or authorization link once; do not send another statusline or reaction.",
         source=adapter.build_source(chat_id=chat_uid, chat_name=chat["name"], chat_type=chat["type"],
                                     user_id="plow_connection", user_name="Connection result", role_authorized=True),
         message_id=f"connection-{uuid.uuid4().hex}", message_type=module._message_type([]),
@@ -49,7 +49,12 @@ async def notify(adapter, module, chat_uid, name, details):
     event.internal = True
     event.authority, event.recall_everywhere = authority, recall
     event.recall_text = f"The owner's pending task involving {name}"
-    await adapter._handoff_message(event)
+    for attempt in range(5):
+        await adapter._handoff_message(event)
+        if getattr(event, "_gateway_accepted", True):
+            return
+        await asyncio.sleep(.5 * (attempt + 1))
+    raise RuntimeError("connection_notification_not_accepted")
 
 
 def activate_tools(name):

@@ -1,13 +1,4 @@
-"""iMessage posts only through plow_send_sequence and the Zoen intro.
-
-Hermes leftover assistant text still reaches PlowChatAdapter.send().
-That path is not the agent's voice. Empty transform_llm_output is
-ignored, and NO_REPLY only drops when the turn advertised it, so the
-gate is wrapping leftover send. Workspace photos are MEDIA: text
-items on plow_send_sequence; native voice memos are VOICE:. The tool
-itself refuses paths, so those items are expanded into the adapter's
-attachment or voicememo POST.
-"""
+"""Preserve native final delivery, with explicit progress and local media support."""
 from __future__ import annotations
 
 import asyncio
@@ -38,13 +29,7 @@ from credits import (  # noqa: E402
 
 log = logging.getLogger("zoen-face")
 
-_SILENT = (
-    "send_or_update_status",
-    "send_image_file",
-    "send_voice",
-    "send_video",
-    "send_document",
-)
+_SILENT = ("send_or_update_status",)
 
 _KNOWN = (
     "hermes_plugins.plow_chat_platform",
@@ -109,13 +94,60 @@ def _wrap_send(orig_send):
             last = await orig_send(self, chat_id, body, metadata=kwargs.get("metadata"))
             if getattr(last, "success", False):
                 mark_told(body)
+                _answer_delivered(self)
             return last
-        log.debug("zoen-face dropped Hermes send")
-        return Dropped()
+        result = await orig_send(self, *args, **kwargs)
+        metadata = kwargs.get("metadata") or (args[3] if len(args) > 3 else None) or {}
+        if metadata.get("notify") and getattr(result, "success", False) and getattr(result, "message_id", None):
+            _answer_delivered(self)
+        return result
 
     send.__name__ = "send"
     send.__qualname__ = "send"
     return send
+
+
+def _answer_delivered(adapter):
+    reception = getattr(adapter, "_zoen_reception", None)
+    active = getattr(adapter, "_active_turn", None)
+    turn = active.get() if active is not None else None
+    if reception is not None and turn is not None:
+        reception.answer_delivered(turn["chat_uid"], turn.get("source_message_id"))
+
+
+def _with_purpose(send_sequence):
+    async def sequence(self, args, turn, receipt=None):
+        purpose = args.get("purpose", "answer")
+        if purpose not in {"progress", "answer"}:
+            raise ValueError("purpose must be progress or answer")
+        previous = turn.get("reply_delivered", False)
+        result = await send_sequence(self, {key: value for key, value in args.items() if key != "purpose"}, turn, receipt)
+        if result.get("success"):
+            if purpose == "progress":
+                turn["reply_delivered"] = previous and not turn.get("inbound_handed_off")
+            else:
+                turn["reply_delivered"] = not turn.get("inbound_handed_off")
+                _answer_delivered(self)
+        return result
+    return sequence
+
+
+def configure_contract(module):
+    # Extend the registered schema in place; the native handler and its owner-DM
+    # authorization remain responsible for accepting the call.
+    schema = module.PLOW_SEND_SEQUENCE_SCHEMA
+    schema["parameters"]["properties"]["purpose"] = {
+        "type": "string", "enum": ["progress", "answer"],
+        "description": "Use progress for an opening or update; it never completes the answer. Default answer means these messages are the final result.",
+    }
+    module._ANSWER_LAST = (
+        "Write the final answer last; normal final text is delivered automatically. "
+        "For multiple final bubbles or media use plow_send_sequence with purpose=answer, "
+        "then do not repeat that answer in prose. A brief meaningful progress update uses "
+        "purpose=progress and does not complete the request. Reception handles the opening "
+        "for human messages; do not repeat it. Internal events do not need an opening. "
+        "Do not narrate tool operations or routine bookkeeping. "
+    )
 
 
 def _dropped(name: str):
@@ -325,8 +357,8 @@ def silence(adapter_cls) -> None:
             continue
         setattr(adapter_cls, name, _dropped(name))
     if orig_seq is not None and orig_attach is not None:
-        adapter_cls.send_sequence = _wrap_sequence(orig_seq, orig_attach, orig_voice)
-    log.info("zoen-face: iMessage send is plow_send_sequence only")
+        adapter_cls.send_sequence = _with_purpose(_wrap_sequence(orig_seq, orig_attach, orig_voice))
+    log.info("zoen-face: native final delivery enabled; progress is separate")
 
 
 def _adapters():

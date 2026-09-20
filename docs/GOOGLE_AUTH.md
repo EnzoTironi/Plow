@@ -59,12 +59,13 @@ reached Google and received the expected `google_reauthorization_required` (400)
 instead of the previous 503. That probe's flow was cancelled. This verifies the
 transport correction, not a real account grant.
 
-The cloud validation also exposed a delivery limitation: `quiet.py` drops normal
-Hermes `send()` output. Generic confirmation requests and `/status` produced no
+The `release-50336ee` cloud validation also exposed a delivery limitation:
+its `quiet.py` dropped normal Hermes `send()` output. Generic confirmation requests and `/status` produced no
 visible result; explicitly requesting `plow_send_sequence` delivered the saved
 account status and the real verification result. This test did not change that
-filter. Successful account access does not establish reliable automatic delivery
-of every connection notification.
+filter. The follow-up delivery repair restores native final responses, separates
+progress from answers and reuses valid Google grants. Successful account access
+alone does not establish reliable automatic delivery of every notification.
 
 ## Flow and credential boundary
 

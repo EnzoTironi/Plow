@@ -123,6 +123,7 @@ async def verify(home):
         await adapter._handoff_message(event)
 
     async def handoff(event):
+        event._gateway_accepted = True
         handed_off.append(event)
 
     api = web.Application()
@@ -131,7 +132,8 @@ async def verify(home):
         payload = await request.json()
         assert "msg_last" not in payload["messages"][-1]["content"]
         assert "faz um resumo do documento" in payload["messages"][-1]["content"]
-        return web.json_response({"choices": [{"message": {"content": "vou olhar o documento e separar o que importa"}}]})
+        return web.json_response({"choices": [{"message": {"content": json.dumps({
+            "line": "vou olhar o documento e separar o que importa", "reaction": "like"})}}]})
 
     api.router.add_post("/v1/chat/completions", completion)
     api.router.add_post("/mcp", public_mcp)
@@ -148,9 +150,28 @@ async def verify(home):
     adapter.handle_message = handoff
     adapter._live_turns = {}
     plow._live = (adapter, asyncio.get_running_loop())
-    # A suppressed leftover is a final refusal, never a success or a fallback send.
-    suppressed = await adapter._send_with_retry("cht_test", "internal leftover prose")
-    assert not suppressed.success and suppressed.suppressed and not posted
+    # Exercise actual delivery guards, not just whether the model called a tool.
+    from tools.registry import registry
+    assert "purpose" in registry.get_schema("plow_send_sequence")["parameters"]["properties"]
+    turn = {"owner": True, "dm": True, "authority": True, "chat_uid": "cht_test"}
+    token = plow._ACTIVE_TURN.set(turn)
+    adapter._live_turns[id(turn)] = turn
+    try:
+        result = await adapter._send_with_retry("cht_test", "normal final answer", metadata={"notify": True})
+        assert result.success and posted[-1][1]["body"] == "normal final answer"
+        result = await adapter.send_sequence({"purpose": "progress", "items": [{"type": "text", "body": "contextual opening"}]}, turn)
+        assert result["success"] and not turn["reply_delivered"]
+        result = await adapter._send_with_retry("cht_test", "result after opening", metadata={"notify": True})
+        assert result.success and posted[-1][1]["body"] == "result after opening"
+        result = await adapter.send_sequence({"purpose": "answer", "items": [{"type": "text", "body": "final sequence"}]}, turn)
+        assert result["success"]
+        count = len(posted)
+        await adapter._send_with_retry("cht_test", "duplicate trailing answer", metadata={"notify": True})
+        assert len(posted) == count
+    finally:
+        plow._ACTIVE_TURN.reset(token)
+        adapter._live_turns.clear()
+        posted.clear()
     plugin.connections.connection = lambda action, connector: {"ok": True, "connector": connector, "connected": False}
     token = plow._ACTIVE_TURN.set({"owner": True, "dm": True, "authority": True, "chat_uid": "cht_test"})
     try:
@@ -185,6 +206,24 @@ async def verify(home):
     adapter._message_handler = connection_turn
     await adapter._process_message_background(handed_off[0], "connection-fixture")
     assert plow._ACTIVE_TURN.get() is None and not adapter._live_turns
+    async def ordinary_model_final(event):
+        return "Google account checked; ready for the requested task"
+    adapter._message_handler = ordinary_model_final
+    await adapter._process_message_background(handed_off[0], "normal-final-fixture")
+    assert [body["body"] for endpoint, body in posted if endpoint == "messages"][-1] == "Google account checked; ready for the requested task"
+    assert plow._ACTIVE_TURN.get() is None and not adapter._live_turns
+    posted.clear()
+    handed_off.clear()
+    admissions = []
+    async def admit_on_retry(event):
+        admissions.append(event.message_id)
+        event._gateway_accepted = len(admissions) > 1
+        if event._gateway_accepted:
+            handed_off.append(event)
+    adapter.handle_message = admit_on_retry
+    await native_connections.notify(adapter, plow, "cht_test", "todoist", "Retry rejected queue admission")
+    assert len(admissions) == 2 and len(set(admissions)) == 1 and len(handed_off) == 1
+    adapter.handle_message = handoff
     handed_off.clear()
     await verify_public_connector(adapter, plow, native_connections)
     assert len(handed_off) == 1 and "no personal account was connected" in handed_off[0].text
@@ -215,7 +254,7 @@ async def verify(home):
     release_attachment.set()
     await asyncio.wait_for(adapter._inbound["cht_test"][0].join(), 2)
     assert len(handed_off) == 1
-    assert handed_off[0].zoen_reception == "sent"
+    assert handed_off[0].zoen_reception == {"status": "sent", "reaction": "sent"}
     assert handed_off[0].zoen_dispatch_result["action"] == "allow"
     assert manager.invoke_hook("pre_gateway_dispatch", event=handed_off[0]) == [{"action": "allow"}]
     for _, server in adapter._inbound.values():
@@ -223,6 +262,8 @@ async def verify(home):
         await asyncio.gather(server, return_exceptions=True)
     await runner.cleanup()
     print(json.dumps({"plugin_registered": True, "owner_guard": True, "connection_tool_dispatch": True,
+                      "native_final_delivery": True, "progress_preserves_final": True,
+                      "answer_sequence_deduplicated": True, "queue_admission_retry": True,
                       "connection_event_native_lifecycle": True, "ack_before_attachment": True,
                       "public_connector_native_read": True, "treg_manifest_valid": True,
                       "socket_replay_deduplicated": True, "handoff_not_lost": True,

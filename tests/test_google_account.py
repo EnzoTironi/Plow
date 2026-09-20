@@ -110,3 +110,52 @@ def test_redirect_never_forwards_credentials():
         finally:
             server.shutdown()
             thread.join()
+
+
+def test_reuse_checks_identity_without_new_consent(tmp_path):
+    account = Account(tmp_path)
+    account.commit(credential(), None)
+    calls = []
+    def http(method, url, **kwargs):
+        calls.append(url)
+        return {"sub": "owner", "email": "owner@example.com", "email_verified": True}
+    assert account.verify(["email"], http) == credential()["account"]
+    assert calls == ["https://openidconnect.googleapis.com/v1/userinfo"]
+
+
+def test_missing_scope_requires_consent_without_reading_wrong_resource(tmp_path):
+    account = Account(tmp_path)
+    account.commit(credential(), None)
+    def no_network(*args, **kwargs):
+        raise AssertionError("no account read should be needed for a known missing scope")
+    assert account.verify(["https://www.googleapis.com/auth/gmail.readonly"], no_network) is None
+
+
+def test_reuse_network_failure_does_not_become_a_new_login(tmp_path):
+    account = Account(tmp_path)
+    account.commit(credential(), None)
+    def offline(*args, **kwargs):
+        raise GoogleError("google_connection_unavailable")
+    with pytest.raises(GoogleError, match="connection_unavailable"):
+        account.verify(["email"], offline)
+    assert account.read()["account"] == credential()["account"]
+
+
+def test_reuse_rejects_different_identity(tmp_path):
+    account = Account(tmp_path)
+    account.commit(credential(), None)
+    def wrong_account(*args, **kwargs):
+        return {"sub": "other", "email": "other@example.com", "email_verified": True}
+    with pytest.raises(GoogleError, match="account_changed"):
+        account.verify(["email"], wrong_account)
+
+
+def test_revoked_access_needs_consent_and_broad_scope_satisfies_read(tmp_path):
+    account = Account(tmp_path)
+    account.commit({**credential(), "scopes": ["https://www.googleapis.com/auth/spreadsheets"]}, None)
+    def owner(*args, **kwargs):
+        return {"sub": "owner", "email": "owner@example.com", "email_verified": True}
+    assert account.verify(["https://www.googleapis.com/auth/spreadsheets.readonly"], owner)
+    def revoked(*args, **kwargs):
+        raise GoogleError("google_http_401")
+    assert account.verify([], revoked) is None

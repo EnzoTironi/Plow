@@ -24,7 +24,7 @@ test("Google requires operator secrets, enabled capabilities and an explicit aud
   assert.equal(configured({}), false);
   assert.equal(configured({ ...env, GOOGLE_ENABLED_CAPABILITIES: "" }), false);
   const result = await googleRoute(new Request("https://relay/google/config"), {});
-  assert.deepEqual(await result.json(), { configured: false, capabilities: [], auth_mode: "disabled" });
+  assert.deepEqual(await result.json(), { configured: false, capabilities: [], capability_scopes: {}, auth_mode: "disabled" });
   for (const mode of [undefined, "", "production", "unknown"]) {
     assert.equal(configured({ ...env, GOOGLE_AUTH_MODE: mode }), false);
   }
@@ -32,7 +32,7 @@ test("Google requires operator secrets, enabled capabilities and an explicit aud
     const config = { ...env, GOOGLE_AUTH_MODE: mode };
     assert.equal(configured(config), true);
     const result = await googleRoute(new Request("https://relay/google/config"), config);
-    assert.deepEqual(await result.json(), { configured: true, capabilities: ["identity", "calendar_read"], auth_mode: mode });
+    assert.deepEqual(await result.json(), { configured: true, capabilities: ["identity", "calendar_read"], capability_scopes: { identity: [], calendar_read: ["https://www.googleapis.com/auth/calendar.events.readonly", "https://www.googleapis.com/auth/calendar.calendarlist.readonly"] }, auth_mode: mode });
   }
 });
 

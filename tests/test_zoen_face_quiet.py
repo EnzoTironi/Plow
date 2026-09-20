@@ -72,14 +72,13 @@ def test_leftover_credits_error_becomes_the_dashboard_bubble():
     assert result.success is True
 
 
-def test_leftover_send_never_posts():
+def test_normal_final_is_delivered():
     Adapter = _adapter()
     quiet.silence(Adapter)
     box = Adapter()
     result = asyncio.run(box.send("cht_x", "Still building. Ending turn."))
-    assert box.posted == []
-    assert result.success is False
-    assert result.suppressed is True
+    assert box.posted == [("send", "Still building. Ending turn.")]
+    assert result.success is True
 
 
 def test_send_sequence_still_runs():
@@ -92,14 +91,14 @@ def test_send_sequence_still_runs():
     assert box.posted == [("sequence", args)]
 
 
-def test_native_file_send_is_dropped_typing_stays():
+def test_native_final_media_and_typing_are_preserved_status_chatter_is_dropped():
     Adapter = _adapter()
     quiet.silence(Adapter)
     box = Adapter()
     asyncio.run(box.send_image_file("cht_x", "/tmp/demo.png"))
     asyncio.run(box.send_or_update_status("cht_x", "working", "compiling"))
     asyncio.run(box.send_typing("cht_x"))
-    assert box.posted == [("typing", "cht_x")]
+    assert box.posted == [("image", "/tmp/demo.png"), ("typing", "cht_x")]
 
 
 def test_media_sequence_uploads_file_instead_of_the_path():
@@ -157,7 +156,7 @@ def test_silence_is_idempotent():
     assert Adapter.send is first
     box = Adapter()
     asyncio.run(box.send("cht_x", "Hello leftover"))
-    assert box.posted == []
+    assert box.posted == [("send", "Hello leftover")]
 
 
 def test_voice_sequence_uses_native_send_voice():
@@ -185,12 +184,12 @@ def test_voice_sequence_uses_native_send_voice():
     ]
 
 
-def test_leftover_send_voice_never_posts():
+def test_native_final_voice_is_preserved():
     Adapter = _adapter()
     quiet.silence(Adapter)
     box = Adapter()
     asyncio.run(box.send_voice("cht_x", "/tmp/note.m4a"))
-    assert box.posted == []
+    assert box.posted == [("voice", "/tmp/note.m4a")]
 
 
 def test_silence_finds_adapter_in_sys_modules():
@@ -206,7 +205,7 @@ def test_silence_finds_adapter_in_sys_modules():
         quiet.silence_plow_adapter()
         box = Adapter()
         asyncio.run(box.send("cht_x", "leftover"))
-        assert box.posted == []
+        assert box.posted == [("send", "leftover")]
     finally:
         del sys.modules["zoen_fake_plow_chat"]
 
@@ -246,15 +245,15 @@ def test_failed_media_does_not_become_a_successful_text_delivery(tmp_path):
 
 
 if __name__ == "__main__":
-    test_leftover_send_never_posts()
+    test_normal_final_is_delivered()
     test_leftover_credits_error_becomes_the_dashboard_bubble()
     test_send_sequence_still_runs()
-    test_native_file_send_is_dropped_typing_stays()
+    test_native_final_media_and_typing_are_preserved_status_chatter_is_dropped()
     test_media_sequence_uploads_file_instead_of_the_path()
     test_media_outside_workspace_is_not_posted_as_text()
     test_silence_is_idempotent()
     test_voice_sequence_uses_native_send_voice()
-    test_leftover_send_voice_never_posts()
+    test_native_final_voice_is_preserved()
     test_silence_finds_adapter_in_sys_modules()
     test_missing_adapter_does_not_raise()
     print("ok")

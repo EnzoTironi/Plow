@@ -16,21 +16,34 @@ restarting that read on each new message. Reads and POSTs each have a three-seco
 timeout. During the same window, a short model call writes a contextual opening
 using the existing persona, the owner's voice preferences, the whole burst and
 the last three openings. `zoen.reception_model` selects that model (Luna by
-default, with reasoning disabled for this short opening). A generation can take up to six seconds;
-superseded drafts are cancelled. There is no fixed phrase or template rotation.
-If generation fails, only the reaction is attempted and the main turn writes its
-own opening. Reactions do not wait for generation. A slow/unavailable provider can
-still miss the five-second target: this is not a demonstrated production SLA.
+default, with reasoning disabled). The model selects both a contextual line and
+an appropriate tapback, using the previous six inbound messages for context.
+Generation is bounded to 3.2 seconds; POST timeouts use the remainder of the
+five-second budget measured from the last received message. Superseded drafts
+are cancelled. There is no fixed phrase or keyword-selected reaction.
+If generation fails, reception does not invent an acknowledgement. The main turn
+runs independently and delivers its result. Reception never holds the handoff;
+a fast final answer suppresses an opening that has not yet been posted.
+The budget cannot guarantee Plow transport or phone delivery within five seconds.
 Generation and delivery share the burst's HTTP session to avoid an extra TLS setup.
 Tapbacks use the last message's explicit ID, with no reaction to ambiguous content;
 thanks-only bursts get just a reaction. Commands remain with the native gateway.
 
-`$HERMES_HOME/zoen/reception.db` records claims and outcomes. A claim written before
-a send survives restart. An ambiguous send is not replayed; the actual user request
-still runs. The channel prompt tells the model not to repeat the acknowledgement.
+`$HERMES_HOME/zoen/reception.db` records separate claims and outcomes for the line
+and the reaction. Existing records migrate as uncertain, preventing replay.
+A claim written before a send survives restart. An ambiguous effect is not
+replayed; the actual user request still runs. The channel prompt reports both
+outcomes and tells the model not to repeat reception.
 Input checkpoints are never advanced by an acknowledgement. The intro runs outside
 the receive loop and no longer consumes the first real request. Synthetic Plow
 setup events cannot trigger a competing intro or perform synchronous network I/O.
+
+Normal final text and media use Plow's native delivery, authorization and duplicate
+guards. `plow_send_sequence` accepts `purpose: progress` for updates that must not
+complete the answer, and `purpose: answer` (the default) for a delivered final.
+The Zoen persona, skill and Plow channel instruction use the same contract.
+Internal connector events do not trigger another opening. Their handoff checks
+admission and retries a rejected queue admission before reporting a failure.
 
 Structured log events `received`, `status_accepted`, `reaction_accepted`,
 `receipt_result` and `reception` contain message
@@ -47,6 +60,29 @@ Its configured beta is External / In production, with Google's unverified-app
 notice and user cap. Permissions are requested for the current task and still
 require the owner's consent. See [Google auth](GOOGLE_AUTH.md) for live setup
 evidence and the remaining real-account and verification checks.
+
+Repeated Google connect requests verify and reuse a saved grant when its scopes
+cover the requested capabilities. The Worker publishes the canonical scope map.
+Additional scopes, revoked access or an explicit account switch may need consent;
+a transient network failure does not start another login. Account state and the
+latest authorization attempt are separate fields.
+
+The delivery repair passed 148 Python tests and 16 Worker tests. Image integration
+uses the pinned Hermes/Plow adapter and actual HTTP sends to loopback fixtures:
+ordinary final text reaches the transport, progress leaves the final deliverable,
+and a delivered answer sequence suppresses duplicate prose. Rejected connection
+queue admission is retried. Google integration verifies saved-grant reuse without
+creating a consent flow and preserves account status after a failed attempt.
+Reception reached the fixture transport about 2.04 seconds after the burst; this
+is a controlled measurement, not a real-phone delivery guarantee.
+
+Worker version `73006773-131e-4d2e-a112-8f4f5d9b318b` publishes the canonical scope
+map. The built agent image successfully fetched all 12 capabilities from the live
+endpoint using its actual HTTP client. App secrets and the encryption key were
+preserved. Applying the agent repair to the existing Aspen instance still needs
+an in-place operator update: the public Plow CLI/API has no image-update operation
+and the available SSH identity was rejected. Do not recreate that instance to
+work around deployment access; it contains the owner's saved Google grant.
 
 Slack retains Plow's existing connection lifecycle. Its local status call returned
 403 for missing `slack:status` on 2026-09-19, so account state remains unknown. The
@@ -206,7 +242,8 @@ Google authorization link and unverified-beta notice. After the Worker token
 exchange fix, real consent completed and the agent confirmed saved credentials,
 identity verification, refresh in a fresh process and a minimal Calendar read.
 Results were delivered with an explicit `plow_send_sequence` request; normal
-Hermes output is still dropped by the existing quiet filter. See
+Hermes output was dropped by that image's quiet filter. The follow-up repair
+restores native final delivery and adds regression coverage. See
 [Google auth](GOOGLE_AUTH.md) for the scope and limitations of this live test.
 This was a fresh test deployment,
 not an upgrade preserving the previous instance's memory. The other occupied

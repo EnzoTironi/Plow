@@ -20,6 +20,7 @@ def configure_adapters():
         quiet.silence(adapter)
         module = sys.modules.get(adapter.__module__)
         if module is not None and hasattr(adapter, "_on_message"):
+            quiet.configure_contract(module)
             presence.install(adapter, module, face.greet_on_dispatch)
 
 

@@ -20,11 +20,22 @@ class GoogleJob:
         self.task = None
         self.exchanging = False
         self.replace_account = options.get("replace_account") is True
+        self.required_scopes = options.get("required_scopes")
 
     async def announce(self, text):
         await mcp_connections.notify(self.adapter, self.module, self.chat, "google", text)
 
     async def authorize(self):
+        if self.required_scopes is not None and not self.replace_account:
+            self.status = "checking_saved_access"
+            identity = await asyncio.to_thread(self.account.verify, self.required_scopes)
+            if identity is not None:
+                self.status = "credentials_saved"
+                await self.announce(f"Existing Google account verified: {identity['email']}. "
+                                    "The saved grant covers the requested capabilities; no new login was needed. "
+                                    "Continue the pending task using /opt/plow/zoen/google_workspace.py. "
+                                    "Do not request another authorization or send another opening.")
+                return
         baseline = self.account.read()
         state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(48)
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
@@ -107,22 +118,24 @@ class GoogleJob:
             await self.announce("Google setup could not complete. No account access was verified. "
                                 "Check the saved connection before suggesting another login.")
         finally:
-            try:
-                await self.relay.finish(consumed=self.status == "credentials_saved")
-            except RelayError:
-                pass  # The relay deletes expired attempts independently.
+            if self.relay.path:
+                try:
+                    await self.relay.finish(consumed=self.status == "credentials_saved")
+                except RelayError:
+                    pass  # The relay deletes expired attempts independently.
 
 
 async def dispatch(adapter, module, turn, args):
     from hermes_constants import get_hermes_home
-    from hermes_cli.config import load_config
     home, action = str(get_hermes_home()), args.get("action")
     job = mcp_connections._jobs.get((home, "google"))
     pending = job is not None and not job.task.done()
     if action == "status":
         result = Account(home).status()
         if job:
-            result["status"] = job.status
+            result["authorization_attempt"] = {"status": job.status, "active": pending}
+            if pending and not result["credentials_saved"]:
+                result["status"] = job.status
         return {"ok": True, "connector": "google", "authentication": "zoen_oauth", **result}
     if action == "cancel":
         cancelled = pending and not job.exchanging
@@ -135,6 +148,19 @@ async def dispatch(adapter, module, turn, args):
         return {"ok": True, "status": job.status, "instruction": "The existing Google login is still active; do not duplicate it."}
     if any(key[0] == home and not value.task.done() for key, value in mcp_connections._jobs.items()):
         return {"ok": False, "error": "another_connection_in_progress"}
+    setup = await connection_setup(args)
+    if not setup.get("relay"):
+        return setup
+    job = GoogleJob(adapter, module, turn["chat_uid"], home, setup["relay"], {**args, "required_scopes": setup["scopes"]})
+    context = contextvars.copy_context()
+    context.run(module._ACTIVE_TURN.set, None)
+    job.task = asyncio.create_task(job.run(), context=context)
+    mcp_connections._jobs[(home, "google")] = job
+    return {"ok": True, "status": "starting", "instruction": "Authorization and completion arrive automatically in this conversation. Keep the pending task; do not poll."}
+
+
+async def connection_setup(args):
+    from hermes_cli.config import load_config
     relay = os.environ.get("ZOEN_GOOGLE_RELAY_URL") or load_config().get("zoen", {}).get("google_relay_url")
     if not relay:
         return {"ok": False, "error": "google_operator_setup_required"}
@@ -143,9 +169,8 @@ async def dispatch(adapter, module, turn, args):
     if not config.get("configured") or any(name not in config.get("capabilities", []) for name in capabilities):
         return {"ok": False, "error": "google_capability_not_enabled", "available": config.get("capabilities", []),
                 "instruction": "The requested Google capability is not enabled by the operator. Report the available capabilities; do not route through Plow or fabricate a login link."}
-    job = GoogleJob(adapter, module, turn["chat_uid"], home, relay, args)
-    context = contextvars.copy_context()
-    context.run(module._ACTIVE_TURN.set, None)
-    job.task = asyncio.create_task(job.run(), context=context)
-    mcp_connections._jobs[(home, "google")] = job
-    return {"ok": True, "status": "starting", "instruction": "Authorization and completion arrive automatically in this conversation. Keep the pending task; do not poll."}
+    scope_map = config.get("capability_scopes", {})
+    if any(name not in scope_map for name in capabilities):
+        return {"ok": False, "error": "google_operator_update_required"}
+    scopes = {scope for name in capabilities for scope in scope_map[name]}
+    return {"relay": relay, "scopes": scopes}

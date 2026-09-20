@@ -153,6 +153,7 @@ export async function googleRoute(request, env) {
   const path = new URL(request.url).pathname;
   if (path === "/google/config" && request.method === "GET") {
     return response({ configured: configured(env), capabilities: configured(env) ? enabled(env) : [],
+      capability_scopes: Object.fromEntries(enabled(env).map((name) => [name, CAPABILITIES[name].map((scope) => PREFIX + scope)])),
       auth_mode: configured(env) ? env.GOOGLE_AUTH_MODE : "disabled" });
   }
   if (!configured(env)) return response({ error: "google_operator_setup_required" }, 503);

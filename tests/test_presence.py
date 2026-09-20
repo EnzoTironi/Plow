@@ -36,18 +36,17 @@ def message(uid, text="faz uma pesquisa", attachments=None):
 
 def receiver(tmp_path, monkeypatch):
     monkeypatch.setattr(presence, "SILENCE", .025)
-    monkeypatch.setattr(presence, "MAX_WAIT", .06)
     monkeypatch.setattr(presence, "DRAFT_DELAY", .001)
 
     async def model_draft(messages, **kwargs):
-        return "vou olhar aquele documento"
+        return {"line": "vou olhar aquele documento", "reaction": "like"}
 
     monkeypatch.setattr(presence, "draft", model_draft)
     adapter = Adapter()
     module = SimpleNamespace(BASE="http://fixture", _owner_dm=lambda chat: chat.get("owner", False))
     result = presence.Presence(adapter, module, presence.Receipts(tmp_path / "receipts.db"))
 
-    async def post(chat, endpoint, payload, http):
+    async def post(chat, endpoint, payload, http, deadline):
         adapter.posts.append((chat, endpoint, payload))
         return "sent"
 
@@ -70,7 +69,7 @@ def test_burst_one_status_and_reaction_on_last_message(tmp_path, monkeypatch):
         await drain(receiving)
         event = SimpleNamespace(source=SimpleNamespace(chat_id="cht_owner"), message_id="msg_2", channel_prompt="existing policy")
         await receiving.annotate(event)
-        assert "Do not send another status" in event.channel_prompt
+        assert "do not repeat the opening or reaction" in event.channel_prompt
         assert event.channel_prompt.startswith("existing policy")
 
     asyncio.run(run())
@@ -83,7 +82,6 @@ def test_burst_one_status_and_reaction_on_last_message(tmp_path, monkeypatch):
 def test_attachment_does_not_block_status_with_real_debounce(tmp_path, monkeypatch):
     receiving, adapter = receiver(tmp_path, monkeypatch)
     monkeypatch.setattr(presence, "SILENCE", 2.0)
-    monkeypatch.setattr(presence, "MAX_WAIT", 3.0)
 
     async def run():
         started = time.monotonic()
@@ -122,11 +120,14 @@ def test_ambiguous_send_is_not_retried_after_restart(tmp_path, monkeypatch):
     asyncio.run(send_one(receiving))
     asyncio.run(send_one(receiving))
     assert len(adapter.posts) == 2
-    assert receiving.receipts.state("cht_owner", "msg_1") == "uncertain"
+    assert receiving.receipts.state("cht_owner", "msg_1") == {"status": "uncertain", "reaction": "uncertain"}
 
 
-def test_closer_only_reacts(tmp_path, monkeypatch):
+def test_model_selects_reaction_without_status_for_a_closer(tmp_path, monkeypatch):
     receiving, adapter = receiver(tmp_path, monkeypatch)
+    async def closer(*args, **kwargs):
+        return {"line": None, "reaction": "love"}
+    monkeypatch.setattr(presence, "draft", closer)
 
     async def run():
         receiving.accept(message("msg_1", "valeu"), "cht_owner")
@@ -134,7 +135,7 @@ def test_closer_only_reacts(tmp_path, monkeypatch):
         await drain(receiving)
 
     asyncio.run(run())
-    assert adapter.posts == [("cht_owner", "messages/msg_2/reactions", {"operation": "add", "type": "like"})]
+    assert adapter.posts == [("cht_owner", "messages/msg_2/reactions", {"operation": "add", "type": "love"})]
 
 
 def test_revoked_membership_does_not_send(tmp_path, monkeypatch):
@@ -200,8 +201,16 @@ def test_permission_timeout_never_uses_the_cached_owner(tmp_path, monkeypatch):
     assert receiving.receipts.state("cht_owner", "msg_1") is None
 
 
-def test_sad_content_does_not_receive_a_like():
-    assert presence.reaction("preciso de ajuda, meu pai morreu") is None
+def test_reaction_is_chosen_by_model_not_keywords(tmp_path, monkeypatch):
+    receiving, adapter = receiver(tmp_path, monkeypatch)
+    async def chosen(*args, **kwargs):
+        return {"line": "vou conectar sua agenda", "reaction": "emphasize"}
+    monkeypatch.setattr(presence, "draft", chosen)
+    async def run():
+        receiving.accept(message("msg_connect", "conecta meu Google"), "cht_owner")
+        await drain(receiving)
+    asyncio.run(run())
+    assert adapter.posts[1][2] == {"operation": "add", "type": "emphasize"}
 
 
 def test_commands_do_not_receive_an_ack(tmp_path, monkeypatch):
@@ -248,12 +257,11 @@ def test_failed_generation_never_sends_a_canned_status(tmp_path, monkeypatch):
         await send_one(receiving)
         event = SimpleNamespace(source=SimpleNamespace(chat_id="cht_owner"), message_id="msg_1", channel_prompt="")
         await receiving.annotate(event)
-        assert "No status line was sent" in event.channel_prompt
-        assert "do not repeat the reaction" in event.channel_prompt
+        assert "normal final text" in event.channel_prompt
 
     asyncio.run(run())
-    assert adapter.posts == [("cht_owner", "messages/msg_1/reactions", {"operation": "add", "type": "like"})]
-    assert receiving.receipts.state("cht_owner", "msg_1") == "reacted"
+    assert adapter.posts == []
+    assert receiving.receipts.state("cht_owner", "msg_1") == {"status": "skipped", "reaction": "skipped"}
 
 
 def test_new_message_cancels_the_outdated_opening(tmp_path, monkeypatch):
@@ -262,8 +270,8 @@ def test_new_message_cancels_the_outdated_opening(tmp_path, monkeypatch):
     async def model_draft(messages, **kwargs):
         if len(messages) == 1:
             await asyncio.sleep(.2)
-            return "a stale opening"
-        return "vou focar no pedido corrigido"
+            return {"line": "a stale opening", "reaction": None}
+        return {"line": "vou focar no pedido corrigido", "reaction": None}
 
     monkeypatch.setattr(presence, "draft", model_draft)
 
@@ -277,22 +285,76 @@ def test_new_message_cancels_the_outdated_opening(tmp_path, monkeypatch):
     assert [p[2]["body"] for p in adapter.posts if p[1] == "messages"] == ["vou focar no pedido corrigido"]
 
 
-def test_reaction_does_not_wait_for_status_generation(tmp_path, monkeypatch):
+def test_main_work_never_waits_for_slow_reception_and_fast_answer_cancels_opening(tmp_path, monkeypatch):
+    receiving, adapter = receiver(tmp_path, monkeypatch)
+    async def run():
+        release = asyncio.Event()
+        async def slow_draft(*args, **kwargs):
+            await release.wait()
+            return {"line": "vou separar as opções", "reaction": "like"}
+        monkeypatch.setattr(presence, "draft", slow_draft)
+        receiving.accept(message("msg_1"), "cht_owner")
+        event = SimpleNamespace(source=SimpleNamespace(chat_id="cht_owner"), message_id="msg_1", channel_prompt="")
+        await asyncio.wait_for(receiving.annotate(event), .01)
+        assert event.zoen_reception["status"] == "pending"
+        receiving.answer_delivered("cht_owner", "msg_1")
+        release.set()
+        await drain(receiving)
+    asyncio.run(run())
+    assert adapter.posts == []
+
+
+def test_new_burst_closes_old_opening_and_keeps_context_in_receive_order(tmp_path, monkeypatch):
     receiving, adapter = receiver(tmp_path, monkeypatch)
 
     async def run():
-        release = asyncio.Event()
+        release_old = asyncio.Event()
+        contexts = []
 
-        async def slow_draft(*args, **kwargs):
-            await release.wait()
-            return "vou separar as opções de viagem"
+        async def draft(messages, **kwargs):
+            contexts.append(kwargs["context"])
+            if messages[0]["uid"] == "msg_1":
+                await release_old.wait()
+            return {"line": messages[0]["body"], "reaction": "like"}
 
-        monkeypatch.setattr(presence, "draft", slow_draft)
-        receiving.accept(message("msg_1"), "cht_owner")
-        await asyncio.sleep(.08)
-        assert adapter.posts == [("cht_owner", "messages/msg_1/reactions", {"operation": "add", "type": "like"})]
-        release.set()
+        monkeypatch.setattr(presence, "draft", draft)
+        receiving.accept(message("msg_1", "veja a agenda"), "cht_owner")
+        await asyncio.sleep(.05)
+        assert "cht_owner" not in receiving.bursts  # First draft is still pending.
+        receiving.accept(message("msg_2", "comece por amanhã"), "cht_owner")
+        release_old.set()
         await drain(receiving)
+        assert contexts == [[], ["veja a agenda"]]
+        assert receiving.context["cht_owner"] == ["veja a agenda", "comece por amanhã"]
 
     asyncio.run(run())
-    assert adapter.posts[-1][2]["body"] == "vou separar as opções de viagem"
+    assert [p[2]["body"] for p in adapter.posts if p[1] == "messages"] == ["comece por amanhã"]
+    assert all("msg_1" not in p[1] for p in adapter.posts)
+
+
+def test_each_effect_keeps_its_own_outcome(tmp_path, monkeypatch):
+    receiving, adapter = receiver(tmp_path, monkeypatch)
+    async def mixed(chat, endpoint, *args):
+        return "sent" if endpoint == "messages" else "failed"
+    receiving.post = mixed
+    asyncio.run(send_one(receiving))
+    assert receiving.receipts.state("cht_owner", "msg_1") == {"status": "sent", "reaction": "failed"}
+
+
+def test_expired_budget_never_posts_a_late_opening(tmp_path, monkeypatch):
+    receiving, adapter = receiver(tmp_path, monkeypatch)
+    monkeypatch.setattr(presence, "DEADLINE", .01)
+    asyncio.run(send_one(receiving))
+    assert adapter.posts == []
+    assert receiving.receipts.state("cht_owner", "msg_1") == {"status": "skipped", "reaction": "skipped"}
+
+
+def test_legacy_receipts_remain_sealed_against_replay(tmp_path):
+    import sqlite3
+    path = tmp_path / "receipts.db"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE receipts (chat TEXT, message TEXT, state TEXT, updated REAL, PRIMARY KEY(chat,message))")
+        db.execute("INSERT INTO receipts VALUES ('chat','message','sent',0)")
+    receipts = presence.Receipts(path)
+    assert receipts.state("chat", "message") == {"status": "uncertain", "reaction": "uncertain"}
+    assert not receipts.claim("chat", [{"uid": "message"}])

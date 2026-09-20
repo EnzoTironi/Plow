@@ -105,6 +105,26 @@ class Account:
                 "status": "credentials_saved" if data else "not_started",
                 "instruction": "Saved state is not a live access check. Verify with a small requested read."}
 
+    def verify(self, required_scopes, http=request):
+        baseline = self.read()
+        if not baseline:
+            return None
+        scopes = set(baseline.get("scopes", []))
+        if any(scope not in scopes and scope.removesuffix(".readonly") not in scopes for scope in required_scopes):
+            return None
+        try:
+            identity = verify_identity(self.token(http), http)
+        except GoogleError as exc:
+            if str(exc) == "google_http_401":
+                return None  # An explicit connect request may renew a revoked grant.
+            raise
+        current = self.read()
+        if (current is None or identity["id"] != baseline.get("account", {}).get("id")
+                or current.get("account", {}).get("id") != identity["id"]
+                or set(current.get("scopes", [])) != scopes):
+            raise GoogleError("google_account_changed_during_check")
+        return identity
+
 
 def validate_tokens(data):
     if not (isinstance(data.get("access_token"), str) and data["access_token"]

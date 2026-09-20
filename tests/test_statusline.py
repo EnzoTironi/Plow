@@ -12,12 +12,15 @@ import statusline
 
 
 @pytest.mark.parametrize("code,content,recent,expected", [
-    (200, "vou olhar as opções de passeio", [], "vou olhar as opções de passeio"),
+    (200, '{"line":"vou olhar as opções de passeio","reaction":"like"}', [], {"line":"vou olhar as opções de passeio","reaction":"like"}),
+    (200, '{"line":null,"reaction":"love"}', [], {"line":None,"reaction":"love"}),
     (429, None, [], None),
     (200, None, [], None),
-    (200, "vou olhar as opções de passeio", ["vou olhar as opções de passeio"], None),
-    (200, "primeira linha\nsegunda linha", [], None),
+    (200, 'not JSON', [], None),
+    (200, '{"line":"repetida","reaction":"like"}', ["repetida"], {"line":None,"reaction":"like"}),
+    (200, '{"line":[],"reaction":"dislike"}', [], {"line":None,"reaction":None}),
 ])
+
 def test_contextual_opening_or_no_text(tmp_path, code, content, recent, expected):
     async def run():
         async def complete(request):

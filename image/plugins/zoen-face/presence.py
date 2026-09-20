@@ -11,7 +11,6 @@ import functools
 import json
 import logging
 import os
-import re
 import sqlite3
 import time
 from contextlib import contextmanager
@@ -23,21 +22,10 @@ from statusline import draft
 
 log = logging.getLogger("zoen-presence")
 SILENCE = 2.0
-MAX_WAIT = 3.0
+DEADLINE = 5.0
 HTTP_TIMEOUT = 3.0
 REFRESH_TIMEOUT = 3.0
-DRAFT_DELAY = .3
-CLOSER = re.compile(r"^(?:valeu|thanks|thank you|thx|tks|obrigad[oa]|vlw|tmj|ty|gracias|merci)[\s.!❤️♥👍🙏]*$", re.I)
-REQUEST = re.compile(r"\b(faz|faça|ajuda|pode|consegue|procura|pesquisa|organiza|lembra|cria|quero|preciso|please|can you|could you|help me|find|create|remind|schedule)\b", re.I)
-SENSITIVE = re.compile(r"\b(morreu|morte|suicid\w*|câncer|cancer|abuso|acidente|died|dead|hurt|abuse|assault|kill)\b", re.I)
-
-
-def reaction(text: str) -> str | None:
-    if CLOSER.fullmatch(text.strip()):
-        return "like"
-    if REQUEST.search(text) and not SENSITIVE.search(text):
-        return "like"
-    return None
+DRAFT_DELAY = .15
 
 
 class Receipts:
@@ -46,6 +34,13 @@ class Receipts:
         self.path = path
         with self.connect() as db:
             db.execute("CREATE TABLE IF NOT EXISTS receipts (chat TEXT, message TEXT, state TEXT, updated REAL, PRIMARY KEY(chat, message))")
+            columns = {row[1] for row in db.execute("PRAGMA table_info(receipts)")}
+            for effect in ("status", "reaction"):
+                if effect not in columns:
+                    db.execute(f"ALTER TABLE receipts ADD COLUMN {effect} TEXT")
+            # Legacy records cannot establish which effect reached the phone.
+            # Seal both against replay; fresh messages get independent outcomes.
+            db.execute("UPDATE receipts SET status='uncertain', reaction='uncertain' WHERE status IS NULL")
         os.chmod(path, 0o600)
 
     @contextmanager
@@ -59,21 +54,23 @@ class Receipts:
 
     def state(self, chat, message):
         with self.connect() as db:
-            row = db.execute("SELECT state FROM receipts WHERE chat=? AND message=?", (chat, message)).fetchone()
-        return row[0] if row else None
+            row = db.execute("SELECT status, reaction FROM receipts WHERE chat=? AND message=?", (chat, message)).fetchone()
+        return dict(zip(("status", "reaction"), row)) if row else None
 
     def claim(self, chat, messages):
         with self.connect() as db:
-            rows = [(chat, m["uid"], "pending", time.time()) for m in messages]
-            db.executemany("INSERT OR IGNORE INTO receipts VALUES (?,?,?,?)", rows)
+            rows = [(chat, m["uid"], "pending", time.time(), "pending", "pending") for m in messages]
+            db.executemany("INSERT OR IGNORE INTO receipts (chat,message,state,updated,status,reaction) VALUES (?,?,?,?,?,?)", rows)
             if db.total_changes != len(rows):
                 db.rollback()
                 return False
             return True
 
-    def finish(self, chat, messages, state):
+    def finish(self, chat, messages, effect, state):
+        if effect not in {"status", "reaction"}:
+            raise ValueError("unknown reception effect")
         with self.connect() as db:
-            db.executemany("UPDATE receipts SET state=?, updated=? WHERE chat=? AND message=?",
+            db.executemany(f"UPDATE receipts SET {effect}=?, state='recorded', updated=? WHERE chat=? AND message=?",
                            [(state, time.time(), chat, m["uid"]) for m in messages])
 
 
@@ -84,6 +81,7 @@ class Presence:
         self.receipts = receipts or Receipts(home / "zoen" / "reception.db")
         self.home = home
         self.recent = {}
+        self.context = {}
         self.bursts = {}
         self.tasks = set()
         self.waiting = {}
@@ -108,13 +106,18 @@ class Presence:
                                            "received_at": time.time()}))
         burst = self.bursts.get(chat)
         if burst is None:
-            burst = {"last": now, "messages": [], "changed": asyncio.Event(),
+            for (pending_chat, _), pending in self.waiting.items():
+                if pending_chat == chat:
+                    pending["closed"] = True
+            burst = {"last": now, "messages": [], "closed": False, "context": self.context.get(chat, []), "changed": asyncio.Event(),
                      "http": aiohttp.ClientSession(base_url=self.module.BASE, headers=self.adapter.auth)}
             self.bursts[chat] = burst
             self.spawn(self.typing(chat))
             self.spawn(self.collect(chat, burst))
         burst["messages"].append(message)
+        self.context[chat] = (burst["context"] + [m["body"][:500] for m in burst["messages"]])[-6:]
         burst["last"] = now
+        burst["deadline"] = now + DEADLINE
         # Use the burst's quiet window for the permission read. Restart it on
         # new input so a long burst never authorizes against an old roster.
         if burst.get("refresh"):
@@ -122,9 +125,9 @@ class Presence:
         burst["refresh"] = asyncio.create_task(self.refresh(chat))
         if burst.get("draft"):
             burst["draft"].cancel()
-        burst["draft"] = asyncio.create_task(self.opening(chat, list(burst["messages"]), burst["http"]))
+        burst["draft"] = asyncio.create_task(self.opening(chat, burst))
         burst["changed"].set()
-        self.waiting[(chat, message["uid"])] = asyncio.Event()
+        self.waiting[(chat, message["uid"])] = burst
 
     async def typing(self, chat):
         try:
@@ -140,13 +143,16 @@ class Presence:
             log.warning("reception permission read failed: %s", type(error).__name__)
             return False
 
-    async def opening(self, chat, messages, http):
-        if all(CLOSER.fullmatch(m["body"].strip()) and not m.get("attachments") for m in messages):
-            return None
-        # Coalesce rapid frames before spending a model request. Both drafting
-        # and authorization run during the normal two-second burst window.
+    async def opening(self, chat, burst):
+        messages = list(burst["messages"])
         await asyncio.sleep(DRAFT_DELAY)
-        return await draft(messages, http=http, home=self.home, recent=self.recent.get(chat, []))
+        return await draft(messages, http=burst["http"], home=self.home, recent=self.recent.get(chat, []),
+                           context=burst["context"])
+
+    def answer_delivered(self, chat, message):
+        burst = self.waiting.get((chat, message))
+        if burst is not None:
+            burst["closed"] = True
 
     async def collect(self, chat, burst):
         messages = burst["messages"]
@@ -161,8 +167,8 @@ class Presence:
                 except TimeoutError:
                     break
             self.bursts.pop(chat, None)
-            if await burst["refresh"]:
-                await self.acknowledge(chat, messages, burst["draft"], burst["http"])
+            if await burst["refresh"] and not burst["closed"]:
+                await self.acknowledge(chat, burst)
         finally:
             if self.bursts.get(chat) is burst:
                 self.bursts.pop(chat)
@@ -171,50 +177,45 @@ class Presence:
             await asyncio.gather(burst["refresh"], burst["draft"], return_exceptions=True)
             await burst["http"].close()
             for message in messages:
-                ready = self.waiting.pop((chat, message["uid"]), None)
-                if ready:
-                    ready.set()
+                self.waiting.pop((chat, message["uid"]), None)
             log.info("reception %s", json.dumps({"chat": chat, "last_message": messages[-1]["uid"],
                 "elapsed_ms": round((time.monotonic() - burst["last"]) * 1000), "messages": len(messages)}))
 
-    async def acknowledge(self, chat, messages, opening, http):
-        # collect() has awaited this burst's fresh membership read.
-        if not self.module._owner_dm(self.adapter._chats.get(chat, {})):
-            return
-        if self.adapter._send_guard(chat) is not None:
+    async def acknowledge(self, chat, burst):
+        messages = burst["messages"]
+        if not self.module._owner_dm(self.adapter._chats.get(chat, {})) or self.adapter._send_guard(chat) is not None:
             return
         if not self.receipts.claim(chat, messages):
             return
-        text = "\n".join(m["body"] for m in messages)
-        only_closer = all(CLOSER.fullmatch(m["body"].strip()) and not m.get("attachments") for m in messages)
-        kind = "like" if only_closer else reaction(text)
-        reaction_task = asyncio.create_task(
-            self.post(chat, f"messages/{messages[-1]['uid']}/reactions", {"operation": "add", "type": kind}, http) if kind else self.no_post())
-        try:
-            body = await opening
-            results = await asyncio.gather(
-                self.post(chat, "messages", {"body": body, "format": "none"}, http) if body else self.no_post(),
-                reaction_task,
-            )
-        finally:
-            reaction_task.cancel()
-            await asyncio.gather(reaction_task, return_exceptions=True)
-        state = results[0] if body else results[1]
-        if body and state in ("sent", "uncertain"):
+        opening = await burst["draft"] or {}
+        body, kind = opening.get("line"), opening.get("reaction")
+        status, reaction = await asyncio.gather(
+            self.deliver(chat, burst, "status", "messages", {"body": body, "format": "none"} if body else None),
+            self.deliver(chat, burst, "reaction", f"messages/{messages[-1]['uid']}/reactions",
+                         {"operation": "add", "type": kind} if kind else None),
+        )
+        if body and status in {"sent", "uncertain"}:
             self.recent[chat] = (self.recent.get(chat, []) + [body])[-3:]
-        if not body and not only_closer and state in ("sent", "uncertain"):
-            state = "reacted" if state == "sent" else "reaction_uncertain"
-        self.receipts.finish(chat, messages, state)
         log.info("receipt_result %s", json.dumps({"chat": chat, "last_message": messages[-1]["uid"],
-                                                 "status": results[0], "reaction": results[1]}))
+                                                 "status": status, "reaction": reaction}))
 
-    async def no_post(self):
-        return "skipped"
+    async def deliver(self, chat, burst, effect, endpoint, payload):
+        state = "skipped"
+        if payload and not burst["closed"] and time.monotonic() < burst["deadline"]:
+            # A crash after this durable claim has an ambiguous outcome for
+            # this effect only. Never replay an uncertain POST automatically.
+            self.receipts.finish(chat, burst["messages"], effect, "uncertain")
+            state = await self.post(chat, endpoint, payload, burst["http"], burst["deadline"])
+        self.receipts.finish(chat, burst["messages"], effect, state)
+        return state
 
-    async def post(self, chat, endpoint, payload, http):
+    async def post(self, chat, endpoint, payload, http, deadline):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return "skipped"
         try:
             async with http.post(f"/v1/chats/{chat}/{endpoint}", json=payload,
-                                 timeout=aiohttp.ClientTimeout(total=HTTP_TIMEOUT)) as response:
+                                 timeout=aiohttp.ClientTimeout(total=min(HTTP_TIMEOUT, remaining))) as response:
                 if response.status in (408, 424) or response.status >= 500:
                     return "uncertain"
                 if response.status >= 400:
@@ -234,29 +235,19 @@ class Presence:
             return "uncertain"
 
     async def annotate(self, event):
+        if getattr(event, "internal", False):
+            return
         key = (event.source.chat_id, event.message_id)
-        ready = self.waiting.get(key)
-        if ready:
-            try:
-                await asyncio.wait_for(ready.wait(), MAX_WAIT + REFRESH_TIMEOUT + HTTP_TIMEOUT)
-            except TimeoutError:
-                log.warning("reception wait expired; checking durable delivery state")
         state = self.receipts.state(*key)
-        if state in ("reacted", "reaction_uncertain"):
-            event.channel_prompt = (event.channel_prompt or "") + (
-                "\n[Zoen reception]\nOnly a tapback was attempted; do not repeat the reaction. "
-                "No status line was sent. Write your own brief, contextual opening before the work.")
-            event.zoen_reception = state
+        if key not in self.waiting and state is None:
             return
-        if state not in ("sent", "uncertain", "pending"):
-            return
-        note = ("Reception already acknowledged this burst. Do not send another status line or tapback. "
-                "Continue the actual request; acknowledgement is not completion.")
-        if state != "sent":
-            note = ("The reception acknowledgement may already have reached the owner. Do not replay it. "
-                    "Continue the actual request and deliver its result.")
-        event.channel_prompt = (event.channel_prompt or "") + "\n[Zoen reception]\n" + note
-        event.zoen_reception = state
+        event.zoen_reception = state or {"status": "pending", "reaction": "pending"}
+        event.channel_prompt = (event.channel_prompt or "") + (
+            "\n[Zoen reception]\nReception owns this burst's opening and tapback. "
+            "Continue the actual work immediately; do not repeat the opening or reaction. "
+            "An acknowledgement is not completion. Deliver the result as normal final text, "
+            "or use plow_send_sequence with purpose=answer for multiple bubbles/media. "
+            "Reception outcomes: " + json.dumps(event.zoen_reception))
 
 
 def install(adapter_cls, module, prepare_dispatch=None):

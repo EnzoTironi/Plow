@@ -94,6 +94,21 @@ async def verify(home):
     with patch.object(google.mcp_connections, "notify", notify), patch.object(google, "verify_identity", return_value=identity):
         await verify_audiences(make_job, events, account)
     baseline = account.read()
+    reused = make_job({"capabilities": ["identity"], "required_scopes": []})
+    reused.relay = Relay()
+    before = len(events)
+    with patch.object(google.mcp_connections, "notify", notify), patch("google_account.verify_identity", return_value=identity):
+        await reused.run()
+    assert reused.status == "credentials_saved" and reused.relay.state is None
+    assert len(events) == before + 1 and "no new login was needed" in events[-1]
+    assert account.read() == baseline
+    # A failed new authorization attempt must not relabel the saved account.
+    google.mcp_connections._jobs[(home, "google")] = SimpleNamespace(
+        status="authorization_failed", task=SimpleNamespace(done=lambda: True))
+    status = await google.dispatch(adapter, module, {"chat_uid": "owner-chat"}, {"action": "status"})
+    assert status["status"] == "credentials_saved"
+    assert status["authorization_attempt"] == {"status": "authorization_failed", "active": False}
+    del google.mcp_connections._jobs[(home, "google")]
 
     # Adding Calendar permission must not silently switch the account.
     other = make_job({"capabilities": ["calendar_read"]})
@@ -127,6 +142,7 @@ async def verify(home):
         google_workspace.main()
     assert len(calls) == 1 and json.loads(output.getvalue())[0]["id"] == "fixture-event"
     print(json.dumps({"google_independent_oauth": True, "pkce": True, "private_persistence": True,
+                      "saved_grant_reused_without_consent": True, "account_and_attempt_status_separate": True,
                       "account_switch_guard": True, "native_hermes_calendar_command": True,
                       "owner_rechecked_before_commit": True,
                       "audience_notices": True,
