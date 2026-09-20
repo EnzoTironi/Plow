@@ -202,8 +202,13 @@ It runs public image
 (code `50336eefdea5082aa9c0561f98915bb41fc59c85`). The Plow API reports `running`,
 no failure code and a connected credential. A real iMessage request reached it
 and received one introduction and contact card, followed by the independent
-Google authorization link and unverified-beta notice. Account verification awaits
-the owner's consent. This was a fresh test deployment,
+Google authorization link and unverified-beta notice. After the Worker token
+exchange fix, real consent completed and the agent confirmed saved credentials,
+identity verification, refresh in a fresh process and a minimal Calendar read.
+Results were delivered with an explicit `plow_send_sequence` request; normal
+Hermes output is still dropped by the existing quiet filter. See
+[Google auth](GOOGLE_AUTH.md) for the scope and limitations of this live test.
+This was a fresh test deployment,
 not an upgrade preserving the previous instance's memory. The other occupied
 lines were not changed. The default Agent Index image remains pinned separately
 in Plow's private registry and still needs its administrative update path.

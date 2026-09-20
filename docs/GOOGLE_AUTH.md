@@ -8,7 +8,10 @@ Hermes' bundled Google API command implementations are reused through
 ## Release status — September 19, 2026
 
 The implementation and provider-simulated tests are in this branch. Real Google
-account consent and warning-free public authorization have **not** been verified.
+account consent completed through iMessage on the Aspen cloud instance. The agent
+confirmed saved credentials, verified the identity, renewed access in a fresh
+process and completed a minimal Calendar API read. Warning-free public
+authorization has **not** been verified.
 The beta configuration enables the implemented capabilities, with explicit
 audience reporting. Google verification is still required to remove the warning
 and lift the unverified-app cap; it is not a prerequisite for a consented beta.
@@ -36,9 +39,14 @@ preserved. A live broker registration for all 12 implemented capabilities checke
 the client ID, exact redirect, S256 challenge and mode; the test flow was cancelled.
 The fresh Aspen cloud instance runs image `release-50336ee`. A real iMessage request
 received a Google authorization link for **Zoen iMessage**, returning to the custom
-Zoen domain, together with the unverified-beta notice. Real-account verification
-is pending a completed consent after the fix below; no Google data was read or
-changed in that test.
+Zoen domain, together with the unverified-beta notice. Following the fix below,
+the owner's browser received the callback and the instance confirmed the saved
+account over iMessage. The granted capabilities are read-only Gmail, Calendar,
+Drive, Docs, Sheets and Contacts. A follow-up terminal check reported successful
+refresh in a fresh process, identity verification and a minimal Calendar read.
+No message was sent, user data changed, or account contents included in this
+repository. The individual Gmail, Drive, Docs, Sheets and Contacts APIs and a
+complete VM restart have not been tested with this real account.
 
 The first cloud attempt exposed a Cloudflare runtime incompatibility: token
 requests used `redirect: "error"`, which workerd rejects before contacting Google.
@@ -50,6 +58,13 @@ redirect-rejection coverage. After deployment, a separate synthetic-code probe
 reached Google and received the expected `google_reauthorization_required` (400),
 instead of the previous 503. That probe's flow was cancelled. This verifies the
 transport correction, not a real account grant.
+
+The cloud validation also exposed a delivery limitation: `quiet.py` drops normal
+Hermes `send()` output. Generic confirmation requests and `/status` produced no
+visible result; explicitly requesting `plow_send_sequence` delivered the saved
+account status and the real verification result. This test did not change that
+filter. Successful account access does not establish reliable automatic delivery
+of every connection notification.
 
 ## Flow and credential boundary
 
