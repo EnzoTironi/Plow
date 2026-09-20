@@ -1025,24 +1025,6 @@ def _call_intro(
     return intro(**kwargs)
 
 
-def _after_setup(
-    *,
-    voiced: bool | None,
-    send: Callable[..., dict[str, Any]] | None,
-    http: Http | None,
-    put: Put | None,
-) -> dict[str, str]:
-    if send is not None or (voice_exists() if voiced is None else voiced):
-        return {"action": "skip", "reason": "plow setup"}
-    try:
-        payload = _call_intro(send, http, put)
-    except (Exception, SystemExit):
-        return {"action": "skip", "reason": "plow setup"}
-    if payload.get("ok") and payload.get("hello"):
-        return {"action": "skip", "reason": "zoen intro"}
-    return {"action": "skip", "reason": "plow setup"}
-
-
 def greet_on_dispatch(
     event: Any = None,
     *,
@@ -1055,7 +1037,9 @@ def greet_on_dispatch(
     if getattr(event, "internal", False):
         return {"action": "allow"}
     if is_plow_setup(event):
-        return _after_setup(voiced=voiced, send=send, http=http, put=put)
+        # The native setup hook is synchronous and can race the real inbound
+        # handoff. Only that handoff owns the intro, off the receive loop.
+        return {"action": "skip", "reason": "plow setup"}
     if is_group(event):
         return group_on_dispatch(event, http=http)
     if voice_exists() if voiced is None else voiced:
@@ -1068,7 +1052,10 @@ def greet_on_dispatch(
     except (Exception, SystemExit):
         return {"action": "allow"}
     if payload.get("ok"):
-        return {"action": "skip", "reason": "zoen intro"}
+        event.channel_prompt = (getattr(event, "channel_prompt", "") or "") + (
+            "\n[Zoen first contact]\nYour introduction and contact card were already handled. "
+            "Do not greet again or ask what to build. Continue the owner's actual request.")
+        return {"action": "allow", "reason": "zoen intro delivered; preserve first request"}
     return {"action": "allow"}
 
 

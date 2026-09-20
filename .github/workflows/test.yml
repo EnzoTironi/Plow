@@ -1,0 +1,67 @@
+name: Runtime checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install pytest PyYAML aiohttp
+      - run: PYTHONDONTWRITEBYTECODE=1 python -m pytest -q -p no:cacheprovider
+  oauth-relay:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/oauth-relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: services/oauth-relay/package-lock.json
+      - run: npm ci
+      - run: npm test
+  hermes-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: services/oauth-relay/package-lock.json
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: zoen:oauth-test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - run: npm ci --prefix services/oauth-relay
+      - name: Start local callback relay
+        working-directory: services/oauth-relay
+        run: |
+          npx wrangler dev --local --ip 127.0.0.1 --port 8791 --log-level error > "$RUNNER_TEMP/oauth-relay.log" 2>&1 &
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent http://127.0.0.1:8791/health; then exit 0; fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/oauth-relay.log"
+          exit 1
+      - name: Validate Plow plugin and native OAuth
+        run: |
+          docker run --rm --entrypoint /opt/hermes/.venv/bin/python \
+            -v "$PWD:/workspace:ro" zoen:oauth-test /workspace/tests/integration_image.py
+          docker run --rm --entrypoint /opt/hermes/.venv/bin/python \
+            -v "$PWD:/workspace:ro" zoen:oauth-test /workspace/tests/integration_google.py
+          docker run --rm --network host --entrypoint /opt/hermes/.venv/bin/python \
+            -e ZOEN_OAUTH_RELAY_URL=http://127.0.0.1:8791 \
+            -v "$PWD:/workspace:ro" zoen:oauth-test /workspace/tests/integration_oauth.py

@@ -6,18 +6,43 @@
 
 <h1 align="center">Zoen</h1>
 
-<p align="center"><strong>Bring your dreams to life.</strong></p>
+<p align="center"><strong>big dreams. everyday problems. one little monster.</strong></p>
 
-<p align="center">Your Software Factory.</p>
+<p align="center">life happens. text zoen.</p>
 
-You already know what you want.
-You text it.
+i'm zoen. your little monster in iMessage.
 
-A movie of the product comes back to your phone.
-The same one waits on the pull request.
+the week that needs a plan. the place you need to find.
+the idea that won't leave you alone. the work that keeps following you home.
 
-No dashboard. No ticket. No waiting room.
-A little monster who makes the thing.
+text me. let's get it done.
+
+## your life. your work. your zoen.
+
+the thing you keep putting off? start there.
+
+- **"my week is a mess."** let's turn the pile into a plan. and keep the
+  important things from slipping through.
+- **"find us somewhere good for saturday."** the place, the reviews, the
+  shortlist. you bring your people.
+- **"i have a meeting in an hour."** who's coming. what they're working on.
+  what you need to know. walk in ready.
+- **"what should i make next?"** find what people care about. turn it into
+  something worth sharing.
+- **"who needs what i'm building?"** find the right companies and people.
+  bring you a list worth talking to.
+- **"this app should exist."** oh, we're doing this. from the first idea
+  to something you can actually use.
+
+## one conversation. a little less on your plate.
+
+your notes. your work. the things you already use.
+bring them along. tell me what you need.
+
+you don't have to keep every detail in your head.
+i'll take it from here.
+
+less to juggle. more life.
 
 ## Start
 
@@ -42,3 +67,14 @@ curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | s
 ```
 
 MIT. Built on [Plow](https://plow.co). Want to help? Open a pull request. `main` stays protected.
+
+## Working on Zoen
+
+The voice stays the same. Reception acknowledges an owner's message burst
+independently of the main agent's response. `zoen_connections` manages native
+Hermes OAuth and public MCP connections in the owner's iMessage DM. The callback
+relay supports cloud sign-in without opening ports or changing Plow infrastructure.
+
+See [implementation and validation](docs/RUNTIME.md) for the five-second target,
+current connector limits, checks and rollout procedure. These changes need a new
+image on an existing installation; changing this checkout does not update live agents.

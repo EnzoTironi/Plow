@@ -1,4 +1,4 @@
-# Zoen: Hermes software factory on the official Plow Hermes base.
+# Zoen: personal agent on the official Plow Hermes base.
 #
 # Pin by immutable tag + digest. A moving tag would substitute code under an
 # agent that holds a live Plow credential.
@@ -9,15 +9,6 @@ FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-ef0019372ff8bca593611b31ebd2
 ENV HERMES_YOLO_MODE=1
 ENV AGENT_ID=zoen
 ENV AGENT_NAME=Zoen
-ENV AGENT_BLURB="Bring your dreams to life. Text what you want. A movie of the product comes back."
-
-# plow-init composes SOUL.md on every boot as the base persona plus this file.
-# Do not COPY to /var/lib/hermes/SOUL.md. It is overwritten at boot.
-COPY runtime/persona.md /opt/hermes/plow-seed/persona.md
-COPY runtime/bootstrap.md /opt/hermes/plow-seed/bootstrap.md
-COPY runtime/config.yaml /opt/hermes/plow-seed/zoen-config.yaml
-COPY LICENSE NOTICE docs/zoen-card.jpg /usr/share/doc/zoen/
-RUN chmod 0644 /opt/hermes/plow-seed/persona.md /opt/hermes/plow-seed/bootstrap.md /opt/hermes/plow-seed/zoen-config.yaml
 
 # Scanner + canvas CLIs (deterministic). Node 22 if the base is older.
 # gh is GitHub (PRs, comments, merge). Prove-as-user is skill prove.
@@ -72,6 +63,23 @@ RUN set -eu; \
       echo "zoen: FastText wheel missing, heuristic language id"; \
     fi
 
+# The native Hermes browser uses agent-browser. Provision its actual backend
+# before enabling the toolset; no download or interactive setup on first use.
+ARG AGENT_BROWSER_VERSION=0.26.0
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends chromium \
+ && rm -rf /var/lib/apt/lists/* \
+ && npm install -g agent-browser@${AGENT_BROWSER_VERSION}
+ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
+
+# plow-init composes SOUL.md on every boot as the base persona plus this file.
+# Do not COPY to /var/lib/hermes/SOUL.md. It is overwritten at boot.
+COPY runtime/persona.md /opt/hermes/plow-seed/persona.md
+COPY runtime/bootstrap.md /opt/hermes/plow-seed/bootstrap.md
+COPY runtime/config.yaml /opt/hermes/plow-seed/zoen-config.yaml
+COPY LICENSE NOTICE docs/zoen-card.jpg /usr/share/doc/zoen/
+RUN chmod 0644 /opt/hermes/plow-seed/persona.md /opt/hermes/plow-seed/bootstrap.md /opt/hermes/plow-seed/zoen-config.yaml
+
 # Bundled skills. The gateway reconciles this tree into $HERMES_HOME/skills
 # on boot: new/untouched copies update, owner edits stay.
 COPY skills/ /opt/hermes/skills/
@@ -87,6 +95,7 @@ RUN chown -R root:root /opt/plow \
  && find /opt/plow -type f -exec chmod 0644 {} +
 
 COPY image/plugins/zoen-face/ /opt/hermes/plugins/zoen-face/
+COPY image/optional-mcps/ /opt/hermes/optional-mcps/
 COPY image/enable-zoen-face.py /opt/hermes/enable-zoen-face.py
 COPY image/plow-init-then-face.sh /opt/hermes/plow-init-then-face.sh
 COPY image/s6-overlay/ /etc/s6-overlay/
@@ -94,3 +103,11 @@ RUN chmod 0644 /opt/hermes/plugins/zoen-face/plugin.yaml /opt/hermes/plugins/zoe
  && chmod 0755 /opt/hermes/plow-init-then-face.sh \
  && chmod 0755 /etc/s6-overlay/s6-rc.d/zoen-floor-cron/run \
  && /opt/hermes/.venv/bin/python /opt/hermes/enable-zoen-face.py
+
+# Public page copy does not invalidate the tool-install layers.
+ENV AGENT_BLURB="big dreams. everyday problems. one little monster. i'm zoen. text me on iMessage. get your week together. find a great place. walk into the meeting ready. find your next customer. turn an idea into something real. i'll handle the details. you get on with living."
+
+ARG ZOEN_REVISION=unknown
+LABEL org.opencontainers.image.source="https://github.com/EnzoTironi/plow" \
+      org.opencontainers.image.revision=$ZOEN_REVISION \
+      org.opencontainers.image.title="Zoen"

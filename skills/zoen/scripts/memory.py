@@ -4,12 +4,18 @@
     memory.py remember "Enzo prefers lowercase"
     memory.py remember "fact one" "fact two"
     memory.py recall "enzo cli"
+    memory.py correct "old exact fact" "corrected fact"
+    memory.py forget "exact fact"
 """
 from __future__ import annotations
 
 import json
+import fcntl
 import os
+import re
 import sys
+import tempfile
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -36,6 +42,46 @@ def _out(payload: dict) -> int:
     return 0 if payload.get("ok", True) else 1
 
 
+@contextmanager
+def locked_memory(folder: Path):
+    folder.mkdir(parents=True, exist_ok=True)
+    with (folder / ".memory.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def revise(old: str, new: str | None = None, home: str | None = None) -> dict:
+    """Replace/remove exact facts, including copies in the local context files."""
+    if not old.strip() or (new is not None and not new.strip()):
+        return {"ok": False, "error": "pass the exact old fact and a nonempty replacement"}
+    folder = zoen_dir(home)
+    changed = 0
+    with locked_memory(folder):
+        for name in FILES:
+            path = folder / name
+            if not path.exists():
+                continue
+            lines = path.read_text().splitlines(keepends=True)
+            matches = [i for i, line in enumerate(lines)
+                       if re.sub(r"^- \d{4}-\d{2}-\d{2} ", "", line.strip()) == old.strip()]
+            if not matches:
+                continue
+            lines = [line for i, line in enumerate(lines) if i not in matches]
+            if new is not None:
+                if lines and not lines[-1].endswith("\n"):
+                    lines[-1] += "\n"
+                prefix = f"- {_today()} " if name in ("MEMORY.md", "JOURNAL.md") else ""
+                lines.append(f"{prefix}{new.strip()}\n")
+            with tempfile.NamedTemporaryFile(mode="w", dir=folder, delete=False) as pending:
+                pending.writelines(lines)
+            try:
+                os.replace(pending.name, path)
+            finally:
+                Path(pending.name).unlink(missing_ok=True)
+            changed += len(matches)
+    return {"ok": bool(changed), "changed": changed, "error": None if changed else "exact fact not found; recall first"}
+
+
 def remember(facts: list[str], home: str | None = None) -> dict:
     lines = [item.strip() for item in facts if item and item.strip()]
     if not lines:
@@ -45,8 +91,9 @@ def remember(facts: list[str], home: str | None = None) -> dict:
     path = folder / "MEMORY.md"
     day = _today()
     block = "".join(f"- {day} {line}\n" for line in lines)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(block)
+    with locked_memory(folder):
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(block)
     return {"ok": True, "wrote": len(lines), "path": str(path)}
 
 
@@ -71,7 +118,7 @@ def recall(query: str, home: str | None = None, limit: int = RECALL_LIMIT) -> di
                 hits.append(
                     {"file": name, "line": index, "score": score, "text": line.strip()}
                 )
-    hits.sort(key=lambda row: (-int(row["score"]), str(row["file"]), int(row["line"])))
+    hits.sort(key=lambda row: (-int(row["score"]), str(row["file"]), -int(row["line"])))
     return {"ok": True, "query": query, "hits": hits[:limit]}
 
 
@@ -87,7 +134,11 @@ def main(argv: list[str] | None = None) -> int:
         if len(args) < 2:
             return _out({"ok": False, "error": "recall: pass a query"})
         return _out(recall(" ".join(args[1:])))
-    print("memory: remember | recall", file=sys.stderr)
+    if command == "correct" and len(args) == 3:
+        return _out(revise(args[1], args[2]))
+    if command == "forget" and len(args) == 2:
+        return _out(revise(args[1]))
+    print("memory: remember | recall | correct | forget", file=sys.stderr)
     return 2
 
 

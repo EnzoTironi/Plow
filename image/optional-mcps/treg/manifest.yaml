@@ -1,0 +1,27 @@
+# Zoen-reviewed addition to Hermes' native catalog. No CLI or server code is installed.
+manifest_version: 1
+name: treg
+description: >-
+  Search and call Treg's catalog of external APIs: web research, enrichment,
+  SEO, social media, images and video. Provider calls may spend Treg credits.
+source: https://github.com/superdesigndev/treg/blob/main/docs/context/architecture/mcp-oauth.md
+transport:
+  type: http
+  url: https://treg.to/mcp/v2/
+auth:
+  type: oauth
+tools:
+  default_enabled:
+    - catalog_search
+    - catalog_get
+    - catalog_call_read
+    - catalog_call_write
+    - balance
+suggest:
+  keywords: [treg, enrichment, seo, backlinks, api]
+  hosts: [treg.to]
+post_install: >-
+  Authorize your own Treg account and team through Zoen's iMessage link.
+  Verify the connected identity/team with balance and browse catalog_search.
+  Inspect catalog_get pricing and obtain the owner's spending authorization
+  before paid provider calls; connection verification must not spend credits.

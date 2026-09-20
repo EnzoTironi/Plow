@@ -36,7 +36,7 @@ def test_skips_create_when_the_job_already_targets_that_chat():
             json.dumps(
                 {
                     "jobs": [
-                        {"id": "j1", "name": "zoen-floor", "deliver": "plow_chat:cht_1"}
+                        {"id": "j1", "name": "zoen-floor", "deliver": "plow_chat:cht_1", "prompt": rc.PROMPT, "schedule": {"expr": rc.SCHEDULE}}
                     ]
                 }
             )
@@ -53,7 +53,7 @@ def test_retargets_the_job_when_the_home_chat_moved():
             json.dumps(
                 {
                     "jobs": [
-                        {"id": "j1", "name": "zoen-floor", "deliver": "plow_chat:cht_1"}
+                        {"id": "j1", "name": "zoen-floor", "deliver": "plow_chat:cht_1", "prompt": rc.PROMPT, "schedule": rc.SCHEDULE}
                     ]
                 }
             )
@@ -82,6 +82,17 @@ def test_refuses_a_blank_channel():
         except SystemExit:
             return
     raise AssertionError("blank channel accepted")
+
+
+def test_reconciles_stale_prompt_and_schedule_without_recreating(tmp_path):
+    calls = []
+    path = tmp_path / "jobs.json"
+    path.write_text(json.dumps({"jobs": [{"id": "same-job", "name": rc.NAME,
+        "deliver": "plow_chat:cht_1", "prompt": "old software-only prompt",
+        "schedule": {"kind": "cron", "expr": "0 0 * * *"}}]}))
+    assert rc.main("cht_1", path, fake_run(calls)) == 0
+    assert calls == [[rc.HERMES, "cron", "edit", "same-job", "--prompt", rc.PROMPT,
+                      "--schedule", rc.SCHEDULE]]
 
 
 if __name__ == "__main__":

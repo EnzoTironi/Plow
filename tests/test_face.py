@@ -551,18 +551,20 @@ def no_intro(**_k):
     raise AssertionError("intro")
 
 
-def test_dispatch_runs_intro_on_first_inbound_and_skips_the_model():
-    sent = []
+def test_dispatch_preserves_first_request_after_intro():
+    for text, name in [("Me lembra de renovar o contrato amanhã", None),
+                       ("Hello, what's going on?", "Plow setup")]:
+        sent = []
 
-    def send(**kwargs):
-        sent.append(kwargs)
-        return {"ok": True}
+        def send(**kwargs):
+            sent.append(kwargs)
+            return {"ok": True}
 
-    action = face.greet_on_dispatch(
-        Event("Opa, tudo bem?"), voiced=False, send=send
-    )
-    assert action == {"action": "skip", "reason": "zoen intro"}
-    assert sent == [{"inbound": "Opa, tudo bem?"}]
+        event = Event(text, user_name=name)
+        action = face.greet_on_dispatch(event, voiced=False, send=send)
+        assert action["action"] == "allow"
+        assert "Do not greet again" in event.channel_prompt
+        assert sent == [{"inbound": text}]
 
 
 def test_dispatch_lets_the_model_run_after_first_run():
@@ -584,25 +586,7 @@ def test_dispatch_swallows_plow_setup_without_intro():
         send=lambda **_k: (_ for _ in ()).throw(AssertionError("intro")),
     )
     assert action == {"action": "skip", "reason": "plow setup"}
-
-
-def test_dispatch_intros_when_setup_name_is_on_their_hello():
-    sent = []
-
-    def send(**kwargs):
-        sent.append(kwargs)
-        return {"ok": True}
-
-    action = face.greet_on_dispatch(
-        Event("Hello, what's going on?", user_name="Plow setup"),
-        voiced=False,
-        send=send,
-    )
-    assert action == {"action": "skip", "reason": "zoen intro"}
-    assert sent == [{"inbound": "Hello, what's going on?"}]
-
-
-def test_dispatch_intros_from_history_when_reconnect_is_setup():
+def test_setup_never_races_the_real_inbound_intro():
     plow = FakePlow(history=said("Hello, what's going on?"))
     with tempfile.TemporaryDirectory() as d, face_env(home=d):
         action = face.greet_on_dispatch(
@@ -614,9 +598,9 @@ def test_dispatch_intros_from_history_when_reconnect_is_setup():
             http=plow.http,
             put=plow.put,
         )
-    assert action == {"action": "skip", "reason": "zoen intro"}
-    assert plow.text_bodies() == list(face.HELLO["en"])
-    assert plow.judged == []
+    assert action == {"action": "skip", "reason": "plow setup"}
+    assert plow.calls == []
+    assert plow.puts == []
 
 
 def test_dispatch_does_not_replay_hello_on_setup_after_we_already_greeted():
@@ -852,11 +836,10 @@ if __name__ == "__main__":
     test_rename_uses_the_account_token_not_the_agent_token()
     test_account_token_reads_xdg_config_home_first()
     test_card_send_skips_if_zoen_vcf_already_went()
-    test_dispatch_runs_intro_on_first_inbound_and_skips_the_model()
+    test_dispatch_preserves_first_request_after_intro()
     test_dispatch_lets_the_model_run_after_first_run()
     test_dispatch_swallows_plow_setup_without_intro()
-    test_dispatch_intros_when_setup_name_is_on_their_hello()
-    test_dispatch_intros_from_history_when_reconnect_is_setup()
+    test_setup_never_races_the_real_inbound_intro()
     test_dispatch_does_not_replay_hello_on_setup_after_we_already_greeted()
     test_intro_does_not_greet_a_plow_setup_ping()
     test_intro_uses_inbound_text_even_when_history_is_still_empty()
