@@ -192,7 +192,7 @@ def test_vcard_names_the_contact_zoen_with_the_line_number_and_photo():
 
 def test_hello_copy_fits_imessage():
     for bubbles in face.HELLO.values():
-        assert len(bubbles) == 2
+        assert len(bubbles) == 4
         for bubble in bubbles:
             assert not bubble.endswith(".")
             assert len(bubble.splitlines()) <= 2
@@ -200,9 +200,20 @@ def test_hello_copy_fits_imessage():
     assert "\n" not in face.HELLO["en"][0]
     assert "I'm Zoen" in face.HELLO["en"][0]
     assert "save my card" in face.HELLO["en"][1]
+    assert "Enzo made me" in face.HELLO["en"][2]
+    assert face.ENZO_TEL_DISPLAY in face.HELLO["en"][3]
     assert "\n" not in face.HELLO["pt"][0]
     assert "eu sou o Zoen" in face.HELLO["pt"][0]
+    assert "me criou o Enzo" in face.HELLO["pt"][2]
+    assert face.ENZO_TEL_DISPLAY in face.HELLO["pt"][3]
     assert not any("?" in bubble for bubbles in face.HELLO.values() for bubble in bubbles)
+
+
+def test_vcard_enzo_has_his_number_without_a_photo():
+    card = face.vcard(face.ENZO_NAME, face.ENZO_TEL).decode("utf-8")
+    assert "FN:Enzo" in card
+    assert f"TEL;TYPE=CELL,VOICE,pref:{face.ENZO_TEL}" in card
+    assert "PHOTO" not in card
 
 
 def test_intro_waits_if_they_have_not_written():
@@ -270,6 +281,10 @@ def test_intro_sends_hello_and_card_without_a_competing_question():
     assert b"FN:Zoen" in card
     assert b"+15555550100" in card
     assert b"Willow" not in card
+    enzo = plow.puts[1][2]
+    assert b"FN:Enzo" in enzo
+    assert face.ENZO_TEL.encode() in enzo
+    assert b"PHOTO" not in enzo
 
 
 def test_intro_uses_portuguese_when_the_inbound_is_portuguese():
@@ -279,7 +294,8 @@ def test_intro_uses_portuguese_when_the_inbound_is_portuguese():
     assert payload["language"] == "pt"
     assert payload["hello"][0] == face.HELLO["pt"][0]
     assert "\n" not in payload["hello"][0]
-    assert payload["hello"][-1] == face.HELLO["pt"][1]
+    assert payload["hello"][1] == face.HELLO["pt"][1]
+    assert payload["hello"][-1] == face.HELLO["pt"][-1]
     assert plow.text_bodies() == list(face.HELLO["pt"])
 
 
@@ -649,7 +665,7 @@ def test_intro_uses_inbound_text_even_when_history_is_still_empty():
         )
     assert payload["ok"] is True
     assert payload["language"] == "pt"
-    assert payload["hello"][-1] == face.HELLO["pt"][1]
+    assert payload["hello"][-1] == face.HELLO["pt"][-1]
     assert plow.judged == []
 
 
@@ -672,6 +688,8 @@ def test_intro_renders_hello_when_the_judge_names_another_language():
     plow.hello = [
         "hola, soy Zoen\ntu monstruo que hace sueños",
         "guarda mi tarjeta para saber que soy yo",
+        "Enzo me hizo. guarda su tarjeta si algo falla",
+        "te ayudamos. +55 31 99994-1160",
     ]
     with tempfile.TemporaryDirectory() as d, face_env(home=d):
         payload = face.intro(http=plow.http, put=plow.put)
@@ -812,6 +830,7 @@ def test_fact_from_output_keeps_the_mac_full_name():
 if __name__ == "__main__":
     test_vcard_names_the_contact_zoen_with_the_line_number_and_photo()
     test_hello_copy_fits_imessage()
+    test_vcard_enzo_has_his_number_without_a_photo()
     test_intro_waits_if_they_have_not_written()
     test_intro_still_sends_if_the_newest_message_is_a_shutdown()
     test_intro_waits_if_we_already_greeted_in_this_chat()

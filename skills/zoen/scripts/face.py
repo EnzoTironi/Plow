@@ -32,14 +32,22 @@ from net import request  # noqa: E402
 
 NAME = "Zoen"
 CARD_NAME = "Zoen.vcf"
+ENZO_NAME = "Enzo"
+ENZO_CARD_NAME = "Enzo.vcf"
+ENZO_TEL = "+5531999941160"
+ENZO_TEL_DISPLAY = "+55 31 99994-1160"
 HELLO = {
     "en": (
         "hey, I'm Zoen, your little monster that makes your dreams come true",
         "save my card so you know it's me",
+        "Enzo made me. save his card for questions or trouble",
+        f"we'll help. {ENZO_TEL_DISPLAY}",
     ),
     "pt": (
         "oi, eu sou o Zoen, o monstrinho que faz seus sonhos acontecerem",
         "salva meu cartão pra você saber que sou eu",
+        "me criou o Enzo. salva o cartão dele pra dúvida ou problema",
+        f"a gente te ajuda. {ENZO_TEL_DISPLAY}",
     ),
 }
 SETUP_NAMES = {"plow setup"}
@@ -64,9 +72,9 @@ PEEK = (
     (["git", "config", "--global", "user.email"], "email"),
 )
 RENDER = (
-    "Rewrite these two iMessage bubbles in the same language as the user. "
-    "Keep the meaning. Max two lines each. No trailing period. "
-    "JSON only: {\"hello\":[\"...\",\"...\"]}"
+    "Rewrite these iMessage bubbles in the same language as the user. "
+    "Keep the meaning and the same number of bubbles. Max two lines each. "
+    "No trailing period. JSON only: {\"hello\":[\"...\"]}"
 )
 Http = Callable[..., dict]
 Put = Callable[[str, dict[str, str], bytes], dict]
@@ -157,18 +165,18 @@ def fold_line(line: str) -> str:
     return "\r\n ".join([first, *rest])
 
 
-def vcard(name: str, tel: str, jpeg: bytes) -> bytes:
-    photo = base64.b64encode(jpeg).decode("ascii")
+def vcard(name: str, tel: str, jpeg: bytes | None = None) -> bytes:
     lines = [
         "BEGIN:VCARD",
         "VERSION:3.0",
         f"N:{name};;;;",
         f"FN:{name}",
         f"TEL;TYPE=CELL,VOICE,pref:{tel}",
-        fold_line(f"PHOTO;ENCODING=b;TYPE=JPEG:{photo}"),
-        "END:VCARD",
-        "",
     ]
+    if jpeg:
+        photo = base64.b64encode(jpeg).decode("ascii")
+        lines.append(fold_line(f"PHOTO;ENCODING=b;TYPE=JPEG:{photo}"))
+    lines.extend(["END:VCARD", ""])
     return "\r\n".join(lines).encode("utf-8")
 
 
@@ -356,7 +364,7 @@ def render_hello(
         f"{base}/v1/chat/completions",
         headers=headers,
         body={
-            "max_tokens": 160,
+            "max_tokens": 240,
             "messages": [
                 {"role": "system", "content": RENDER},
                 {"role": "user", "content": f"{text}\n---\n{source}"},
@@ -378,7 +386,7 @@ def render_hello(
         except json.JSONDecodeError:
             return list(HELLO["en"])
     bubbles = parsed.get("hello") if isinstance(parsed, dict) else parsed
-    if not isinstance(bubbles, list) or len(bubbles) != 2:
+    if not isinstance(bubbles, list) or len(bubbles) != len(HELLO["en"]):
         return list(HELLO["en"])
     out = [str(item).strip() for item in bubbles]
     if any(not item or len(item.splitlines()) > 2 for item in out):
@@ -705,15 +713,19 @@ def upload_card(
     tel: str,
     http: Http,
     put: Put,
+    *,
+    name: str = NAME,
+    filename: str = CARD_NAME,
+    photo: bool = True,
 ) -> dict[str, Any]:
-    jpeg = photo_path().read_bytes()
-    card = vcard(NAME, tel, jpeg)
+    jpeg = photo_path().read_bytes() if photo else None
+    card = vcard(name, tel, jpeg)
     declared = http(
         "POST",
         f"{base}/v1/chats/{quote(chat_uid)}/attachments",
         headers=headers,
         body={
-            "filename": CARD_NAME,
+            "filename": filename,
             "content_type": "text/vcard",
             "size_bytes": len(card),
         },
@@ -975,6 +987,15 @@ def intro(
                 failed = say(bubble)
                 if failed:
                     return failed
+            enzo = upload_card(
+                base, headers, chat_uid, ENZO_TEL, http, put,
+                name=ENZO_NAME, filename=ENZO_CARD_NAME, photo=False,
+            )
+            if not enzo.get("ok"):
+                return fail(enzo)
+            posted = attach_card(base, headers, chat_uid, str(enzo["uid"]), http)
+            if not posted.get("ok"):
+                return fail(posted)
     voice = stamp_voice(lang)
     return {
         "ok": True,
