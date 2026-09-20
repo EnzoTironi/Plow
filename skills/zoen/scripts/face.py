@@ -41,15 +41,14 @@ HELLO = {
         "hey, I'm Zoen, your little monster that makes your dreams come true",
         "save my card so you know it's me",
         "Enzo made me. save his card for questions or trouble",
-        f"we'll help. {ENZO_TEL_DISPLAY}",
     ),
     "pt": (
         "oi, eu sou o Zoen, o monstrinho que faz seus sonhos acontecerem",
         "salva meu cartão pra você saber que sou eu",
-        "me criou o Enzo. salva o cartão dele pra dúvida ou problema",
-        f"a gente te ajuda. {ENZO_TEL_DISPLAY}",
+        "Enzo me criou. salva o cartão dele pra dúvida ou problema",
     ),
 }
+_INTRO_LOCK = threading.Lock()
 SETUP_NAMES = {"plow setup"}
 SETUP_PREFIX = "plow, not your owner"
 HELLO_MARKERS = ("I'm Zoen", "eu sou o Zoen")
@@ -875,6 +874,17 @@ def intro(
     http: Http = request,
     put: Put = put_bytes,
 ) -> dict[str, Any]:
+    with _INTRO_LOCK:
+        return _intro(force=force, chat=chat, inbound=inbound, http=http, put=put)
+
+
+def _intro(
+    force: bool = False,
+    chat: str | None = None,
+    inbound: str | None = None,
+    http: Http = request,
+    put: Put = put_bytes,
+) -> dict[str, Any]:
     base, headers, me = load_me(http)
     line = me.get("line") if isinstance(me.get("line"), dict) else {}
     tel = str(line.get("provider_key") or "").strip()
@@ -958,9 +968,15 @@ def intro(
         return upload_card(base, headers, chat_uid, tel, http, put)
 
     peek_owner(home=os.environ.get("HERMES_HOME"))
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    with ThreadPoolExecutor(max_workers=3) as pool:
         lang_job = pool.submit(judge)
         card_job = pool.submit(pack) if want_card else None
+        enzo_job = pool.submit(
+            lambda: upload_card(
+                base, headers, chat_uid, ENZO_TEL, http, put,
+                name=ENZO_NAME, filename=ENZO_CARD_NAME, photo=False,
+            )
+        ) if want_hello else None
         lang = lang_job.result()
         bubbles = hello_for(lang, spoken, http=http, base=base, headers=headers)
         before, after = bubbles[:CARD_AFTER], bubbles[CARD_AFTER:]
@@ -987,10 +1003,11 @@ def intro(
                 failed = say(bubble)
                 if failed:
                     return failed
-            enzo = upload_card(
-                base, headers, chat_uid, ENZO_TEL, http, put,
-                name=ENZO_NAME, filename=ENZO_CARD_NAME, photo=False,
-            )
+            assert enzo_job is not None
+            try:
+                enzo = enzo_job.result()
+            except Exception as exc:
+                return fail({"ok": False, "error": str(exc), "status": 0})
             if not enzo.get("ok"):
                 return fail(enzo)
             posted = attach_card(base, headers, chat_uid, str(enzo["uid"]), http)

@@ -177,7 +177,7 @@ the whole reply. Do not greet the room. A tapback is not a sequence.
 Each text item: **at most two lines**. One short sentence per line.
 A third line is a **new bubble**. No list. No recap. No wall.
 
-Pace **1.75s**, then **2s**, then 1.75, then 2. Always set the pause.
+Pace **0.4s**, then **0.55s**, then 0.4, then 0.55. Always set the pause.
 Cap 60s.
 
 **Always** send pictures and video, or a voice memo. Each file is its

@@ -88,7 +88,7 @@ there is no default acknowledgement to copy. Match their language and style.
   does not. comma, line break, or a mid-line period instead.
   no semicolon. no ellipsis for drama. no stacked !!! or ???.
   one ? only when you actually ask. never repeat their ask back.
-- Pace **1.75s then 2s**, alternating. Always set the pause. Cap 60s.
+- Pace **0.4s then 0.55s**, alternating. Always set the pause. Cap 60s.
 - Always pictures, video, or a voice memo. Capture the user-path
   (screenshots + a short clip). Each file is its own
   `zoen_imessage` item whose whole body is `MEDIA:/absolute/path`

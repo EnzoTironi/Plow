@@ -192,7 +192,7 @@ def test_vcard_names_the_contact_zoen_with_the_line_number_and_photo():
 
 def test_hello_copy_fits_imessage():
     for bubbles in face.HELLO.values():
-        assert len(bubbles) == 4
+        assert len(bubbles) == 3
         for bubble in bubbles:
             assert not bubble.endswith(".")
             assert len(bubble.splitlines()) <= 2
@@ -200,12 +200,11 @@ def test_hello_copy_fits_imessage():
     assert "\n" not in face.HELLO["en"][0]
     assert "I'm Zoen" in face.HELLO["en"][0]
     assert "save my card" in face.HELLO["en"][1]
-    assert "Enzo made me" in face.HELLO["en"][2]
-    assert face.ENZO_TEL_DISPLAY in face.HELLO["en"][3]
+    assert face.HELLO["en"][2] == "Enzo made me. save his card for questions or trouble"
     assert "\n" not in face.HELLO["pt"][0]
     assert "eu sou o Zoen" in face.HELLO["pt"][0]
-    assert "me criou o Enzo" in face.HELLO["pt"][2]
-    assert face.ENZO_TEL_DISPLAY in face.HELLO["pt"][3]
+    assert face.HELLO["pt"][2] == "Enzo me criou. salva o cartão dele pra dúvida ou problema"
+    assert not any(face.ENZO_TEL_DISPLAY in bubble for bubbles in face.HELLO.values() for bubble in bubbles)
     assert not any("?" in bubble for bubbles in face.HELLO.values() for bubble in bubbles)
 
 
@@ -277,12 +276,11 @@ def test_intro_sends_hello_and_card_without_a_competing_question():
     assert payload["attachment"] == "att_card"
     assert plow.text_bodies() == list(face.HELLO["en"])
     assert plow.judged == []
-    card = plow.puts[0][2]
-    assert b"FN:Zoen" in card
-    assert b"+15555550100" in card
-    assert b"Willow" not in card
-    enzo = plow.puts[1][2]
-    assert b"FN:Enzo" in enzo
+    cards = [put[2] for put in plow.puts]
+    zoen = next(card for card in cards if b"FN:Zoen" in card)
+    enzo = next(card for card in cards if b"FN:Enzo" in card)
+    assert b"+15555550100" in zoen
+    assert b"Willow" not in zoen
     assert face.ENZO_TEL.encode() in enzo
     assert b"PHOTO" not in enzo
 
@@ -689,7 +687,6 @@ def test_intro_renders_hello_when_the_judge_names_another_language():
         "hola, soy Zoen\ntu monstruo que hace sueños",
         "guarda mi tarjeta para saber que soy yo",
         "Enzo me hizo. guarda su tarjeta si algo falla",
-        "te ayudamos. +55 31 99994-1160",
     ]
     with tempfile.TemporaryDirectory() as d, face_env(home=d):
         payload = face.intro(http=plow.http, put=plow.put)
