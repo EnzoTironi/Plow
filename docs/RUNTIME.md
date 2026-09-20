@@ -43,8 +43,10 @@ phone must be verified separately through the provider/real conversation.
 `zoen_connections` requires a current private owner DM. Google now uses Zoen's
 independent OAuth broker and the bundled Hermes API commands through
 `google_workspace.py`; it does not use Plow's Google connection or the owner's Mac.
-Its capabilities remain disabled pending operator setup, real consent and Google
-verification. See [Google auth](GOOGLE_AUTH.md) for the exact release gates.
+Its configured beta is External / In production, with Google's unverified-app
+notice and user cap. Permissions are requested for the current task and still
+require the owner's consent. See [Google auth](GOOGLE_AUTH.md) for live setup
+evidence and the remaining real-account and verification checks.
 
 Slack retains Plow's existing connection lifecycle. Its local status call returned
 403 for missing `slack:status` on 2026-09-19, so account state remains unknown. The
@@ -193,7 +195,20 @@ use its printed immutable digest in `plow-agents deploy <image@sha256:…> --lin
 <free-test-line>`. Neither command upgrades an existing agent. Keep test credentials
 out of Git/build contexts and never select an occupied line for this test.
 
+On September 19, the owner-authorized Aspen test instance was retired and replaced
+with a fresh cloud test instance, `19bcc834cb649a94cd900139e5234619`, on `ln_p2`.
+It runs public image
+`ghcr.io/enzotironi/zoen/all-in-one@sha256:d45804c773cb1fecb87ce04995e097edd63935013418e4f102c9ef96bc0b1c0a`
+(code `50336eefdea5082aa9c0561f98915bb41fc59c85`). The Plow API reports `running`,
+no failure code and a connected credential. A real iMessage request reached it
+and received one introduction and contact card, followed by the independent
+Google authorization link and unverified-beta notice. Account verification awaits
+the owner's consent. This was a fresh test deployment,
+not an upgrade preserving the previous instance's memory. The other occupied
+lines were not changed. The default Agent Index image remains pinned separately
+in Plow's private registry and still needs its administrative update path.
+
 The existing broad Hermes execution configuration is unchanged. Plow's account and
-turn authority protects its tools, but this release does not introduce the separate
-credential broker or granular executor policy discussed in the architectural plan.
-Those are further security work, not properties guaranteed by prompting.
+turn authority protects its tools. The Google OAuth broker keeps that app's secret
+outside the image; a general credential broker and granular executor policy for
+all tools remain further security work, not properties guaranteed by prompting.

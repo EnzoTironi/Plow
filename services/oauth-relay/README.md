@@ -85,7 +85,7 @@ testers, `unverified` for a published beta with Google's warning and user cap, o
 agent; it cannot change Google's restrictions. The repository enables the
 implemented capabilities, but each login still requests only the chosen subset.
 
-`/privacy` and `/terms` use static copy from `src/legal.js` and the same bundled
-design as the callback. They are drafts for operator review until approved and
-published; no OAuth URL parameters are included in their HTML. The separate
-product landing page is not modified by this repository.
+`/privacy` and `/terms` use operator-approved static copy from `src/legal.js` and
+the same bundled design as the callback. Both are published on the custom domain;
+no OAuth URL parameters are included in their HTML. The separate product landing
+page is not modified by this repository.

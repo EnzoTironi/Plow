@@ -8,9 +8,9 @@
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
   "vars": {
     "FLOW_TTL_SECONDS": "300",
-    // Keep this aligned with Google's project audience. Public beta uses
-    // "unverified" only after the Console permits publishing the app.
-    "GOOGLE_AUTH_MODE": "testing",
+    // External / In production, published September 19. Scope verification
+    // is pending; Google's warning, user cap and account policies still apply.
+    "GOOGLE_AUTH_MODE": "unverified",
     "GOOGLE_ENABLED_CAPABILITIES": "identity,calendar_read,calendar_write,gmail_read,gmail_send,drive_files,drive_read,contacts_read,sheets_read,sheets_write,docs_read,docs_write",
     "GOOGLE_REDIRECT_URI": "https://auth.zoen.tironi.xyz/callback"
   },

@@ -19,18 +19,25 @@ The dedicated **Zoen iMessage** web client was created in `zoen-506921`, with
 client secret and a stable encryption key are configured as Worker secrets.
 The temporary downloaded credential file was removed after configuration; no
 secret is included in this repository or the image. The custom hostname's
-HTTPS endpoint was checked with certificate validation enabled. The checked-in
-Worker configuration uses `testing`; do not change it to `unverified` until the
-Google Console actually shows the project as In production.
+HTTPS endpoint was checked with certificate validation enabled. The Worker uses
+`unverified`, matching the Google Console's External / In production state.
 
 The existing Google Cloud project `zoen-506921` was inspected in the owner's
-Console. It is External / Testing, with two existing web clients belonging to the
-other application. Publishing is blocked until branding is completed. Draft
-privacy and terms pages are prepared at `/privacy` and `/terms` in the Worker;
-they need the operator's review before publication as the service's policies.
-The declared permissions include broad Calendar,
-Tasks, Contacts, Sheets, Docs, Drive and Gmail scopes. Those existing clients and
-permissions were preserved.
+Console. Its public beta was published with the owner's approval on September 19.
+No tester enrollment is required; the unverified-app warning, normally 100-user
+lifetime cap, and Google account/admin restrictions still apply. Publication is
+not verification. Branding links to the product homepage and the approved public
+policies at `https://auth.zoen.tironi.xyz/privacy` and
+`https://auth.zoen.tironi.xyz/terms`, with `enzo@zoen.space` as their contact.
+The nine narrower Calendar, Gmail, Drive, Docs and Sheets scopes used by the agent
+were added to the project's declared permissions. Existing clients and their
+broader Calendar, Tasks, Contacts, Sheets, Docs, Drive and Gmail permissions were
+preserved. A live broker registration for all 12 implemented capabilities checked
+the client ID, exact redirect, S256 challenge and mode; the test flow was cancelled.
+The fresh Aspen cloud instance runs image `release-50336ee`. A real iMessage request
+received a Google authorization link for **Zoen iMessage**, returning to the custom
+Zoen domain, together with the unverified-beta notice. Real-account verification
+is pending the owner's consent; no Google data was read or changed in that test.
 
 ## Flow and credential boundary
 
@@ -113,10 +120,10 @@ Production status alone does not verify an application. Complete these gates:
    link the policy from the homepage, and configure the matching OAuth branding.
    The existing `/welcome` page has no visible privacy link. The separate website
    has not been changed by this repository.
-3. Finalize the actual Google data-handling policy: agent memory/history retention,
-   deletion process, hosting and configured model processors, restricted-data
-   Limited Use and no model-training commitments. Do not submit claims that have
-   not been verified with the relevant providers.
+3. Keep the published data-handling policy aligned with the implementation: agent
+   memory/history retention, deletion process, hosting and configured model
+   processors, restricted-data Limited Use and no model-training commitments.
+   Do not submit claims that have not been verified with the relevant providers.
 4. Verify and publish the brand, then submit required scope justifications and an
    English demonstration of the actual working consent and features.
 5. Complete sensitive-scope review. Gmail mailbox reading and broad Drive reading

@@ -1,11 +1,11 @@
-// Static copy for operator review. No request or OAuth data enters these pages.
+// Approved static policy copy. No request or OAuth data enters these pages.
 export const LEGAL = {
   privacy: {
     label: "Privacy policy",
     title: "Your life.",
     accent: "Your say.",
     text: "What Zoen needs to help, where it goes, and how you stay in control.",
-    article: `<p class="review-note">Draft for review · September 19, 2026</p>
+    article: `<p class="policy-date">Effective September 19, 2026</p>
       <h2>Who runs Zoen</h2>
       <p>Zoen is an AI assistant operated by Enzo Tironi. This policy covers the Zoen iMessage agent and its account-connection service. For privacy questions and requests, contact <a href="mailto:enzo@zoen.space">enzo@zoen.space</a>.</p>
       <h2>What you share</h2>
@@ -34,7 +34,7 @@ export const LEGAL = {
     title: "A little help.",
     accent: "A few ground rules.",
     text: "The terms for using the Zoen iMessage beta and connecting your accounts.",
-    article: `<p class="review-note">Draft for review · September 19, 2026</p>
+    article: `<p class="policy-date">Effective September 19, 2026</p>
       <h2>The service</h2>
       <p>Zoen is an AI assistant operated by Enzo Tironi. By using this service, you agree to these terms. For questions or support, contact <a href="mailto:enzo@zoen.space">enzo@zoen.space</a>.</p>
       <h2>Your instructions and accounts</h2>

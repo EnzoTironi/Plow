@@ -84,7 +84,7 @@ a:focus-visible { outline: 2px solid #c5dcf6; outline-offset: 5px; border-radius
 article { width: min(100%, 720px); margin-top: 18px; padding: 28px 34px; text-align: left; border: 1px solid rgb(255 255 255 / 13%); border-radius: 24px; background: rgb(6 16 31 / 88%); color: #dee8f4; font-size: 16px; line-height: 1.75; }
 article h2 { color: #fff; font-size: 21px; line-height: 1.35; font-weight: 500; margin: 32px 0 12px; letter-spacing: -.02em; }
 article p { margin: 12px 0; }
-.review-note { color: #f3dba8; font-size: 13px; }
+.policy-date { color: #b6c6dc; font-size: 13px; }
 
 @media (max-width: 480px) {
   .brand { margin-top: 22px; }
