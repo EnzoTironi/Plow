@@ -19,6 +19,13 @@ export const CAPABILITIES = {
 };
 const encode = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 const decode = (text) => Uint8Array.from(atob(text.replaceAll("-", "+").replaceAll("_", "/")), (char) => char.charCodeAt(0));
+const TOKEN_ERRORS = new Map([
+  ["invalid_grant", "google_reauthorization_required"],
+  ["invalid_client", "google_operator_credentials_invalid"],
+  ["unauthorized_client", "google_client_not_authorized"],
+  ["invalid_request", "google_token_request_invalid"],
+  ["invalid_scope", "google_scope_invalid"],
+]);
 
 function enabled(env) {
   return (env.GOOGLE_ENABLED_CAPABILITIES || "").split(",").filter((name) => Object.hasOwn(CAPABILITIES, name));
@@ -54,11 +61,12 @@ export async function unseal(value, purpose, env) {
 
 async function tokenRequest(params, env, http) {
   const result = await http("https://oauth2.googleapis.com/token", {
-    method: "POST", redirect: "error", signal: AbortSignal.timeout(10000),
+    method: "POST", redirect: "manual", signal: AbortSignal.timeout(10000),
     body: new URLSearchParams({ ...params, client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET }),
   });
+  if (result.status >= 300 && result.status < 400) throw new Error("google_token_redirect_rejected");
   const data = await result.json();
-  if (!result.ok) throw new Error(data.error === "invalid_grant" ? "google_reauthorization_required" : "google_token_exchange_failed");
+  if (!result.ok) throw new Error(TOKEN_ERRORS.get(data.error) || "google_token_exchange_failed");
   if (typeof data.access_token !== "string" || data.token_type?.toLowerCase() !== "bearer"
     || !Number.isFinite(data.expires_in) || data.expires_in <= 0) throw new Error("invalid_google_token");
   return data;
@@ -121,7 +129,7 @@ export async function exchangeGoogleFlow(request, env, ctx, flow, http = fetch) 
       code_verifier: body.code_verifier, redirect_uri: env.GOOGLE_REDIRECT_URI }, env, http);
     result = await credentials(tokens, env);
   } catch (error) {
-    if (error.message === "google_reauthorization_required" || error.message === "google_offline_access_required") {
+    if ([...TOKEN_ERRORS.values(), "google_offline_access_required", "google_token_redirect_rejected"].includes(error.message)) {
       return response({ error: error.message }, 400);
     }
     return response({ error: "google_exchange_unavailable" }, 503);

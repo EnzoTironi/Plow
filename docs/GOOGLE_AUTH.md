@@ -37,7 +37,19 @@ the client ID, exact redirect, S256 challenge and mode; the test flow was cancel
 The fresh Aspen cloud instance runs image `release-50336ee`. A real iMessage request
 received a Google authorization link for **Zoen iMessage**, returning to the custom
 Zoen domain, together with the unverified-beta notice. Real-account verification
-is pending the owner's consent; no Google data was read or changed in that test.
+is pending a completed consent after the fix below; no Google data was read or
+changed in that test.
+
+The first cloud attempt exposed a Cloudflare runtime incompatibility: token
+requests used `redirect: "error"`, which workerd rejects before contacting Google.
+The deployed fix uses `manual` and explicitly rejects redirect responses, keeping
+the app secret at Google's token endpoint. Permanent OAuth failures also have
+allowlisted error codes rather than being reported as transient failures. Sixteen
+Worker tests pass, including a token-request construction test inside workerd and
+redirect-rejection coverage. After deployment, a separate synthetic-code probe
+reached Google and received the expected `google_reauthorization_required` (400),
+instead of the previous 503. That probe's flow was cancelled. This verifies the
+transport correction, not a real account grant.
 
 ## Flow and credential boundary
 

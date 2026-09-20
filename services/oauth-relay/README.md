@@ -89,3 +89,8 @@ implemented capabilities, but each login still requests only the chosen subset.
 the same bundled design as the callback. Both are published on the custom domain;
 no OAuth URL parameters are included in their HTML. The separate product landing
 page is not modified by this repository.
+
+Google token requests use `redirect: "manual"` and reject all redirect responses.
+Cloudflare's runtime does not accept the Fetch `error` redirect mode. The test
+entry exercises request construction in workerd as well as the Node unit tests;
+only `src/worker.js` is deployed.

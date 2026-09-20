@@ -11,7 +11,7 @@ const base = "http://127.0.0.1:18791";
 let process, folder;
 before(async () => {
   folder = await mkdtemp(join(tmpdir(), "zoen-relay-"));
-  process = spawn("node", ["node_modules/wrangler/bin/wrangler.js", "dev", "--local", "--ip", "127.0.0.1",
+  process = spawn("node", ["node_modules/wrangler/bin/wrangler.js", "dev", "test/worker-fixture.mjs", "--local", "--ip", "127.0.0.1",
     "--port", "18791", "--persist-to", folder, "--var", "FLOW_TTL_SECONDS:3",
     "--var", "GOOGLE_CLIENT_ID:fixture.apps.googleusercontent.com", "--var", "GOOGLE_CLIENT_SECRET:fixture-secret",
     "--var", "GOOGLE_ENCRYPTION_KEY:" + "ab".repeat(32), "--var", "GOOGLE_REDIRECT_URI:https://auth.example.com/callback",
@@ -45,6 +45,12 @@ async function create() {
   return { state, id, body, headers, url: `${base}/flows/${id}` };
 }
 const callback = (flow, params = {}) => fetch(`${base}/callback?${new URLSearchParams({ state: flow.state, code: "test-code", ...params })}`);
+
+test("Google token requests use a redirect mode supported by the Cloudflare runtime", async () => {
+  const result = await fetch(`${base}/__fixture/google-runtime`);
+  assert.equal(result.status, 200);
+  assert.deepEqual(await result.json(), { refreshed: true, redirect: "manual" });
+});
 
 test("isolates flows, keeps callback retryable until authenticated acknowledgment", async () => {
   const flow = await create(), other = await create();

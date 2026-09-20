@@ -64,7 +64,7 @@ test("code exchange is retryable with encrypted delivery and no app secret in ag
   const http = async (url, init) => {
     calls++;
     assert.equal(url, "https://oauth2.googleapis.com/token");
-    assert.equal(init.redirect, "error");
+    assert.equal(init.redirect, "manual");
     assert.equal(init.body.get("code_verifier"), verifier);
     assert.equal(init.body.get("client_secret"), env.GOOGLE_CLIENT_SECRET);
     assert.equal(init.body.get("redirect_uri"), env.GOOGLE_REDIRECT_URI);
@@ -108,4 +108,36 @@ test("temporary Google failures keep the authorization retryable without exposin
   assert.deepEqual(await failed.json(), { error: "google_exchange_unavailable" });
   assert.equal(flow.status, "ready");
   assert.equal((await exchangeGoogleFlow(incoming(), env, ctx, flow, async () => tokenResponse())).status, 200);
+});
+
+test("permanent Google token errors are safe, actionable and never reported as temporary", async () => {
+  for (const [error, expected] of [
+    ["invalid_grant", "google_reauthorization_required"],
+    ["invalid_client", "google_operator_credentials_invalid"],
+    ["unauthorized_client", "google_client_not_authorized"],
+    ["invalid_request", "google_token_request_invalid"],
+    ["invalid_scope", "google_scope_invalid"],
+  ]) {
+    const flow = makeFlow();
+    const ctx = { storage: { put: async () => assert.fail("failed consent must not save credentials") } };
+    const result = await exchangeGoogleFlow(incoming(), env, ctx, flow,
+      async () => Response.json({ error, error_description: "private provider details" }, { status: 400 }));
+    assert.equal(result.status, 400);
+    assert.deepEqual(await result.json(), { error: expected });
+    assert.equal(flow.status, "ready");
+  }
+});
+
+test("Google token redirects are rejected without forwarding the app secret", async () => {
+  let calls = 0;
+  const ctx = { storage: { put: async () => assert.fail("redirect must not save credentials") } };
+  const result = await exchangeGoogleFlow(incoming(), env, ctx, makeFlow(), async (url, init) => {
+    calls++;
+    assert.equal(url, "https://oauth2.googleapis.com/token");
+    assert.equal(init.redirect, "manual");
+    return new Response(null, { status: 302, headers: { Location: "https://untrusted.example/token" } });
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.status, 400);
+  assert.deepEqual(await result.json(), { error: "google_token_redirect_rejected" });
 });
