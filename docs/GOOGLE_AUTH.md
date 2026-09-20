@@ -17,8 +17,10 @@ audience reporting. Google verification is still required to remove the warning
 and lift the unverified-app cap; it is not a prerequisite for a consented beta.
 The live `/google/config` response is authoritative for the deployed broker.
 
-The dedicated **Zoen iMessage** web client was created in `zoen-506921`, with
-`https://auth.zoen.tironi.xyz/callback` as its only redirect. Its client ID,
+The dedicated **Zoen iMessage** web client was created in `zoen-506921`. The
+browser redirect is `https://auth.tryzoen.com/callback`, cut over from
+`https://auth.zoen.tironi.xyz/callback`. Keep the old URI registered in Google
+Cloud until the new hostname is verified, then remove it. Its client ID,
 client secret and a stable encryption key are configured as Worker secrets.
 The temporary downloaded credential file was removed after configuration; no
 secret is included in this repository or the image. The custom hostname's
@@ -29,9 +31,9 @@ The existing Google Cloud project `zoen-506921` was inspected in the owner's
 Console. Its public beta was published with the owner's approval on September 19.
 No tester enrollment is required; the unverified-app warning, normally 100-user
 lifetime cap, and Google account/admin restrictions still apply. Publication is
-not verification. Branding links to the product homepage and the approved public
-policies at `https://auth.zoen.tironi.xyz/privacy` and
-`https://auth.zoen.tironi.xyz/terms`, with `enzo@zoen.space` as their contact.
+not verification. Branding links to the product homepage `https://tryzoen.com`
+and the approved public policies at `https://auth.tryzoen.com/privacy` and
+`https://auth.tryzoen.com/terms`, with `enzo@zoen.space` as their contact.
 The nine narrower Calendar, Gmail, Drive, Docs and Sheets scopes used by the agent
 were added to the project's declared permissions. Existing clients and their
 broader Calendar, Tasks, Contacts, Sheets, Docs, Drive and Gmail permissions were
@@ -72,7 +74,7 @@ alone does not establish reliable automatic delivery of every notification.
 1. The owner's private iMessage request selects the needed capabilities.
 2. The agent creates random state, a private poll capability and S256 PKCE. It
    registers the flow with the Worker before sending the Google consent link.
-3. Google returns the code to `https://auth.zoen.tironi.xyz/callback`.
+3. Google returns the code to `https://auth.tryzoen.com/callback`.
 4. Only the originating instance can poll and exchange it. The Worker requires
    both the poll capability and the original PKCE verifier, then sends the code,
    verifier, registered redirect and private app secret to Google's token endpoint.
@@ -102,8 +104,12 @@ Create a separate web OAuth client, named **Zoen iMessage**, in the Zoen project
 Preserve the clients used by the other application. Register exactly:
 
 ```text
-https://auth.zoen.tironi.xyz/callback
+https://auth.tryzoen.com/callback
 ```
+
+During cutover, Google Cloud may list both this URI and the previous
+`https://auth.zoen.tironi.xyz/callback`. The Worker sends only the URI in
+`GOOGLE_REDIRECT_URI`. Remove the old URI after the new hostname is verified.
 
 Do not distribute the client secret in Docker, Compose, source control, iMessage
 or screenshots. Configure these through Cloudflare's secrets interface:
@@ -113,11 +119,17 @@ or screenshots. Configure these through Cloudflare's secrets interface:
 - `GOOGLE_ENCRYPTION_KEY`: a stable, randomly generated 32-byte key encoded as
   64 lowercase hexadecimal characters.
 
-`GOOGLE_REDIRECT_URI` is checked into the Worker configuration. The runtime's
-`zoen.google_relay_url` points to the same Worker, independently of
+`GOOGLE_REDIRECT_URI` is checked into the Worker configuration
+(`https://auth.tryzoen.com/callback`). The runtime's `zoen.google_relay_url`
+defaults to `https://zoen-oauth-relay.agenttironi.workers.dev` and points to the
+same Worker, independently of the browser callback host and of
 `zoen.oauth_relay_url` used by native MCP. A private operator override is available
 as `ZOEN_GOOGLE_RELAY_URL`. Cloud instances need only outbound HTTPS and their
 existing persistent volume.
+
+The tryzoen companion app's Better Auth callback
+(`https://app.tryzoen.com/api/auth/callback/google`) is a separate OAuth client
+and is not configured in this repository.
 
 `GOOGLE_ENABLED_CAPABILITIES` is an explicit comma-separated allowlist. The beta
 configuration includes all implemented capabilities; missing app secrets or an
@@ -143,11 +155,11 @@ full Gmail deletion, Drive-wide writes, or Google account administration.
 
 Production status alone does not verify an application. Complete these gates:
 
-1. Verify ownership of `tironi.xyz` in Search Console with a project owner/editor.
+1. Verify ownership of `tryzoen.com` in Search Console with a project owner/editor.
 2. Publish an accurate app homepage and privacy policy on the same owned domain,
    link the policy from the homepage, and configure the matching OAuth branding.
-   The existing `/welcome` page has no visible privacy link. The separate website
-   has not been changed by this repository.
+   The product homepage is `https://tryzoen.com`. Keep a visible privacy link
+   there. The separate website has not been changed by this repository.
 3. Keep the published data-handling policy aligned with the implementation: agent
    memory/history retention, deletion process, hosting and configured model
    processors, restricted-data Limited Use and no model-training commitments.
@@ -167,6 +179,28 @@ suppress all of them. For the expressly disclosed unverified beta, let the owner
 review Google's notice and decide whether to authorize. Do not automate that
 decision, bypass browser certificate warnings or account blocks, or describe
 publication as verification.
+
+## Hostname cutover (`auth.zoen.tironi.xyz` → `auth.tryzoen.com`)
+
+This repository uses a clean Worker cutover: one custom domain and one
+`GOOGLE_REDIRECT_URI`. Google Cloud keeps both redirect URIs until the new host
+is verified. Sequence:
+
+1. **Cloudflare.** Attach custom domain `auth.tryzoen.com` to the
+   `zoen-oauth-relay` Worker on the `tryzoen.com` zone. DNS is often created
+   automatically when the custom domain is attached.
+2. **Google Cloud Console (`zoen-506921`), client Zoen iMessage.** Add
+   `https://auth.tryzoen.com/callback`. Keep
+   `https://auth.zoen.tironi.xyz/callback` until cutover is verified. Update
+   OAuth branding: homepage `https://tryzoen.com`, privacy
+   `https://auth.tryzoen.com/privacy`, terms `https://auth.tryzoen.com/terms`.
+3. **Deploy the Worker** only after DNS and the new Google redirect URI are
+   ready (`npm run deploy` in `services/oauth-relay`).
+4. **Verify** a real consent that returns to `auth.tryzoen.com`, then remove the
+   old Google redirect URI and, if still attached, the old Cloudflare custom
+   domain.
+5. Do not change the companion Better Auth callback
+   `https://app.tryzoen.com/api/auth/callback/google` from this repository.
 
 Primary references:
 

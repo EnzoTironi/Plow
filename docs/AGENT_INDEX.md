@@ -58,7 +58,7 @@ for page updates. Do not change the reporter just to add marketing fields.
 Sources checked September 20, 2026:
 
 - Brand voice: https://x.com/tryZoen
-- Product direction: https://zoen.tironi.xyz/welcome
+- Product direction: https://tryzoen.com
 - Treg use cases: https://treg.to/use-cases
 - Treg workflows: https://treg.to/workflows
 - Treg architecture: https://github.com/superdesigndev/treg

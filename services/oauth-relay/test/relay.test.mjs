@@ -123,6 +123,8 @@ test("expires pending and completed flows, rejects oversized requests", async ()
 
 test("legal pages are public, isolated from callback parameters and linked from the connection page", async () => {
   const home = await (await fetch(base)).text();
+  assert.ok(home.includes('href="https://tryzoen.com"'));
+  assert.ok(!home.includes("zoen.tironi.xyz"));
   for (const path of ["/privacy", "/terms"]) {
     assert.ok(home.includes(`href="${path}"`));
     const result = await fetch(`${base}${path}?code=private-code&state=private-state`);

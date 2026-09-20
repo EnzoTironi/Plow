@@ -73,6 +73,11 @@ def test_relay_configuration_cannot_redirect_credentials(url):
         relay_url(url)
 
 
+def test_tryzoen_auth_host_is_a_valid_https_relay_origin():
+    assert relay_url("https://auth.tryzoen.com") == "https://auth.tryzoen.com"
+    assert relay_url("https://auth.tryzoen.com/") == "https://auth.tryzoen.com"
+
+
 def test_identity_requires_verified_google_email():
     def http(method, url, *, bearer):
         assert url == "https://openidconnect.googleapis.com/v1/userinfo"

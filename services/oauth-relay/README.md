@@ -86,9 +86,10 @@ agent; it cannot change Google's restrictions. The repository enables the
 implemented capabilities, but each login still requests only the chosen subset.
 
 `/privacy` and `/terms` use operator-approved static copy from `src/legal.js` and
-the same bundled design as the callback. Both are published on the custom domain;
-no OAuth URL parameters are included in their HTML. The separate product landing
-page is not modified by this repository.
+the same bundled design as the callback. Both are published on
+`https://auth.tryzoen.com`; no OAuth URL parameters are included in their HTML.
+The product homepage is `https://tryzoen.com` and is not modified by this
+repository.
 
 Google token requests use `redirect: "manual"` and reject all redirect responses.
 Cloudflare's runtime does not accept the Fetch `error` redirect mode. The test
