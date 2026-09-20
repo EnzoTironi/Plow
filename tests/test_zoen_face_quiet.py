@@ -275,6 +275,48 @@ def test_seed_soul_is_zoen_not_a_plow_assistant():
     assert "You are Zoen" in soul
     assert "You are a Plow assistant" not in soul
     assert "do not mention /help" in soul.lower()
+    assert "zoen_connections" in soul
+    assert "catalog" in soul
+
+
+def test_persona_route_index_names_playbooks_and_skills():
+    persona = (ROOT / "runtime" / "persona.md").read_text()
+    assert "# Route" in persona
+    for needle in (
+        "context.py dump",
+        "zoen_connections",
+        "catalog",
+        "treg",
+        "google-workspace",
+        "personal.md",
+        "connections.md",
+        "feature.md",
+        "bug-fix.md",
+        "investigation.md",
+        "spec.md",
+        "cards.md",
+        "opening-a-pr.md",
+        "kit.md",
+        "models.md",
+        "skill_view",
+        "`hours`",
+        "`how`",
+        "`why`",
+        "`architect`",
+        "`arena`",
+        "`interrogate`",
+        "`swarm`",
+        "`tdd`",
+        "`prove`",
+        "`review`",
+        "`blast-radius`",
+        "`babysit`",
+        "`merge`",
+        "`figure-it-out`",
+        "`find-skills`",
+        "`floor`",
+    ):
+        assert needle in persona, needle
 
 
 if __name__ == "__main__":
@@ -292,4 +334,5 @@ if __name__ == "__main__":
     test_claim_identity_replaces_the_line_name()
     test_claim_identity_skips_modules_without_the_seam()
     test_seed_soul_is_zoen_not_a_plow_assistant()
+    test_persona_route_index_names_playbooks_and_skills()
     print("ok")
