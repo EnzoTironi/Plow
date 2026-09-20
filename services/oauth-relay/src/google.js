@@ -1,8 +1,8 @@
 import { capability, digest, readBody, response } from "./http.js";
 
 const PREFIX = "https://www.googleapis.com/auth/";
-// Each capability is requested only for the owner's current task. Broad
-// Drive/Gmail scopes remain operator opt-ins pending Google's verification.
+// Each capability is requested only for the owner's current task. Google
+// enforces its test-user restrictions and unverified-app authorization limits.
 export const CAPABILITIES = {
   identity: [],
   calendar_read: ["calendar.events.readonly", "calendar.calendarlist.readonly"],
@@ -27,6 +27,7 @@ function enabled(env) {
 export function configured(env) {
   return Boolean(env.GOOGLE_CLIENT_ID?.endsWith(".apps.googleusercontent.com")
     && env.GOOGLE_CLIENT_SECRET && /^[a-f0-9]{64}$/.test(env.GOOGLE_ENCRYPTION_KEY || "")
+    && ["testing", "unverified", "verified"].includes(env.GOOGLE_AUTH_MODE)
     && /^https:\/\/[^/?#]+\/callback$/.test(env.GOOGLE_REDIRECT_URI || "") && enabled(env).length);
 }
 
@@ -99,7 +100,8 @@ async function register(request, env) {
     scope: scopes.join(" "), state: body.state, code_challenge: body.code_challenge, code_challenge_method: "S256",
     access_type: "offline", include_granted_scopes: "true", prompt: "consent select_account",
   }).toString();
-  return response({ ...(await saved.json()), authorization_url: url.href, flow_id: id, scopes }, saved.status);
+  return response({ ...(await saved.json()), authorization_url: url.href, flow_id: id, scopes,
+    auth_mode: env.GOOGLE_AUTH_MODE }, saved.status);
 }
 
 // Called inside the existing Durable Object's concurrency lock. Delivery can be
@@ -142,7 +144,8 @@ export async function refreshGoogle(body, env, http = fetch) {
 export async function googleRoute(request, env) {
   const path = new URL(request.url).pathname;
   if (path === "/google/config" && request.method === "GET") {
-    return response({ configured: configured(env), capabilities: configured(env) ? enabled(env) : [] });
+    return response({ configured: configured(env), capabilities: configured(env) ? enabled(env) : [],
+      auth_mode: configured(env) ? env.GOOGLE_AUTH_MODE : "disabled" });
   }
   if (!configured(env)) return response({ error: "google_operator_setup_required" }, 503);
   if (path === "/google/flows" && request.method === "POST") return register(request, env);

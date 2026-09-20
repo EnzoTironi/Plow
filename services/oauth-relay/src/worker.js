@@ -32,7 +32,9 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/health" && request.method === "GET") return response({ ok: true, version: 1 });
-    if (url.pathname === "/" && request.method === "GET") return page("welcome", HEADERS);
+    if (["/", "/privacy", "/terms"].includes(url.pathname) && request.method === "GET") {
+      return page(url.pathname.slice(1) || "welcome", HEADERS);
+    }
     if (ASSETS.has(url.pathname) && ["GET", "HEAD"].includes(request.method)) {
       const asset = await env.ASSETS.fetch(new Request(new URL(url.pathname, url.origin), { method: request.method }));
       const result = new Response(asset.body, asset);

@@ -15,7 +15,7 @@ before(async () => {
     "--port", "18791", "--persist-to", folder, "--var", "FLOW_TTL_SECONDS:3",
     "--var", "GOOGLE_CLIENT_ID:fixture.apps.googleusercontent.com", "--var", "GOOGLE_CLIENT_SECRET:fixture-secret",
     "--var", "GOOGLE_ENCRYPTION_KEY:" + "ab".repeat(32), "--var", "GOOGLE_REDIRECT_URI:https://auth.example.com/callback",
-    "--var", "GOOGLE_ENABLED_CAPABILITIES:identity,calendar_read", "--log-level", "error"],
+    "--var", "GOOGLE_ENABLED_CAPABILITIES:identity,calendar_read", "--var", "GOOGLE_AUTH_MODE:testing", "--log-level", "error"],
   { stdio: ["ignore", "ignore", "pipe"], env: { ...globalThis.process.env, WRANGLER_SEND_METRICS: "false" } });
   let errors = "";
   process.stderr.on("data", (data) => { errors += data; });
@@ -115,6 +115,20 @@ test("expires pending and completed flows, rejects oversized requests", async ()
   assert.equal((await callback(flow)).status, 410);
 });
 
+test("legal pages are public, isolated from callback parameters and linked from the connection page", async () => {
+  const home = await (await fetch(base)).text();
+  for (const path of ["/privacy", "/terms"]) {
+    assert.ok(home.includes(`href="${path}"`));
+    const result = await fetch(`${base}${path}?code=private-code&state=private-state`);
+    assert.equal(result.status, 200);
+    assert.equal(result.headers.get("Referrer-Policy"), "no-referrer");
+    assert.match(result.headers.get("Content-Security-Policy"), /default-src 'none'/);
+    const html = await result.text();
+    assert.ok(!html.includes("private-code") && !html.includes("private-state"));
+    assert.ok(html.includes("enzo@zoen.space"));
+  }
+});
+
 test("Google registration and PKCE rejection use the real isolated Durable Object", async () => {
   const state = randomBytes(32).toString("base64url"), poll_token = randomBytes(32).toString("base64url");
   const verifier = randomBytes(48).toString("base64url");
@@ -125,6 +139,7 @@ test("Google registration and PKCE rejection use the real isolated Durable Objec
   const result = await register(["calendar_read"]);
   assert.equal(result.status, 201);
   const data = await result.json(), url = new URL(data.authorization_url);
+  assert.equal(data.auth_mode, "testing");
   assert.equal(url.origin, "https://accounts.google.com");
   assert.equal(url.searchParams.get("code_challenge"), code_challenge);
   assert.equal(url.searchParams.get("code_challenge_method"), "S256");

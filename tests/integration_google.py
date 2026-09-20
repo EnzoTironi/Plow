@@ -1,6 +1,7 @@
 """Image integration: real gateway modules and Google client; simulated provider only."""
 import asyncio
 from contextlib import redirect_stdout
+from functools import partial
 import hashlib
 import io
 import json
@@ -18,15 +19,17 @@ from google_account import Account
 
 
 class Relay:
-    def __init__(self):
+    def __init__(self, mode="testing", capabilities=None):
         self.base, self.secret, self.path = "https://auth.example.com", "fixture-poll", None
         self.state, self.finished = None, False
+        self.mode, self.capabilities = mode, capabilities or ["calendar_read"]
 
     async def request(self, method, path, body, **kwargs):
         if path == "/google/flows":
-            assert body["capabilities"] == ["calendar_read"]
+            assert body["capabilities"] == self.capabilities
             self.state, self.challenge = body["state"], body["code_challenge"]
-            return {"authorization_url": "https://accounts.google.com/fixture", "expires_at": time.time() * 1000 + 300000}
+            return {"authorization_url": "https://accounts.google.com/fixture", "expires_at": time.time() * 1000 + 300000,
+                    "auth_mode": self.mode}
         assert path == f"/google/flows/{hashlib.sha256(self.state.encode()).hexdigest()}/exchange"
         import base64
         assert base64.urlsafe_b64encode(hashlib.sha256(body["code_verifier"].encode()).digest()).decode().rstrip("=") == self.challenge
@@ -38,6 +41,19 @@ class Relay:
 
     async def finish(self, *, consumed=False):
         self.finished = consumed
+
+
+async def verify_audiences(make_job, events, account):
+    # Audience mode controls the notice, not the owner's choice to authorize.
+    for mode, capabilities in [("unverified", ["calendar_read"]), ("verified", ["calendar_read"]), ("testing", ["identity"])]:
+        retry = make_job({"capabilities": capabilities})
+        retry.relay = Relay(mode, capabilities)
+        await retry.run()
+        assert retry.status == "credentials_saved"
+        announcement = events[-2]
+        assert ("unverified Google beta" in announcement) == (mode == "unverified")
+        assert "seven days" not in announcement and "registered test accounts" not in announcement
+        assert account.status()["auth_mode_at_consent"] == mode
 
 
 async def verify(home):
@@ -61,25 +77,32 @@ async def verify(home):
     adapter = SimpleNamespace(_refresh_current_chat=refresh, _chats={"owner-chat": {"owner": True}}, _send_guard=lambda chat: None)
     module = SimpleNamespace(_owner_dm=lambda chat: chat.get("owner"))
     identity = {"id": "owner-google-id", "email": "owner@example.com"}
-    job = google.GoogleJob(adapter, module, "owner-chat", home, "https://auth.example.com", {"capabilities": ["calendar_read"]})
+    make_job = partial(google.GoogleJob, adapter, module, "owner-chat", home, "https://auth.example.com")
+    job = make_job({"capabilities": ["calendar_read"]})
     job.relay = Relay()
     with patch.object(google.mcp_connections, "notify", notify), patch.object(google, "verify_identity", return_value=identity):
         await job.run()
     assert job.status == "credentials_saved" and job.relay.finished
     assert len(events) == 2 and "Google identity verified" in events[1]
+    assert "unverified Google beta" in events[0] and "seven days" in events[0]
     assert all("fixture-google-access" not in text and "fixture-sealed-refresh" not in text for text in events)
     account = Account(home)
     baseline = account.read()
     assert baseline["account"] == identity and account.path.stat().st_mode & 0o777 == 0o600
+    assert account.status()["auth_mode_at_consent"] == "testing"
+
+    with patch.object(google.mcp_connections, "notify", notify), patch.object(google, "verify_identity", return_value=identity):
+        await verify_audiences(make_job, events, account)
+    baseline = account.read()
 
     # Adding Calendar permission must not silently switch the account.
-    other = google.GoogleJob(adapter, module, "owner-chat", home, "https://auth.example.com", {"capabilities": ["calendar_read"]})
+    other = make_job({"capabilities": ["calendar_read"]})
     other.relay = Relay()
     with patch.object(google.mcp_connections, "notify", notify), patch.object(google, "verify_identity", return_value={"id": "different", "email": "different@example.com"}):
         await other.run()
     assert other.status == "authorization_failed" and account.read() == baseline
 
-    revoked = google.GoogleJob(adapter, module, "owner-chat", home, "https://auth.example.com", {"capabilities": ["calendar_read"]})
+    revoked = make_job({"capabilities": ["calendar_read"]})
     revoked.relay = Relay()
     adapter._chats["owner-chat"]["owner"] = False
     with patch.object(google.mcp_connections, "notify", notify), patch.object(google, "verify_identity", return_value=identity):
@@ -106,6 +129,7 @@ async def verify(home):
     print(json.dumps({"google_independent_oauth": True, "pkce": True, "private_persistence": True,
                       "account_switch_guard": True, "native_hermes_calendar_command": True,
                       "owner_rechecked_before_commit": True,
+                      "audience_notices": True,
                       "real_google_account": False}))
 
 

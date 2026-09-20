@@ -1,4 +1,7 @@
+import { LEGAL } from "./legal.js";
+
 const COPY = {
+  ...LEGAL,
   welcome: {
     label: "Suas conexões, com o Zoen",
     title: "Mais da sua vida.",
@@ -41,7 +44,7 @@ const COPY = {
 export function page(kind, headers, status = 200) {
   const copy = COPY[kind];
   return new Response(`<!doctype html>
-<html lang="pt-BR">
+<html lang="${copy.article ? "en" : "pt-BR"}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -51,21 +54,28 @@ export function page(kind, headers, status = 200) {
   <link rel="icon" type="image/webp" href="/zoen-avatar.webp">
   <link rel="stylesheet" href="/style.css">
 </head>
-<body>
-  <header class="brand" aria-label="Zoen — conexões">
+<body class="${copy.article ? "legal-page" : "connection-page"}">
+  <header class="brand" aria-label="Zoen">
     <img src="/zoen-avatar.webp" width="36" height="36" alt="">
     <span class="wordmark">Zoen</span>
     <span class="divider" aria-hidden="true"></span>
-    <span class="brand-detail">conexões</span>
+    <span class="brand-detail">${copy.article ? "your connections" : "conexões"}</span>
   </header>
   <main>
     <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span>${copy.label}</p>
     <h1>${copy.title}<br><em>${copy.accent}</em></h1>
     <p class="description">${copy.text}</p>
-    <a class="button" href="sms:">Voltar ao iMessage <span aria-hidden="true">↗</span></a>
-    <p class="hint">Pode fechar esta página e continuar na conversa.</p>
+    ${copy.article ? `<article aria-label="${copy.label}">${copy.article}</article>` : `<a class="button" href="sms:">Voltar ao iMessage <span aria-hidden="true">↗</span></a>
+    <p class="hint">Pode fechar esta página e continuar na conversa.</p>`}
   </main>
-  <footer>Um pouco menos para resolver sozinho.</footer>
+  <footer><p>${copy.article ? "A little less to figure out alone." : "Um pouco menos para resolver sozinho."}</p>
+    <nav aria-label="${copy.article ? "About Zoen" : "Sobre o Zoen"}">
+      <a href="https://zoen.tironi.xyz/welcome">Zoen</a>
+      <a href="/privacy">${copy.article ? "Privacy" : "Privacidade"}</a>
+      <a href="/terms">${copy.article ? "Terms" : "Termos"}</a>
+      <a href="mailto:enzo@zoen.space">${copy.article ? "Contact" : "Contato"}</a>
+    </nav>
+  </footer>
 </body>
 </html>`, { status, headers: {
     ...headers,

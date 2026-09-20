@@ -64,8 +64,9 @@ See [the connector integration and validation notes](../../docs/CONNECTORS.md).
 
 Google web OAuth requires a confidential client secret. The separate
 `/google/flows`, `/google/flows/<id>/exchange` and `/google/refresh` routes keep that
-secret in Cloudflare, outside every public agent image. Google is disabled by
-default; `/google/config` reports the actual configured state and enabled
+secret in Cloudflare, outside every public agent image. Google requires operator
+secrets, an explicit audience mode, and enabled capabilities; `/google/config`
+reports the actual configured state, `auth_mode`, and enabled
 capabilities. Existing native MCP callbacks keep their original protocol.
 
 Google exchange requires both the flow's poll capability and S256 verifier.
@@ -77,3 +78,14 @@ in memory during exchange/refresh; it does not fetch Google account contents.
 Use [the Google setup and verification guide](../../docs/GOOGLE_AUTH.md) before
 enabling any Google capability. A successful Worker deployment is not evidence
 of Google verification or a working user account.
+
+`GOOGLE_AUTH_MODE` must match Google's project audience: `testing` for enrolled
+testers, `unverified` for a published beta with Google's warning and user cap, or
+`verified` after the relevant scopes are approved. The flag only informs the
+agent; it cannot change Google's restrictions. The repository enables the
+implemented capabilities, but each login still requests only the chosen subset.
+
+`/privacy` and `/terms` use static copy from `src/legal.js` and the same bundled
+design as the callback. They are drafts for operator review until approved and
+published; no OAuth URL parameters are included in their HTML. The separate
+product landing page is not modified by this repository.

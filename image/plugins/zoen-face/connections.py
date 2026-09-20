@@ -16,7 +16,7 @@ SCHEMA = {
             "connector": {"type": "string", "description": "google, slack, or an exact name returned by catalog. Omit for catalog."},
             "query": {"type": "string", "maxLength": 100, "description": "Optional catalog filter by service name or capability words (catalog descriptions are in English). Omit to list all."},
             "capabilities": {"type": "array", "uniqueItems": True, "maxItems": 12,
-                             "description": "Google only: permissions needed for this task. Omit for identity-only login. Each capability must be enabled by the operator after the required Google verification.",
+                             "description": "Google only: permissions needed for this task. Omit for identity-only login. The operator enables capabilities for the configured beta or verified app; the owner grants access on Google's screen.",
                              "items": {"type": "string", "enum": ["identity", "calendar_read", "calendar_write", "gmail_read", "gmail_send", "drive_files", "drive_read", "contacts_read", "sheets_read", "sheets_write", "docs_read", "docs_write"]}},
             "replace_account": {"type": "boolean", "description": "Google only. True solely when the owner explicitly asked to replace the previously connected Google account; adding permissions does not authorize an account switch."},
         },

@@ -8,8 +8,10 @@
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
   "vars": {
     "FLOW_TTL_SECONDS": "300",
-    // Enable only after operator setup and the applicable Google review.
-    "GOOGLE_ENABLED_CAPABILITIES": "",
+    // Keep this aligned with Google's project audience. Public beta uses
+    // "unverified" only after the Console permits publishing the app.
+    "GOOGLE_AUTH_MODE": "testing",
+    "GOOGLE_ENABLED_CAPABILITIES": "identity,calendar_read,calendar_write,gmail_read,gmail_send,drive_files,drive_read,contacts_read,sheets_read,sheets_write,docs_read,docs_write",
     "GOOGLE_REDIRECT_URI": "https://auth.zoen.tironi.xyz/callback"
   },
   "routes": [{ "pattern": "auth.zoen.tironi.xyz", "custom_domain": true }],

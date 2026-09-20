@@ -3,7 +3,8 @@
 Current Google implementation: [independent Zoen OAuth and verification gates](GOOGLE_AUTH.md).
 The first sections below preserve the original infrastructure audit; later sections
 record the implemented native MCP flow. Google no longer routes through Plow in
-this branch, and remains disabled until its own setup/review is complete.
+this branch. Its beta uses our own app and Google's normal consent; the deployed
+broker's configuration determines availability and audience restrictions.
 
 Validated on 2026-09-19 against the existing `zoen:personal-agent` image, code
 revision `1c9cdfb300db0424209d2fb6a7b3686507a7faa7`. The installed runtime is

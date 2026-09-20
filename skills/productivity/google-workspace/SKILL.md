@@ -12,8 +12,15 @@ It does not use Plow's Google connection, the owner's Mac, or Latch.
 Call `status` first. On a request to connect, call `connect` with only the Google
 `capabilities` needed for the pending task. The login link and completion arrive
 automatically. Do not poll or send duplicate links. Missing operator configuration
-or Google verification is a real blocked state; do not tell users to bypass an
-unverified-app warning or silently switch to another account/connector.
+or a disabled capability is a blocked state; report it without inventing a link.
+The operator may enable a beta before Google verification. Follow the connection
+event's actual audience mode: `testing` requires enrolled testers and Workspace
+consent expires after seven days; `unverified` allows accounts without enrollment,
+subject to Google's user cap and account restrictions. Explain the unverified-app
+notice briefly and let the owner decide after reviewing Google's permissions.
+Identity-only login has different limits; do not claim it needs tester enrollment.
+Never bypass a browser certificate warning or Google account/admin block, promise
+Google approval, or silently switch to another account/connector.
 
 Capabilities:
 

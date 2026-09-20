@@ -35,9 +35,16 @@ class GoogleJob:
             "capabilities": self.capabilities,
         })
         self.status = "awaiting_consent"
+        notice = ""
+        workspace = any(name != "identity" for name in self.capabilities)
+        if workspace and result.get("auth_mode") in {"testing", "unverified"}:
+            notice = "Explain briefly that this is an unverified Google beta. The owner must review Google's notice and requested permissions themselves and may decline. "
+        if workspace and result.get("auth_mode") == "testing":
+            notice += "Only registered test accounts can connect; Google Workspace authorization in Testing expires after seven days and needs renewed consent. "
         await self.announce("Send this Google authorization link once in the owner's private conversation. "
                             "Ask them to check the account and permissions. It expires in five minutes. "
-                            "Do not claim success yet or ask them to bypass an unverified-app warning.\n"
+                            "Do not claim success yet. Never bypass a browser certificate warning or a Google account/admin block. "
+                            + notice + "\n"
                             + result["authorization_url"])
         await self.wait_for_callback(result["expires_at"], state)
         self.exchanging = True
@@ -50,7 +57,8 @@ class GoogleJob:
         await asyncio.wait_for(self.adapter._refresh_current_chat(self.chat), 5)
         if not self.module._owner_dm(self.adapter._chats.get(self.chat, {})) or self.adapter._send_guard(self.chat) is not None:
             raise GoogleError("google_owner_chat_no_longer_authorized")
-        self.account.commit({**tokens, "relay_url": self.relay.base, "account": identity}, baseline)
+        self.account.commit({**tokens, "relay_url": self.relay.base, "account": identity,
+                             "auth_mode": result.get("auth_mode")}, baseline)
         self.status = "credentials_saved"
         await self.announce(f"Google identity verified: {identity['email']}. Credentials saved in this instance. "
                             "Use /opt/plow/zoen/google_workspace.py for Google API calls; the Plow Google connector is not involved. "
@@ -134,7 +142,7 @@ async def dispatch(adapter, module, turn, args):
     capabilities = args.get("capabilities") or ["identity"]
     if not config.get("configured") or any(name not in config.get("capabilities", []) for name in capabilities):
         return {"ok": False, "error": "google_capability_not_enabled", "available": config.get("capabilities", []),
-                "instruction": "Independent Google access is awaiting operator setup or Google verification. Do not route through Plow, fabricate a login link or ask the user to bypass a warning."}
+                "instruction": "The requested Google capability is not enabled by the operator. Report the available capabilities; do not route through Plow or fabricate a login link."}
     job = GoogleJob(adapter, module, turn["chat_uid"], home, relay, args)
     context = contextvars.copy_context()
     context.run(module._ACTIVE_TURN.set, None)

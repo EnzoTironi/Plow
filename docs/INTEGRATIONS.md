@@ -50,7 +50,7 @@ Sources: [Treg architecture](https://github.com/superdesigndev/treg/blob/main/do
 | [gamma](https://developers.gamma.app/docs/gamma-mcp-server) | OAuth via iMessage | Catalog routing available; account not tested |
 | [gitlab](https://docs.gitlab.com/user/model_context_protocol/mcp_server/) | OAuth via iMessage | Catalog routing available; account not tested |
 | [globalping](https://github.com/jsdelivr/globalping-mcp-server) | OAuth via iMessage | Catalog routing available; account not tested |
-| google | Zoen OAuth, independent of Plow | Implementation and simulated-provider tests; disabled pending operator setup, real consent and Google verification. See [Google auth](GOOGLE_AUTH.md). |
+| google | Zoen OAuth, independent of Plow | Implemented with simulated-provider tests and explicit testing/unverified/verified modes. Real account consent and Google verification remain unverified. See [Google auth](GOOGLE_AUTH.md). |
 | [grafana](https://grafana.com/docs/grafana-cloud/ai-tools/mcp-servers/cloud-mcp/) | OAuth via iMessage | Catalog routing available; account not tested |
 | [hugging_face](https://huggingface.co/docs/hub/agents-mcp) | OAuth via iMessage | Catalog routing available; account not tested |
 | [indeed](https://docs.indeed.com/indeed-mcp) | OAuth via iMessage | Catalog routing available; account not tested |

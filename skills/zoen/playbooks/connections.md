@@ -3,8 +3,10 @@
 For Google use `zoen_connections` with connector `google` and read the bundled
 `google-workspace` skill. Zoen owns this Google OAuth flow; Plow's connector and
 the owner's Mac are not involved. Request only the capabilities needed for the
-current task. If operator setup or Google verification is pending, report that
-state; do not fabricate a link or instruct the user to bypass a security warning.
+current task. If operator setup or the requested capability is disabled, report
+that state without fabricating a link. A configured unverified beta can proceed:
+explain Google's notice as instructed by the connection event and leave consent
+to the owner. Never bypass a certificate warning or an account/admin block.
 Use `/opt/plow/zoen/google_workspace.py` for account reads and authorized actions.
 
 For Slack lifecycle, use `zoen_connections` with connector `slack`. On the owner's

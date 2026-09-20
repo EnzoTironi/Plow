@@ -9,22 +9,26 @@ Hermes' bundled Google API command implementations are reused through
 
 The implementation and provider-simulated tests are in this branch. Real Google
 account consent and warning-free public authorization have **not** been verified.
-Public Google capabilities remain disabled until the applicable Google
-verification is complete. The agent reports that state instead of offering a
-broken login link or reverting to Plow.
+The beta configuration enables the implemented capabilities, with explicit
+audience reporting. Google verification is still required to remove the warning
+and lift the unverified-app cap; it is not a prerequisite for a consented beta.
+The live `/google/config` response is authoritative for the deployed broker.
 
 The dedicated **Zoen iMessage** web client was created in `zoen-506921`, with
 `https://auth.zoen.tironi.xyz/callback` as its only redirect. Its client ID,
 client secret and a stable encryption key are configured as Worker secrets.
 The temporary downloaded credential file was removed after configuration; no
 secret is included in this repository or the image. The custom hostname's
-HTTPS endpoint was checked with certificate validation enabled. The Worker
-capability allowlist is still empty.
+HTTPS endpoint was checked with certificate validation enabled. The checked-in
+Worker configuration uses `testing`; do not change it to `unverified` until the
+Google Console actually shows the project as In production.
 
 The existing Google Cloud project `zoen-506921` was inspected in the owner's
 Console. It is External / Testing, with two existing web clients belonging to the
-other application. Branding has a name and support contacts, but no homepage,
-privacy-policy URL or logo. The declared permissions include broad Calendar,
+other application. Publishing is blocked until branding is completed. Draft
+privacy and terms pages are prepared at `/privacy` and `/terms` in the Worker;
+they need the operator's review before publication as the service's policies.
+The declared permissions include broad Calendar,
 Tasks, Contacts, Sheets, Docs, Drive and Gmail scopes. Those existing clients and
 permissions were preserved.
 
@@ -80,10 +84,21 @@ or screenshots. Configure these through Cloudflare's secrets interface:
 as `ZOEN_GOOGLE_RELAY_URL`. Cloud instances need only outbound HTTPS and their
 existing persistent volume.
 
-`GOOGLE_ENABLED_CAPABILITIES` is an explicit comma-separated allowlist, empty by
-default. Enable only capabilities ready for the intended audience. Tests can use
-Google's configured test users; that does not remove the unverified warning or
-make the app production-ready. `identity` requests only OpenID and email. Calendar,
+`GOOGLE_ENABLED_CAPABILITIES` is an explicit comma-separated allowlist. The beta
+configuration includes all implemented capabilities; missing app secrets or an
+unknown `GOOGLE_AUTH_MODE` still disable Google. Keep the mode aligned with the
+Google project's real configuration:
+
+- `testing`: registered test users only for Workspace scopes. Their grants and
+  refresh tokens expire after seven days and need renewed consent.
+- `unverified`: an External project published to Production without scope
+  verification. No tester enrollment is needed, but Google's unverified-app
+  notice, normally 100-user lifetime cap, and account/admin restrictions apply.
+- `verified`: use only after Google has approved the actual requested scopes.
+  Changing this flag does not obtain approval or bypass Google's enforcement.
+
+Only `identity` requests OpenID and email, which have an exception to the testing
+enrollment, warning, and seven-day limits. Calendar,
 Gmail, Drive, Docs, Sheets and Contacts are requested incrementally for an actual
 task. `drive_files` covers files created by this app; an existing-file Picker is
 not implemented. `drive_read` is broader and restricted. There is no request for
@@ -113,11 +128,14 @@ Production status alone does not verify an application. Complete these gates:
 
 Keep the normal Google consent screen. Account security alerts and Workspace
 administrator policies remain controlled by Google; the app cannot promise to
-suppress all of them. Never instruct users to click through an unverified warning
-as the production onboarding experience.
+suppress all of them. For the expressly disclosed unverified beta, let the owner
+review Google's notice and decide whether to authorize. Do not automate that
+decision, bypass browser certificate warnings or account blocks, or describe
+publication as verification.
 
 Primary references:
 
+- [Audience modes, testing expiry and user caps](https://support.google.com/cloud/answer/15549945)
 - [Google brand verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/brand-verification)
 - [Sensitive-scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification)
 - [Restricted-scope verification and security assessments](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification)

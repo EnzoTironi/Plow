@@ -75,6 +75,16 @@ h1 em { font-weight: 400; }
 .button span { font-size: 20px; line-height: 1; }
 .hint { max-width: 270px; margin: 18px 0 0; color: #b6c6dc; font-size: 12px; line-height: 1.6; }
 footer { padding: 0 24px 28px; color: #c6d4e5; font-size: 12px; text-align: center; }
+footer nav { display: flex; justify-content: center; flex-wrap: wrap; gap: 20px; margin-top: 18px; }
+a { color: inherit; text-underline-offset: 4px; }
+a:focus-visible { outline: 2px solid #c5dcf6; outline-offset: 5px; border-radius: 2px; }
+.legal-page { background-attachment: fixed; }
+.legal-page main { padding-top: 56px; padding-bottom: 48px; }
+.legal-page .description { max-width: 530px; }
+article { width: min(100%, 720px); margin-top: 18px; padding: 28px 34px; text-align: left; border: 1px solid rgb(255 255 255 / 13%); border-radius: 24px; background: rgb(6 16 31 / 88%); color: #dee8f4; font-size: 16px; line-height: 1.75; }
+article h2 { color: #fff; font-size: 21px; line-height: 1.35; font-weight: 500; margin: 32px 0 12px; letter-spacing: -.02em; }
+article p { margin: 12px 0; }
+.review-note { color: #f3dba8; font-size: 13px; }
 
 @media (max-width: 480px) {
   .brand { margin-top: 22px; }
@@ -82,6 +92,7 @@ footer { padding: 0 24px 28px; color: #c6d4e5; font-size: 12px; text-align: cent
   h1 { font-size: clamp(35px, 9.8vw, 46px); }
   .description { font-size: 16px; }
   footer { padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+  article { padding: 20px; font-size: 15px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

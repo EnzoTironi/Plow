@@ -7,6 +7,7 @@ const env = {
   GOOGLE_CLIENT_ID: "fixture.apps.googleusercontent.com", GOOGLE_CLIENT_SECRET: "fixture-app-secret",
   GOOGLE_ENCRYPTION_KEY: "ab".repeat(32), GOOGLE_REDIRECT_URI: "https://auth.example.com/callback",
   GOOGLE_ENABLED_CAPABILITIES: "identity,calendar_read",
+  GOOGLE_AUTH_MODE: "testing",
 };
 const verifier = randomBytes(48).toString("base64url");
 const challenge = createHash("sha256").update(verifier).digest("base64url");
@@ -19,12 +20,20 @@ const makeFlow = () => ({ provider: "google", challenge, status: "ready", callba
 const tokenResponse = () => Response.json({ access_token: "fixture-access", refresh_token: "fixture-refresh",
   token_type: "Bearer", expires_in: 3600, scope: "openid email https://www.googleapis.com/auth/calendar.events.readonly" });
 
-test("public image cannot enable Google without operator secrets and reviewed capabilities", async () => {
+test("Google requires operator secrets, enabled capabilities and an explicit audience mode", async () => {
   assert.equal(configured({}), false);
   assert.equal(configured({ ...env, GOOGLE_ENABLED_CAPABILITIES: "" }), false);
   const result = await googleRoute(new Request("https://relay/google/config"), {});
-  assert.deepEqual(await result.json(), { configured: false, capabilities: [] });
-  assert.equal(configured(env), true);
+  assert.deepEqual(await result.json(), { configured: false, capabilities: [], auth_mode: "disabled" });
+  for (const mode of [undefined, "", "production", "unknown"]) {
+    assert.equal(configured({ ...env, GOOGLE_AUTH_MODE: mode }), false);
+  }
+  for (const mode of ["testing", "unverified", "verified"]) {
+    const config = { ...env, GOOGLE_AUTH_MODE: mode };
+    assert.equal(configured(config), true);
+    const result = await googleRoute(new Request("https://relay/google/config"), config);
+    assert.deepEqual(await result.json(), { configured: true, capabilities: ["identity", "calendar_read"], auth_mode: mode });
+  }
 });
 
 test("refresh handles are authenticated, encrypted, purpose-bound and client-bound", async () => {

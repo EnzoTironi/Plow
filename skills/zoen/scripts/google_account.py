@@ -100,6 +100,7 @@ class Account:
     def status(self):
         data = self.read()
         return {"credentials_saved": bool(data), "account": data.get("account") if data else None,
+                "auth_mode_at_consent": data.get("auth_mode") if data else None,
                 "scopes": data.get("scopes", []) if data else [], "account_verified": None,
                 "status": "credentials_saved" if data else "not_started",
                 "instruction": "Saved state is not a live access check. Verify with a small requested read."}
