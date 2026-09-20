@@ -124,7 +124,7 @@ def test_pack_does_not_treat_an_acked_file_as_plugin_ack():
         assert "<acked>" not in packed
         assert "plugin already sent" not in packed
         assert "reception layer" in packed
-        assert "your next tool is plow_send_sequence" in packed
+        assert "your next tool is zoen_imessage" in packed
 
 
 def test_pack_tells_the_model_to_drive_the_mac_when_latch_is_connected():

@@ -32,7 +32,9 @@ First save the pending task and next action in Kanban. The call returns immediat
 completion arrives as an internal connection event. OAuth also sends a login link.
 Public services such as Kiwi, trivago, AllTrails, Wolfram and documentation servers
 need no account consent; activate only the service needed for the task. Send
-the supplied link once through `plow_send_sequence`, in your own voice. Do not run
+the supplied URL once through `zoen_imessage` with `purpose: "answer"`, in the
+owner's last human language. At most two short lines; URL in its own bubble.
+Do not paste the internal note. Leftover prose is not delivered. Do not run
 polling shell loops, repeat the link, invent a URL or ask the user to paste a token.
 
 The owner checks their account and permissions on the provider's page on their

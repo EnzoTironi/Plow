@@ -257,7 +257,7 @@ def test_failed_generation_never_sends_a_canned_status(tmp_path, monkeypatch):
         await send_one(receiving)
         event = SimpleNamespace(source=SimpleNamespace(chat_id="cht_owner"), message_id="msg_1", channel_prompt="")
         await receiving.annotate(event)
-        assert "normal final text" in event.channel_prompt
+        assert "zoen_imessage" in event.channel_prompt
 
     asyncio.run(run())
     assert adapter.posts == []

@@ -153,17 +153,19 @@ async def verify(home):
     plow._live = (adapter, asyncio.get_running_loop())
     # Exercise actual delivery guards, not just whether the model called a tool.
     from tools.registry import registry
-    assert "purpose" in registry.get_schema("plow_send_sequence")["parameters"]["properties"]
+    assert registry.get_schema("plow_send_sequence") is None
+    assert "purpose" in registry.get_schema("zoen_imessage")["parameters"]["properties"]
     turn = {"owner": True, "dm": True, "authority": True, "chat_uid": "cht_test"}
     token = plow._ACTIVE_TURN.set(turn)
     adapter._live_turns[id(turn)] = turn
     try:
+        before = len(posted)
         result = await adapter._send_with_retry("cht_test", "normal final answer", metadata={"notify": True})
-        assert result.success and posted[-1][1]["body"] == "normal final answer"
+        assert getattr(result, "suppressed", False) and len(posted) == before
         result = await adapter.send_sequence({"purpose": "progress", "items": [{"type": "text", "body": "contextual opening"}]}, turn)
         assert result["success"] and not turn["reply_delivered"]
         result = await adapter._send_with_retry("cht_test", "result after opening", metadata={"notify": True})
-        assert result.success and posted[-1][1]["body"] == "result after opening"
+        assert getattr(result, "suppressed", False)
         result = await adapter.send_sequence({"purpose": "answer", "items": [{"type": "text", "body": "final sequence"}]}, turn)
         assert result["success"]
         count = len(posted)
@@ -197,6 +199,8 @@ async def verify(home):
     await native_connections.notify(adapter, plow, "cht_test", "todoist", "Fixture connection result")
     assert len(handed_off) == 1
     assert handed_off[0].internal and handed_off[0].authority
+    assert "zoen_imessage" in handed_off[0].text
+    assert "not a human message" in handed_off[0].text
     assert handed_off[0].source.role_authorized and handed_off[0].source.chat_id == "cht_test"
     assert manager.invoke_hook("pre_gateway_dispatch", event=handed_off[0]) == [{"action": "allow"}]
     async def connection_turn(event):
@@ -212,8 +216,11 @@ async def verify(home):
     async def ordinary_model_final(event):
         return "Google account checked; ready for the requested task"
     adapter._message_handler = ordinary_model_final
+    leftover_before = [body["body"] for endpoint, body in posted if endpoint == "messages"]
     await adapter._process_message_background(handed_off[0], "normal-final-fixture")
-    assert [body["body"] for endpoint, body in posted if endpoint == "messages"][-1] == "Google account checked; ready for the requested task"
+    leftover_after = [body["body"] for endpoint, body in posted if endpoint == "messages"]
+    assert leftover_after == leftover_before
+    assert "Google account checked; ready for the requested task" not in leftover_after
     assert plow._ACTIVE_TURN.get() is None and not adapter._live_turns
     posted.clear()
     handed_off.clear()

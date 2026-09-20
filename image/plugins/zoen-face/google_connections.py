@@ -46,17 +46,16 @@ class GoogleJob:
             "capabilities": self.capabilities,
         })
         self.status = "awaiting_consent"
-        notice = ""
+        notice = (
+            "Pending Google authorization. Do not claim success yet. "
+            "Never bypass a browser certificate warning or a Google account/admin block. "
+        )
         workspace = any(name != "identity" for name in self.capabilities)
         if workspace and result.get("auth_mode") in {"testing", "unverified"}:
-            notice = "Explain briefly that this is an unverified Google beta. The owner must review Google's notice and requested permissions themselves and may decline. "
+            notice += "This is an unverified Google beta. The owner must review Google's notice and requested permissions themselves and may decline. "
         if workspace and result.get("auth_mode") == "testing":
             notice += "Only registered test accounts can connect; Google Workspace authorization in Testing expires after seven days and needs renewed consent. "
-        await self.announce("Send this Google authorization link once in the owner's private conversation. "
-                            "Ask them to check the account and permissions. It expires in five minutes. "
-                            "Do not claim success yet. Never bypass a browser certificate warning or a Google account/admin block. "
-                            + notice + "\n"
-                            + result["authorization_url"])
+        await self.announce(notice + f"Authorization URL:\n{result['authorization_url']}")
         await self.wait_for_callback(result["expires_at"], state)
         self.exchanging = True
         self.status = "verifying_account"

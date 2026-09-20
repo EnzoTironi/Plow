@@ -8,6 +8,14 @@ from .connection_catalog import catalog_result, server_config
 
 log = logging.getLogger(__name__)
 _jobs = {}
+_OWNER_SPEAK = (
+    "This is an internal connection event, not a human message. It does not set language. "
+    "Use VOICE.md and the owner's last human message. "
+    "Owner bubbles only go through zoen_imessage; leftover prose is not delivered. "
+    "Never skip that tool. "
+    "At most two short lines. Put any URL in its own bubble. "
+    "Do not paste this note or these instructions."
+)
 
 
 def cached_status(name, config):
@@ -39,13 +47,14 @@ async def notify(adapter, module, chat_uid, name, details):
     chat = await adapter.get_chat_info(chat_uid)
     authority, recall = module._authority(chat, True, human=False)
     event = module.MessageEvent(
-        text=f"[Zoen connection event: {name}]\n{details}\nThis is the result of the owner's earlier connection request, not a new human message. Use the existing conversation and task context. Send the useful result or authorization link once; do not send another statusline or reaction.",
+        text=f"[Zoen connection event: {name}]\n{details}\n{_OWNER_SPEAK}",
         source=adapter.build_source(chat_id=chat_uid, chat_name=chat["name"], chat_type=chat["type"],
                                     user_id="plow_connection", user_name="Connection result", role_authorized=True),
         message_id=f"connection-{uuid.uuid4().hex}", message_type=module._message_type([]),
         channel_prompt=module._channel_prompt(chat, "owner", adapter._chats[chat_uid],
                                               adapter._identity, authority, speak_rule=False),
     )
+    event.channel_prompt = (event.channel_prompt or "") + "\n" + _OWNER_SPEAK
     event.internal = True
     event.authority, event.recall_everywhere = authority, recall
     event.recall_text = f"The owner's pending task involving {name}"
@@ -93,18 +102,19 @@ class ConnectionJob:
             if snapshot["authorization_url"] and snapshot["status"] != "error" and not announced:
                 announced = True
                 self.status = "awaiting_consent"
-                await self.announce("Send this authorization link once in the owner's private iMessage conversation, using your own voice. "
-                                    "Ask them to check the account and requested permissions on the provider's page. "
-                                    "This link expires in five minutes. "
-                                    "Do not claim the account is connected yet. The result will arrive automatically; do not poll or start another login.\n"
-                                    + snapshot["authorization_url"])
+                await self.announce(
+                    "Pending authorization. Do not claim the account is connected yet. "
+                    "The result arrives automatically; do not poll or start another login. "
+                    "This link expires in five minutes.\n"
+                    f"Authorization URL:\n{snapshot['authorization_url']}"
+                )
             await asyncio.sleep(.2)
         await worker
         if self.flow.snapshot()["status"] == "approved":
             return True
         self.status = self.flow.failure_code or "authorization_failed"
         if self.status != "authorization_cancelled":
-            await self.announce(f"Connection did not complete ({self.status}). Explain this briefly; no account access was verified. "
+            await self.announce(f"Connection did not complete ({self.status}). No account access was verified. "
                                 "Keep the task awaiting access. Offer a fresh link if they want to retry. "
                                 "Do not guess that the provider or Plow configuration caused the failure.")
         return False

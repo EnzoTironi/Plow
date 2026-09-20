@@ -245,8 +245,8 @@ class Presence:
         event.channel_prompt = (event.channel_prompt or "") + (
             "\n[Zoen reception]\nReception owns this burst's opening and tapback. "
             "Continue the actual work immediately; do not repeat the opening or reaction. "
-            "An acknowledgement is not completion. Deliver the result as normal final text, "
-            "or use plow_send_sequence with purpose=answer for multiple bubbles/media. "
+            "An acknowledgement is not completion. Owner bubbles only go through "
+            "zoen_imessage; leftover prose is not delivered. Never skip that tool. "
             "Reception outcomes: " + json.dumps(event.zoen_reception))
 
 

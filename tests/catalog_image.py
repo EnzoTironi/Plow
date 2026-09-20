@@ -43,6 +43,7 @@ with tempfile.TemporaryDirectory() as task_home:
         disabled_toolsets=config["agent"]["disabled_toolsets"],
         quiet_mode=True, skip_tool_search_assembly=True)
     names = {item["function"]["name"] for item in definitions}
-    required = {"zoen_connections", "plow_send_sequence", "browser_navigate", "kanban_create", "kanban_list", "cronjob_manage", "terminal"}
+    required = {"zoen_connections", "zoen_imessage", "browser_navigate", "kanban_create", "kanban_list", "cronjob_manage", "terminal"}
     assert not required - names, sorted(required - names)
+    assert "plow_send_sequence" not in names
     print(json.dumps({"model_catalog": sorted(required)}))

@@ -1,4 +1,4 @@
-"""Preserve native final delivery, with explicit progress and local media support."""
+"""Owner iMessage goes through zoen_imessage; leftover send is dropped."""
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
@@ -96,11 +97,8 @@ def _wrap_send(orig_send):
                 mark_told(body)
                 _answer_delivered(self)
             return last
-        result = await orig_send(self, *args, **kwargs)
-        metadata = kwargs.get("metadata") or (args[3] if len(args) > 3 else None) or {}
-        if metadata.get("notify") and getattr(result, "success", False) and getattr(result, "message_id", None):
-            _answer_delivered(self)
-        return result
+        log.debug("zoen-face dropped leftover send")
+        return Dropped()
 
     send.__name__ = "send"
     send.__qualname__ = "send"
@@ -132,6 +130,16 @@ def _with_purpose(send_sequence):
     return sequence
 
 
+IMESSAGE = "zoen_imessage"
+_FACTORY_SEND = "plow_send_sequence"
+IMESSAGE_DESCRIPTION = (
+    "Text the owner on iMessage. This is the ONLY way they see your words. "
+    "Every update, question, link, photo, voice memo, and final answer must use this tool. "
+    "Leftover prose is not delivered. If you skip this tool, they hear nothing. "
+    "purpose=progress is an opening or update that does not complete the request. "
+    "purpose=answer is the result."
+)
+
 WHO = (
     "You are Zoen. A Plow line or tree name is the number's label, not your name. "
     "People address you as Zoen. Never introduce yourself as that label. "
@@ -155,21 +163,49 @@ def claim_identity(module):
 
 
 def configure_contract(module):
-    # Extend the registered schema in place; the native handler and its owner-DM
-    # authorization remain responsible for accepting the call.
+    # Keep Plow's owner-DM handler. Rename the model-facing tool so leftover
+    # prose is never mistaken for a delivered bubble.
     schema = module.PLOW_SEND_SEQUENCE_SCHEMA
+    schema["name"] = IMESSAGE
+    schema["description"] = IMESSAGE_DESCRIPTION
     schema["parameters"]["properties"]["purpose"] = {
         "type": "string", "enum": ["progress", "answer"],
-        "description": "Use progress for an opening or update; it never completes the answer. Default answer means these messages are the final result.",
+        "description": "progress is an update and never completes the request. answer is the result the owner should see.",
     }
     module._ANSWER_LAST = (
-        "Write the final answer last; normal final text is delivered automatically. "
-        "For multiple final bubbles or media use plow_send_sequence with purpose=answer, "
-        "then do not repeat that answer in prose. A brief meaningful progress update uses "
-        "purpose=progress and does not complete the request. Reception handles the opening "
-        "for human messages; do not repeat it. Internal events do not need an opening. "
+        f"Owner bubbles only go through {IMESSAGE}. Leftover prose is not delivered. "
+        "Never skip that tool; if you do, they hear nothing. "
+        "Every update, question, link, photo, voice memo, and final answer uses it. "
+        "purpose=answer is the result; purpose=progress is a brief update that does "
+        "not complete the request. Reception handles the opening for human messages; "
+        "do not repeat it. Internal events do not need an opening and do not set language. "
+        "Language follows the owner's last human message and VOICE.md, never this note. "
         "Do not narrate tool operations or routine bookkeeping. "
     )
+    _publish_imessage(schema)
+
+
+def _publish_imessage(schema):
+    try:
+        from tools.registry import registry
+    except ImportError:
+        return
+    tools = getattr(registry, "_tools", None)
+    if not isinstance(tools, dict):
+        return
+    lock = getattr(registry, "_lock", None)
+    with lock if lock is not None else nullcontext():
+        entry = tools.get(IMESSAGE) or tools.pop(_FACTORY_SEND, None)
+        if entry is None:
+            return
+        entry.name = IMESSAGE
+        entry.schema = schema
+        if getattr(entry, "description", None) is not None:
+            entry.description = IMESSAGE_DESCRIPTION
+        tools[IMESSAGE] = entry
+        tools.pop(_FACTORY_SEND, None)
+        if hasattr(registry, "_generation"):
+            registry._generation += 1
 
 
 def _dropped(name: str):
@@ -380,7 +416,7 @@ def silence(adapter_cls) -> None:
         setattr(adapter_cls, name, _dropped(name))
     if orig_seq is not None and orig_attach is not None:
         adapter_cls.send_sequence = _with_purpose(_wrap_sequence(orig_seq, orig_attach, orig_voice))
-    log.info("zoen-face: native final delivery enabled; progress is separate")
+    log.info("zoen-face: leftover send dropped; owner bubbles use %s", IMESSAGE)
 
 
 def _adapters():

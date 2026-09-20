@@ -72,13 +72,30 @@ def test_leftover_credits_error_becomes_the_dashboard_bubble():
     assert result.success is True
 
 
-def test_normal_final_is_delivered():
+def test_normal_final_is_dropped():
     Adapter = _adapter()
     quiet.silence(Adapter)
     box = Adapter()
     result = asyncio.run(box.send("cht_x", "Still building. Ending turn."))
-    assert box.posted == [("send", "Still building. Ending turn.")]
-    assert result.success is True
+    assert box.posted == []
+    assert result.suppressed is True
+
+
+def test_contract_renames_send_and_forbids_leftover():
+    module = SimpleNamespace(
+        PLOW_SEND_SEQUENCE_SCHEMA={
+            "name": "plow_send_sequence",
+            "description": "old",
+            "parameters": {"properties": {}},
+        }
+    )
+    quiet.configure_contract(module)
+    assert module.PLOW_SEND_SEQUENCE_SCHEMA["name"] == "zoen_imessage"
+    assert "ONLY way they see your words" in module.PLOW_SEND_SEQUENCE_SCHEMA["description"]
+    assert "zoen_imessage" in module._ANSWER_LAST
+    assert "not delivered" in module._ANSWER_LAST
+    assert "Never skip" in module._ANSWER_LAST
+    assert "delivered automatically" not in module._ANSWER_LAST
 
 
 def test_send_sequence_still_runs():
@@ -156,7 +173,7 @@ def test_silence_is_idempotent():
     assert Adapter.send is first
     box = Adapter()
     asyncio.run(box.send("cht_x", "Hello leftover"))
-    assert box.posted == [("send", "Hello leftover")]
+    assert box.posted == []
 
 
 def test_voice_sequence_uses_native_send_voice():
@@ -205,7 +222,7 @@ def test_silence_finds_adapter_in_sys_modules():
         quiet.silence_plow_adapter()
         box = Adapter()
         asyncio.run(box.send("cht_x", "leftover"))
-        assert box.posted == [("send", "leftover")]
+        assert box.posted == []
     finally:
         del sys.modules["zoen_fake_plow_chat"]
 
@@ -271,11 +288,15 @@ def test_claim_identity_skips_modules_without_the_seam():
 
 def test_seed_soul_is_zoen_not_a_plow_assistant():
     soul = (ROOT / "runtime" / "SOUL.md").read_text()
+    persona = (ROOT / "runtime" / "persona.md").read_text()
     assert soul.lstrip().startswith("# Zoen")
-    assert "You are Zoen" in soul
+    assert persona.lstrip().startswith("# Who you are")
+    assert soul.split("\n", 1)[1] == persona.split("\n", 1)[1]
+    assert "You are **Zoen**" in soul
     assert "You are a Plow assistant" not in soul
-    assert "do not mention /help" in soul.lower()
+    assert "mention /help" in soul.lower()
     assert "zoen_connections" in soul
+    assert "zoen_imessage" in soul
     assert "catalog" in soul
 
 
@@ -284,6 +305,8 @@ def test_persona_route_index_names_playbooks_and_skills():
     assert "# Route" in persona
     for needle in (
         "context.py dump",
+        "zoen_imessage",
+        "latest **human**",
         "zoen_connections",
         "catalog",
         "treg",
@@ -320,7 +343,8 @@ def test_persona_route_index_names_playbooks_and_skills():
 
 
 if __name__ == "__main__":
-    test_normal_final_is_delivered()
+    test_normal_final_is_dropped()
+    test_contract_renames_send_and_forbids_leftover()
     test_leftover_credits_error_becomes_the_dashboard_bubble()
     test_send_sequence_still_runs()
     test_native_final_media_and_typing_are_preserved_status_chatter_is_dropped()

@@ -27,7 +27,7 @@ PROMPT = (
     "Use dedicated cron jobs for actual reminders, not this maintenance cadence. "
     "Preserve legacy software work named in NOW.md or GITHUB_REPO: use the software "
     "maintenance section for those tasks only. Never invent a project or scan unrelated repos. "
-    "Notify via plow_send_sequence only for a completed result, a meaningful change, "
+    "Notify via zoen_imessage only for a completed result, a meaningful change, "
     "failure or required input. If nothing needs them, [SILENT]. No periodic check-in. "
     "Never onboard, install, use Latch, spend money or deploy production from cron. "
     "Use their language and casing. Short bubbles, same personality."
