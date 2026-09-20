@@ -25,19 +25,35 @@ the thing you keep putting off? start there.
   important things from slipping through.
 - **"find us somewhere good for saturday."** the place, the reviews, the
   shortlist. you bring your people.
+- **"which one should i buy?"** compare the details, the price, and what
+  people actually say. fewer tabs. a clearer choice.
+- **"i don't have an hour for this video."** send the link. let's get to
+  the useful part.
+- **"help me find my next job."** find the openings. get to know the
+  companies. figure out where you'd like to be.
 - **"i have a meeting in an hour."** who's coming. what they're working on.
   what you need to know. walk in ready.
+- **"this needs to stop living in my head."** send the notes. let's turn
+  them into next steps you can follow.
 - **"what should i make next?"** find what people care about. turn it into
   something worth sharing.
 - **"who needs what i'm building?"** find the right companies and people.
   bring you a list worth talking to.
+- **"what are people really saying?"** the questions. the complaints.
+  the things worth fixing. let's look closer.
+- **"what are my competitors trying?"** look at the ads. spot the patterns.
+  find your own angle.
+- **"find creators who fit our brand."** a shortlist with a reason behind
+  every name.
 - **"this app should exist."** oh, we're doing this. from the first idea
   to something you can actually use.
 
 ## one conversation. a little less on your plate.
 
-your notes. your work. the things you already use.
-bring them along. tell me what you need.
+your email. your calendar. your notes. your tasks.
+bring them into the conversation. tell me what you need.
+
+you choose what to connect. if something costs money, we agree on it first.
 
 you don't have to keep every detail in your head.
 i'll take it from here.

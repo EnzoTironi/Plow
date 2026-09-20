@@ -36,12 +36,10 @@ HELLO = {
     "en": (
         "hey, I'm Zoen, your little monster that makes your dreams come true",
         "save my card so you know it's me",
-        "what's your dream?",
     ),
     "pt": (
         "oi, eu sou o Zoen, o monstrinho que faz seus sonhos acontecerem",
         "salva meu cartão pra você saber que sou eu",
-        "qual é o seu sonho?",
     ),
 }
 SETUP_NAMES = {"plow setup"}
@@ -66,9 +64,9 @@ PEEK = (
     (["git", "config", "--global", "user.email"], "email"),
 )
 RENDER = (
-    "Rewrite these three iMessage bubbles in the same language as the user. "
+    "Rewrite these two iMessage bubbles in the same language as the user. "
     "Keep the meaning. Max two lines each. No trailing period. "
-    "JSON only: {\"hello\":[\"...\",\"...\",\"...\"]}"
+    "JSON only: {\"hello\":[\"...\",\"...\"]}"
 )
 Http = Callable[..., dict]
 Put = Callable[[str, dict[str, str], bytes], dict]
@@ -380,7 +378,7 @@ def render_hello(
         except json.JSONDecodeError:
             return list(HELLO["en"])
     bubbles = parsed.get("hello") if isinstance(parsed, dict) else parsed
-    if not isinstance(bubbles, list) or len(bubbles) != 3:
+    if not isinstance(bubbles, list) or len(bubbles) != 2:
         return list(HELLO["en"])
     out = [str(item).strip() for item in bubbles]
     if any(not item or len(item.splitlines()) > 2 for item in out):
@@ -1054,7 +1052,11 @@ def greet_on_dispatch(
     if payload.get("ok"):
         event.channel_prompt = (getattr(event, "channel_prompt", "") or "") + (
             "\n[Zoen first contact]\nYour introduction and contact card were already handled. "
-            "Do not greet again or ask what to build. Continue the owner's actual request.")
+            "Do not greet again or ask what to build. Continue the owner's actual request. "
+            "After handling it, follow the first-contact name guidance: save a name they "
+            "already provided with zoen_owner_profile, or use its ask action to reserve the "
+            "one optional name question. Ask only if ask=true. Save their supplied name "
+            "without another confirmation. Do not add a dream question.")
         return {"action": "allow", "reason": "zoen intro delivered; preserve first request"}
     return {"action": "allow"}
 

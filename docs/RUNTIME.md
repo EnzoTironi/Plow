@@ -53,6 +53,20 @@ phone must be verified separately through the provider/real conversation.
 
 ## Accounts, work and memory
 
+On first contact, `zoen_owner_profile` checks whether the owner already has a
+name. If not, it reserves one optional question about what to call them. A name
+already supplied in the conversation or memory skips the question. The chosen
+name is remembered and saved to the owner's Plow profile automatically, without
+a second confirmation. A fresh read must match before the tool reports success.
+A skipped question or failed save does not block the task or restart onboarding.
+The name state persists under `$HERMES_HOME/zoen/owner-profile.sqlite3`.
+
+Agent Index resolves the user's public name from Plow's owner profile; changing
+chat memory alone is insufficient. The agent page's `AGENT_NAME` is still Zoen,
+and each installation keeps its existing `install_id`. Onboarding does not
+register another install or change token reporting. Native Plow contact naming
+and passive capture remain unchanged.
+
 `zoen_connections` requires a current private owner DM. Google now uses Zoen's
 independent OAuth broker and the bundled Hermes API commands through
 `google_workspace.py`; it does not use Plow's Google connection or the owner's Mac.

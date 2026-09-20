@@ -172,6 +172,8 @@ async def verify(home):
         plow._ACTIVE_TURN.reset(token)
         adapter._live_turns.clear()
         posted.clear()
+    from integration_owner_profile import verify_owner_profile
+    await verify_owner_profile(adapter, plow, plugin)
     plugin.connections.connection = lambda action, connector: {"ok": True, "connector": connector, "connected": False}
     token = plow._ACTIVE_TURN.set({"owner": True, "dm": True, "authority": True, "chat_uid": "cht_test"})
     try:
@@ -262,6 +264,7 @@ async def verify(home):
         await asyncio.gather(server, return_exceptions=True)
     await runner.cleanup()
     print(json.dumps({"plugin_registered": True, "owner_guard": True, "connection_tool_dispatch": True,
+                      "owner_profile_verified": True, "native_contact_naming_preserved": True,
                       "native_final_delivery": True, "progress_preserves_final": True,
                       "answer_sequence_deduplicated": True, "queue_admission_retry": True,
                       "connection_event_native_lifecycle": True, "ack_before_attachment": True,

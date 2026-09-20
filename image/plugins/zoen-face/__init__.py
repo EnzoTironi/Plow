@@ -13,6 +13,7 @@ if str(SCRIPTS) not in sys.path:
 import face  # noqa: E402
 from . import presence  # noqa: E402
 from . import connections  # noqa: E402
+from . import owner_profile  # noqa: E402
 
 
 def configure_adapters():
@@ -38,4 +39,6 @@ def register(ctx) -> None:
     ctx.register_hook("pre_gateway_dispatch", on_dispatch)
     ctx.register_tool(name="zoen_connections", toolset="zoen", schema=connections.SCHEMA,
                       handler=connections.handle, emoji="🔌")
+    ctx.register_tool(name="zoen_owner_profile", toolset="zoen", schema=owner_profile.SCHEMA,
+                      handler=owner_profile.handle, emoji="👋")
     configure_adapters()

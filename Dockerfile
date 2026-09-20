@@ -105,7 +105,7 @@ RUN chmod 0644 /opt/hermes/plugins/zoen-face/plugin.yaml /opt/hermes/plugins/zoe
  && /opt/hermes/.venv/bin/python /opt/hermes/enable-zoen-face.py
 
 # Public page copy does not invalidate the tool-install layers.
-ENV AGENT_BLURB="big dreams. everyday problems. one little monster. i'm zoen. text me on iMessage. get your week together. find a great place. walk into the meeting ready. find your next customer. turn an idea into something real. i'll handle the details. you get on with living."
+ENV AGENT_BLURB="life happens. text zoen. plan your week. find a great place. compare before you buy. walk into the meeting ready. find your next customer. turn an idea into something real. your apps and thousands of tools, in one conversation. big dreams. everyday problems. one little monster."
 
 ARG ZOEN_REVISION=unknown
 LABEL org.opencontainers.image.source="https://github.com/EnzoTironi/plow" \
