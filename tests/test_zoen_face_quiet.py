@@ -244,6 +244,39 @@ def test_failed_media_does_not_become_a_successful_text_delivery(tmp_path):
         quiet._MEDIA_ROOTS = saved
 
 
+def test_claim_identity_replaces_the_line_name():
+    def original(prompt, name, identity):
+        who = f"You are {name}, a Plow assistant" if name else "You are a Plow assistant."
+        return f"{who} {prompt}"
+
+    module = SimpleNamespace(
+        _with_identity=original,
+        _plow_facts=lambda _identity: "facts.",
+    )
+    quiet.claim_identity(module)
+    quiet.claim_identity(module)
+    text = module._with_identity("keep going", "Spruce", {})
+    assert text.startswith("You are Zoen")
+    assert "Spruce" not in text
+    assert "You are a Plow assistant" not in text
+    assert "facts." in text
+    assert text.endswith("keep going")
+
+
+def test_claim_identity_skips_modules_without_the_seam():
+    module = SimpleNamespace()
+    quiet.claim_identity(module)
+    assert not hasattr(module, "_with_identity")
+
+
+def test_seed_soul_is_zoen_not_a_plow_assistant():
+    soul = (ROOT / "runtime" / "SOUL.md").read_text()
+    assert soul.lstrip().startswith("# Zoen")
+    assert "You are Zoen" in soul
+    assert "You are a Plow assistant" not in soul
+    assert "do not mention /help" in soul.lower()
+
+
 if __name__ == "__main__":
     test_normal_final_is_delivered()
     test_leftover_credits_error_becomes_the_dashboard_bubble()
@@ -256,4 +289,7 @@ if __name__ == "__main__":
     test_native_final_voice_is_preserved()
     test_silence_finds_adapter_in_sys_modules()
     test_missing_adapter_does_not_raise()
+    test_claim_identity_replaces_the_line_name()
+    test_claim_identity_skips_modules_without_the_seam()
+    test_seed_soul_is_zoen_not_a_plow_assistant()
     print("ok")

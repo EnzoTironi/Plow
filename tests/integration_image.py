@@ -85,6 +85,7 @@ async def verify(home):
     plugin = manager._plugins["zoen-face"].module
     assert plow.INBOUND_DEBOUNCE_SECONDS == plugin.presence.SILENCE
     assert getattr(plow.PlowChatAdapter, "_zoen_presence", False)
+    assert plow._with_identity("continue", "Spruce", {"lines": []}).startswith("You are Zoen")
     assert "zoen_connections" in manager._plugin_tool_names
     assert manager.invoke_hook("pre_gateway_dispatch", event=SimpleNamespace(internal=True)) == [{"action": "allow"}]
     assert json.loads(plugin.connections.handle({"action": "status", "connector": "google"}))["ok"] is False

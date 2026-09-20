@@ -29,6 +29,12 @@ with tempfile.TemporaryDirectory() as task_home:
     assert platform_registry.get("plow_chat") is not None
     loaded = get_plugin_manager()._plugins["plow-chat-platform"]
     assert getattr(loaded.module.PlowChatAdapter, "_zoen_presence", False), "first inbound lacks reception"
+    soul = Path("/opt/hermes/plow-seed/SOUL.md").read_text()
+    assert soul.lstrip().startswith("# Zoen"), soul[:80]
+    assert "You are a Plow assistant" not in soul
+    prompt = loaded.module._with_identity("continue", "Spruce", {"lines": []})
+    assert prompt.startswith("You are Zoen"), prompt[:120]
+    assert "You are Spruce" not in prompt
     selected = _get_platform_tools(config, "plow_chat")
     # Check actual session selection, not an invented all-tools catalog.
     assert {"kanban", "zoen"} <= selected, selected

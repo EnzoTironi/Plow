@@ -132,6 +132,28 @@ def _with_purpose(send_sequence):
     return sequence
 
 
+WHO = (
+    "You are Zoen. A Plow line or tree name is the number's label, not your name. "
+    "People address you as Zoen. Never introduce yourself as that label. "
+    "Never mention /help."
+)
+
+
+def claim_identity(module):
+    """Keep the Plow facts, replace the per-turn 'You are {line}' prefix."""
+    if getattr(module, "_zoen_identity", False):
+        return
+    if getattr(module, "_with_identity", None) is None:
+        return
+    facts = getattr(module, "_plow_facts", lambda _identity: "")
+
+    def _with_identity(prompt, name, identity):
+        return f"{WHO} {facts(identity)} {prompt}"
+
+    module._with_identity = _with_identity
+    module._zoen_identity = True
+
+
 def configure_contract(module):
     # Extend the registered schema in place; the native handler and its owner-DM
     # authorization remain responsible for accepting the call.

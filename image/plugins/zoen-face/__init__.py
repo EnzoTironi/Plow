@@ -22,6 +22,7 @@ def configure_adapters():
         module = sys.modules.get(adapter.__module__)
         if module is not None and hasattr(adapter, "_on_message"):
             quiet.configure_contract(module)
+            quiet.claim_identity(module)
             presence.install(adapter, module, face.greet_on_dispatch)
 
 

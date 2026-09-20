@@ -72,13 +72,14 @@ RUN apt-get update \
  && npm install -g agent-browser@${AGENT_BROWSER_VERSION}
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 
-# plow-init composes SOUL.md on every boot as the base persona plus this file.
-# Do not COPY to /var/lib/hermes/SOUL.md. It is overwritten at boot.
+# plow-init composes $HOME/SOUL.md every boot from this base plus persona.md.
+# Replace the Plow-assistant seed. Copying only $HOME/SOUL.md does not stick.
+COPY runtime/SOUL.md /opt/hermes/plow-seed/SOUL.md
 COPY runtime/persona.md /opt/hermes/plow-seed/persona.md
 COPY runtime/bootstrap.md /opt/hermes/plow-seed/bootstrap.md
 COPY runtime/config.yaml /opt/hermes/plow-seed/zoen-config.yaml
 COPY LICENSE NOTICE docs/zoen-card.jpg /usr/share/doc/zoen/
-RUN chmod 0644 /opt/hermes/plow-seed/persona.md /opt/hermes/plow-seed/bootstrap.md /opt/hermes/plow-seed/zoen-config.yaml
+RUN chmod 0644 /opt/hermes/plow-seed/SOUL.md /opt/hermes/plow-seed/persona.md /opt/hermes/plow-seed/bootstrap.md /opt/hermes/plow-seed/zoen-config.yaml
 
 # Bundled skills. The gateway reconciles this tree into $HERMES_HOME/skills
 # on boot: new/untouched copies update, owner edits stay.
