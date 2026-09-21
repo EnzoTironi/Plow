@@ -16,9 +16,15 @@
   },
   "routes": [{ "pattern": "auth.tryzoen.com", "custom_domain": true }],
   "durable_objects": {
-    "bindings": [{ "name": "FLOWS", "class_name": "OAuthFlow" }]
+    "bindings": [
+      { "name": "FLOWS", "class_name": "OAuthFlow" },
+      { "name": "WHATSAPP", "class_name": "WhatsAppInbox" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["OAuthFlow"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["OAuthFlow"] },
+    { "tag": "v2", "new_sqlite_classes": ["WhatsAppInbox"] }
+  ],
   "ratelimits": [{
     "name": "CREATE_LIMITER",
     "namespace_id": "7419321",

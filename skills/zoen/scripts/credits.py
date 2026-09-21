@@ -68,7 +68,7 @@ def _blob(value: Any) -> str:
 
 def looks_like(text: Any) -> bool:
     blob = _blob(text)
-    if "out of plow credits" in blob:
+    if "out of plow credits" in blob or "billing or credits exhausted" in blob:
         return True
     if "app.plow.co/dashboard" in blob and "credit" in blob:
         return True
@@ -83,22 +83,23 @@ def result_is_credits(result: dict[str, Any] | None) -> bool:
     return looks_like(result.get("body")) or looks_like(result.get("error"))
 
 
-def stamp_path(home: str | None = None) -> Path | None:
+def stamp_path(home: str | None = None, channel: str = "imessage") -> Path | None:
     root = (home or os.environ.get("HERMES_HOME") or "").strip()
     if not root:
         return None
-    return Path(root) / "zoen" / "credits"
+    name = "credits-whatsapp" if channel == "whatsapp" else "credits"
+    return Path(root) / "zoen" / name
 
 
-def recently_told(home: str | None = None) -> bool:
-    path = stamp_path(home)
+def recently_told(home: str | None = None, channel: str = "imessage") -> bool:
+    path = stamp_path(home, channel)
     if path is None or not path.is_file():
         return False
     return (time.time() - path.stat().st_mtime) < STAMP_S
 
 
-def mark_told(body: str, home: str | None = None) -> None:
-    path = stamp_path(home)
+def mark_told(body: str, home: str | None = None, channel: str = "imessage") -> None:
+    path = stamp_path(home, channel)
     if path is None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)

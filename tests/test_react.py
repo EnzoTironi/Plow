@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Run: python3 tests/test_react.py"""
 import importlib.util
+import json
 import os
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,7 +64,37 @@ def test_explicit_message_skips_list():
     assert "/chats/cht_x/messages/msg_given/reactions" in calls[0][1]
 
 
+def test_whatsapp_tapback_uses_the_open_bubble():
+    calls = []
+
+    def http(method, url, headers=None, body=None):
+        calls.append((method, url, body))
+        return {"ok": True, "status": 200, "error": None, "body": {"ok": True}}
+
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        folder = Path(home) / "zoen"
+        folder.mkdir()
+        (folder / "whatsapp.json").write_text(json.dumps({
+            "to": "5511999999999", "message_id": "wamid.9",
+        }))
+        (folder / "whatsapp.token").write_text("a" * 43)
+        (folder / "relay.url").write_text("https://relay.example\n")
+        try:
+            payload = react.add("like", http=http)
+        finally:
+            os.environ.pop("HERMES_HOME", None)
+    assert payload["ok"] is True
+    assert payload["chat"] == "whatsapp"
+    assert payload["message"] == "wamid.9"
+    assert calls[0][0] == "POST"
+    assert calls[0][1] == "https://relay.example/whatsapp/send"
+    assert calls[0][2]["to"] == "5511999999999"
+    assert calls[0][2]["reaction"] == {"type": "like", "message_id": "wamid.9"}
+
+
 if __name__ == "__main__":
     test_latest_inbound_skips_outbound()
     test_explicit_message_skips_list()
+    test_whatsapp_tapback_uses_the_open_bubble()
     print("ok")

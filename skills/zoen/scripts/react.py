@@ -61,6 +61,44 @@ def latest_inbound(base: str, headers: dict[str, str], chat: str, http: Http = r
     raise SystemExit("react: no inbound message")
 
 
+def _whatsapp_files() -> tuple[dict[str, Any], str, str] | None:
+    root = (os.environ.get("HERMES_HOME") or "").strip()
+    if not root:
+        return None
+    home = Path(root) / "zoen"
+    try:
+        stamp = json.loads((home / "whatsapp.json").read_text(encoding="utf-8"))
+        token = (home / "whatsapp.token").read_text(encoding="utf-8").strip()
+        relay = (os.environ.get("ZOEN_OAUTH_RELAY_URL") or (home / "relay.url").read_text(encoding="utf-8")).strip()
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(stamp, dict) or not stamp.get("message_id") or not token or not relay:
+        return None
+    return stamp, token, relay.rstrip("/")
+
+
+def _add_whatsapp(kind: str, message: str, stamp: dict[str, Any], token: str, relay: str, http: Http) -> dict[str, Any]:
+    body: dict[str, Any] = {"reaction": {"type": kind, "message_id": message}}
+    if stamp.get("to"):
+        body["to"] = stamp["to"]
+    elif stamp.get("recipient"):
+        body["recipient"] = stamp["recipient"]
+    result = http(
+        "POST",
+        f"{relay}/whatsapp/send",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+        body=body,
+    )
+    return {
+        "ok": bool(result.get("ok")),
+        "status": result.get("status"),
+        "error": result.get("error"),
+        "chat": "whatsapp",
+        "message": message,
+        "type": kind,
+    }
+
+
 def add(
     kind: str,
     chat: str | None = None,
@@ -69,6 +107,11 @@ def add(
 ) -> dict[str, Any]:
     if kind not in KINDS:
         raise SystemExit(f"react: type must be one of {', '.join(KINDS)}")
+    whatsapp = _whatsapp_files()
+    explicit = (message or "").strip()
+    if whatsapp is not None and not explicit.startswith("msg_"):
+        stamp, token, relay = whatsapp
+        return _add_whatsapp(kind, explicit or str(stamp["message_id"]), stamp, token, relay, http)
     base, headers = credentials()
     chat = chat_uid(chat)
     target = (message or "").strip() or latest_inbound(base, headers, chat, http=http)

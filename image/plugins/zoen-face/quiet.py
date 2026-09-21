@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import importlib
 import json
 import logging
@@ -30,6 +31,9 @@ from credits import (  # noqa: E402
 )
 
 log = logging.getLogger("zoen-face")
+WHATSAPP = contextvars.ContextVar("zoen_whatsapp_target", default=None)
+WHATSAPP_DELIVER = None
+WHATSAPP_MEDIA = None
 _RETIRED_HELLO = (
     "a gente te ajuda",
     "we'll help.",
@@ -63,6 +67,18 @@ _VOICE_TYPES = {
 }
 
 
+class Delivered:
+    success = True
+    error = None
+    message_id = None
+    suppressed = False
+    raw_response = {}
+    retryable = False
+    retry_after = None
+    continuation_message_ids = ()
+    error_kind = None
+
+
 class Dropped:
     success = False
     error = "intentionally suppressed; nothing delivered"
@@ -94,23 +110,41 @@ def _leftover_text(args: tuple, kwargs: dict) -> str:
     return ""
 
 
+def _channel_name(target) -> str:
+    return "whatsapp" if isinstance(target, dict) else "imessage"
+
+
+async def _deliver_credits(text, args, kwargs, orig_send, adapter):
+    target = WHATSAPP.get()
+    channel = _channel_name(target)
+    if recently_told(channel=channel):
+        log.debug("zoen-face dropped duplicate credits leftover")
+        return Dropped()
+    body = credits_notice(credits_language())
+    log.info("zoen-face credits notice on %s", channel)
+    if channel == "whatsapp":
+        if WHATSAPP_DELIVER is None or not await WHATSAPP_DELIVER(body):
+            log.warning("zoen-face credits leftover missed WhatsApp")
+            return Dropped()
+        mark_told(body, channel=channel)
+        _answer_delivered(adapter)
+        return Delivered()
+    chat_id = _leftover_chat(args, kwargs)
+    if not chat_id:
+        log.warning("zoen-face credits leftover had no chat")
+        return Dropped()
+    last = await orig_send(adapter, chat_id, body, metadata=kwargs.get("metadata"))
+    if getattr(last, "success", False):
+        mark_told(body, channel=channel)
+        _answer_delivered(adapter)
+    return last
+
+
 def _wrap_send(orig_send):
     async def send(self, *args, **kwargs):
         text = _leftover_text(args, kwargs)
         if credits_looks_like(text):
-            if recently_told():
-                log.debug("zoen-face dropped duplicate credits leftover")
-                return Dropped()
-            chat_id = _leftover_chat(args, kwargs)
-            if not chat_id:
-                log.warning("zoen-face credits leftover had no chat")
-                return Dropped()
-            body = credits_notice(credits_language())
-            last = await orig_send(self, chat_id, body, metadata=kwargs.get("metadata"))
-            if getattr(last, "success", False):
-                mark_told(body)
-                _answer_delivered(self)
-            return last
+            return await _deliver_credits(text, args, kwargs, orig_send, self)
         log.debug("zoen-face dropped leftover send")
         return Dropped()
 
@@ -147,11 +181,12 @@ def _with_purpose(send_sequence):
 IMESSAGE = "zoen_imessage"
 _FACTORY_SEND = "plow_send_sequence"
 IMESSAGE_DESCRIPTION = (
-    "Text the owner on iMessage. This is the ONLY way they see your words. "
+    "Text the owner. This is the ONLY way they see your words, on the channel they just used. "
     "Every update, question, link, photo, voice memo, and final answer must use this tool. "
     "Leftover prose is not delivered. If you skip this tool, they hear nothing. "
     "purpose=progress is an opening or update that does not complete the request. "
-    "purpose=answer is the result."
+    "purpose=answer is the result. "
+    "On WhatsApp, reply_to quotes that bubble's id. MEDIA: and VOICE: send the file there."
 )
 
 WHO = (
@@ -186,6 +221,14 @@ def configure_contract(module):
         "type": "string", "enum": ["progress", "answer"],
         "description": "progress is an update and never completes the request. answer is the result the owner should see.",
     }
+    options = (((schema.get("parameters") or {}).get("properties") or {}).get("items") or {}).get("items") or {}
+    for option in options.get("oneOf") or []:
+        props = option.get("properties") or {}
+        if props.get("type", {}).get("const") == "text":
+            props["reply_to"] = {
+                "type": "string",
+                "description": "WhatsApp message id to quote. Leave it off on iMessage.",
+            }
     module._ANSWER_LAST = (
         f"Owner bubbles only go through {IMESSAGE}. Leftover prose is not delivered. "
         "Never skip that tool; if you do, they hear nothing. "
@@ -478,12 +521,84 @@ def install_http_filter() -> None:
     urllib.request.urlopen = urlopen_filtered
 
 
+def _plain_items(items):
+    """iMessage rejects a quote field. WhatsApp is the only channel that uses it."""
+    cleaned = []
+    for item in items:
+        if isinstance(item, dict) and "reply_to" in item:
+            item = {key: value for key, value in item.items() if key != "reply_to"}
+        cleaned.append(item)
+    return cleaned
+
+
+def _stamp_whatsapp(target) -> None:
+    root = Path((os.environ.get("HERMES_HOME") or "").strip() or "/var/lib/hermes")
+    path = root / "zoen" / "whatsapp.json"
+    try:
+        if not isinstance(target, dict):
+            path.unlink(missing_ok=True)
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "to": target.get("to") or "",
+            "recipient": target.get("recipient") or "",
+            "message_id": target.get("message_id") or "",
+        }), encoding="utf-8")
+    except OSError:
+        return
+
+
+def _whatsapp_failure(index, error):
+    return {"success": False, "completed": [], "failure": {"index": index, "status": "rejected", "error": error}}
+
+
+async def _deliver_whatsapp(items):
+    """One item, one bubble, on the chat they just wrote in."""
+    if WHATSAPP.get() is None:
+        return None
+    completed = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            return _whatsapp_failure(index, "whatsapp item invalid")
+        kind = item.get("type")
+        if kind == "pause":
+            await asyncio.sleep(min(float(item.get("seconds") or 0), 15))
+            continue
+        if kind != "text":
+            return _whatsapp_failure(index, "whatsapp item invalid")
+        reply = str(item.get("reply_to") or "").strip()
+        tagged = tagged_paths(item)
+        if tagged:
+            for tag, path in tagged:
+                if WHATSAPP_MEDIA is None or not await WHATSAPP_MEDIA({
+                    "path": path, "voice": tag == "VOICE", "reply_to": reply,
+                }):
+                    return {"success": False, "completed": completed, "failure": {"index": index, "status": "rejected", "error": "whatsapp media failed"}}
+                completed.append({"index": index, "type": "voice" if tag == "VOICE" else "file"})
+            continue
+        body = str(item.get("body") or "").strip()
+        if not body or WHATSAPP_DELIVER is None:
+            return _whatsapp_failure(index, "whatsapp text missing")
+        payload = {"text": body[:4096], "reply_to": reply} if reply else body[:4096]
+        if not await WHATSAPP_DELIVER(payload):
+            return {"success": False, "completed": completed, "failure": {"index": index, "status": "delivery_unknown", "error": "whatsapp send failed"}}
+        completed.append({"index": index, "type": "text"})
+    if not completed:
+        return _whatsapp_failure(0, "whatsapp text missing")
+    return {"success": True, "completed": completed}
+
+
 def _wrap_sequence(orig_seq, orig_attach, orig_voice):
     async def send_sequence(self, args, turn, receipt=None):
         items = [item for item in list((args or {}).get("items") or []) if not _retired_hello(item)]
         args = {**(args or {}), "items": items}
         if not items:
             return {"success": True, "completed": []}
+        delivered = await _deliver_whatsapp(items)
+        if delivered is not None:
+            return delivered
+        items = _plain_items(items)
+        args = {**args, "items": items}
         chunks = expand_items(items)
         if not any(kind in {"file", "voice"} for kind, _ in chunks):
             return await orig_seq(self, args, turn, receipt)
@@ -521,6 +636,24 @@ def _wrap_sequence(orig_seq, orig_attach, orig_voice):
     return send_sequence
 
 
+def _bind_turn_channel(orig_process):
+    """The inbound event names the channel. The background turn inherits it."""
+    async def process(self, event, session_key):
+        target = getattr(event, "zoen_whatsapp", None)
+        current = target if isinstance(target, dict) else None
+        _stamp_whatsapp(current)
+        token = WHATSAPP.set(current)
+        try:
+            return await orig_process(self, event, session_key)
+        finally:
+            WHATSAPP.reset(token)
+            _stamp_whatsapp(None)
+
+    process.__name__ = "_process_message_background"
+    process.__qualname__ = "_process_message_background"
+    return process
+
+
 def silence(adapter_cls) -> None:
     if getattr(adapter_cls, "_zoen_quiet", False):
         return
@@ -531,6 +664,9 @@ def silence(adapter_cls) -> None:
     orig_voice = getattr(adapter_cls, "send_voice", None)
     if getattr(adapter_cls, "send", None) is not None:
         adapter_cls.send = _wrap_send(adapter_cls.send)
+    orig_process = getattr(adapter_cls, "_process_message_background", None)
+    if orig_process is not None:
+        adapter_cls._process_message_background = _bind_turn_channel(orig_process)
     orig_final = getattr(adapter_cls, "_send_retry_is_final", None)
     if orig_final is not None:
         def send_retry_is_final(self, result):

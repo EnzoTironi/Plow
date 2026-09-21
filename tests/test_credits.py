@@ -42,6 +42,10 @@ def test_recently_told_is_scoped_to_home():
         credits.mark_told(credits.notice("en"), d)
         assert credits.recently_told(d)
         assert (Path(d) / "zoen" / "credits").read_text().startswith("plow credits")
+        assert not credits.recently_told(d, "whatsapp")
+        credits.mark_told(credits.notice("pt"), d, "whatsapp")
+        assert credits.recently_told(d, "whatsapp")
+        assert (Path(d) / "zoen" / "credits-whatsapp").is_file()
 
 
 if __name__ == "__main__":

@@ -37,6 +37,11 @@ callbacks have their own page while retaining their protocol status codes.
 | `POST /flows/<id>/ack` | Authenticated acknowledgement; remove callback and keep a consumed tombstone. |
 | `DELETE /flows/<id>` | Authenticated cancellation; refuse subsequent callback delivery. |
 | `GET /health` | Public liveness and protocol version. |
+| `POST /whatsapp/webhook` | Signed Kapso `whatsapp.message.received`. A new number receives the setup SMS link. The text is queued for that phone's agent. |
+| `POST /whatsapp/register` | The agent's Plow token plus the owner's phone. Returns a session token stored on that VM. |
+| `GET /whatsapp/inbox` | That agent's queue. Bearer token never ships in the image. |
+| `POST /whatsapp/inbox/ack` | Agent acknowledgement. The message leaves that phone's queue. |
+| `POST /whatsapp/send` | Reply to the bound phone. The Worker calls Kapso. The agent does not hold the Kapso key. |
 
 Polling, acknowledgement and cancellation use `Authorization: Bearer <poll_token>`.
 The browser never sees that token. The agent registers state before disclosing its
@@ -44,6 +49,26 @@ authorization link. Random values require at least 256 bits of entropy. State is
 the native SDK's responsibility; the adapter creates the independent poll token.
 Only its hash is stored. Expiration is 15 minutes, checked on every request and
 backed by a Durable Object alarm. There is no shared relay administrator key.
+
+WhatsApp uses the same Worker as transport only. Kapso signs `POST /whatsapp/webhook`.
+A number that has not finished SMS setup receives one link to `+1 628 246-3032`
+with the Index phrase. The WhatsApp text stays queued. After Plow boots the VM,
+the agent calls `/whatsapp/register` with its Plow agent token. The owner handle,
+phone or email, is not compared. One waiting WhatsApp binds to that agent. When
+several are waiting, the page opened from that phone's button confirms its own
+request. The agent reads the queue, runs the turn, and replies with `zoen_imessage`.
+That tool call is delivered to the WhatsApp phone on the message. Set these as Worker secrets, not image env:
+
+```sh
+npx wrangler secret put KAPSO_WEBHOOK_SECRET
+npx wrangler secret put KAPSO_API_KEY
+npx wrangler secret put KAPSO_PHONE_NUMBER_ID
+```
+
+Register the webhook on the Kapso number as
+`https://auth.tryzoen.com/whatsapp/webhook`, event `whatsapp.message.received`.
+Do not enable a Kapso agent node. The session token is written on the VM after
+register. The Kapso key stays on the Worker.
 
 The native MCP callback transport never receives provider tokens or the PKCE
 verifier. The optional Google broker below has a different credential boundary.

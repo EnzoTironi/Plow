@@ -166,6 +166,219 @@ def test_retired_hello_is_dropped():
     assert box.posted == [("sequence", {"items": [{"type": "text", "body": "shipped"}]})]
 
 
+def test_whatsapp_owner_phone_is_the_handle_digits():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    adapter = SimpleNamespace(
+        _chats={"cht_home": {"owner": True}},
+        _send_guard=lambda uid: None,
+    )
+    module = SimpleNamespace(
+        _owner_dm=lambda chat: chat.get("owner", False),
+        _owner_handle=lambda chat: "+55 (11) 99999-9999",
+    )
+    assert whatsapp.owner_phone(adapter, module) == "5511999999999"
+    module._owner_handle = lambda chat: "ana@example.com"
+    assert whatsapp.owner_phone(adapter, module) == ""
+    me = {
+        "chats": [{
+            "uid": "cht_home",
+            "status": "active",
+            "participants": [
+                {"type": "agent", "relationship": "self"},
+                {"type": "member", "role": "owner", "provider_type": "imessage", "provider_key": "+55 (11) 99999-9999"},
+            ],
+        }],
+    }
+    assert whatsapp.phone_from_identity(me) == "5511999999999"
+    assert whatsapp.home_chat_uid(me) == "cht_home"
+    me["chats"][0]["participants"][1]["provider_key"] = "ana@example.com"
+    me["chats"][0]["participants"][1]["provider_type"] = "email"
+    assert whatsapp.phone_from_identity(me) == ""
+    assert whatsapp.phone_from_contacts([
+        {"role": "member", "provider_key": "+15555550100"},
+        {"role": "owner", "provider_key": "+55 (11) 99999-9999"},
+    ]) == "5511999999999"
+
+
+def test_whatsapp_poll_starts_when_the_line_connects():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_boot", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+
+    class Adapter:
+        def __init__(self):
+            self.ready = False
+
+        async def connect(self):
+            self.ready = True
+            return True
+
+    previous = os.environ.get("ZOEN_OAUTH_RELAY_URL")
+    os.environ["ZOEN_OAUTH_RELAY_URL"] = "http://127.0.0.1:9"
+    try:
+        whatsapp.bind(SimpleNamespace())
+        whatsapp.install(Adapter, SimpleNamespace())
+        box = Adapter()
+        assert whatsapp._TASK is None
+        asyncio.run(box.connect())
+        assert box.ready is True
+        assert whatsapp._TASK is not None
+        whatsapp._TASK.cancel()
+    finally:
+        if previous is None:
+            os.environ.pop("ZOEN_OAUTH_RELAY_URL", None)
+        else:
+            os.environ["ZOEN_OAUTH_RELAY_URL"] = previous
+
+
+def test_whatsapp_credits_follow_the_inbound_and_imessage_stays_on_imessage():
+    blob = (
+        'Billing or credits exhausted: HTTP 402: {"detail":"You\'re out of Plow credits. '
+        'Top up at app.plow.co/dashboard to keep going."}'
+    )
+
+    class Adapter(_adapter()):
+        async def _process_message_background(self, event, session_key):
+            return await self.send("cht_x", blob)
+
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        (Path(home) / "zoen").mkdir()
+        (Path(home) / "zoen" / "VOICE.md").write_text("language: pt\n")
+        sent = []
+
+        async def deliver(text):
+            sent.append(text)
+            return True
+
+        quiet.WHATSAPP_DELIVER = deliver
+        try:
+            quiet.silence(Adapter)
+            box = Adapter()
+            whatsapp_event = SimpleNamespace(zoen_whatsapp={"to": "5511999999999"})
+            asyncio.run(box._process_message_background(whatsapp_event, "wa"))
+            imessage_event = SimpleNamespace()
+            asyncio.run(box._process_message_background(imessage_event, "im"))
+        finally:
+            quiet.WHATSAPP_DELIVER = None
+            os.environ.pop("HERMES_HOME", None)
+    assert sent == [quiet.credits_notice("pt")]
+    assert box.posted == [("send", quiet.credits_notice("pt"))]
+    assert quiet.WHATSAPP.get() is None
+
+
+def test_agent_secret_is_stable_for_the_volume():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_secret", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    previous = os.environ.get("HERMES_HOME")
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        try:
+            first = whatsapp._agent_secret()
+            second = whatsapp._agent_secret()
+        finally:
+            if previous is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous
+    assert first == second
+    assert len(first) >= 43
+
+
+def test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    sent = []
+    media = []
+
+    async def deliver(payload):
+        sent.append(payload)
+        return True
+
+    async def send_media(spec):
+        media.append(spec)
+        return True
+
+    quiet.WHATSAPP_DELIVER = deliver
+    quiet.WHATSAPP_MEDIA = send_media
+    token = quiet.WHATSAPP.set({"to": "5511999999999", "message_id": "wamid.1"})
+    try:
+        result = asyncio.run(box.send_sequence({"items": [
+            {"type": "text", "body": "oi", "reply_to": "wamid.1"},
+            {"type": "pause", "seconds": 0},
+            {"type": "text", "body": "segunda"},
+            {"type": "text", "body": "MEDIA:/tmp/shot.png"},
+            {"type": "text", "body": "VOICE:/tmp/note.m4a"},
+        ]}, {"chat_uid": "cht_x"}))
+    finally:
+        quiet.WHATSAPP.reset(token)
+        quiet.WHATSAPP_DELIVER = None
+        quiet.WHATSAPP_MEDIA = None
+    assert result["success"] is True
+    assert sent == [{"text": "oi", "reply_to": "wamid.1"}, "segunda"]
+    assert media == [
+        {"path": "/tmp/shot.png", "voice": False, "reply_to": ""},
+        {"path": "/tmp/note.m4a", "voice": True, "reply_to": ""},
+    ]
+    assert box.posted == []
+
+
+def test_imessage_quote_field_does_not_reach_plow():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    result = asyncio.run(box.send_sequence(
+        {"items": [{"type": "text", "body": "oi", "reply_to": "wamid.1"}]},
+        {"chat_uid": "cht_x"},
+    ))
+    assert result["success"] is True
+    assert box.posted == [("sequence", {"items": [{"type": "text", "body": "oi"}]})]
+
+
+def test_whatsapp_turn_stays_in_the_session():
+    source = (ROOT / "image/plugins/zoen-face/whatsapp.py").read_text()
+    assert "event.internal = False" in source
+    assert "event.internal = True" not in source
+    spec = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_prompt", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert "history" in module._prompt("wamid.1")
+
+
+def test_whatsapp_reply_stays_off_imessage():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    sent = []
+
+    async def deliver(text):
+        sent.append(text)
+        return True
+
+    quiet.WHATSAPP_DELIVER = deliver
+    token = quiet.WHATSAPP.set({"to": "5511999999999"})
+    try:
+        result = asyncio.run(box.send_sequence({"items": [{"type": "text", "body": "oi"}]}, {"chat_uid": "cht_x"}))
+    finally:
+        quiet.WHATSAPP.reset(token)
+        quiet.WHATSAPP_DELIVER = None
+    assert result["success"] is True
+    assert sent == ["oi"]
+    assert box.posted == []
+
+
 def test_send_sequence_still_runs():
     Adapter = _adapter()
     quiet.silence(Adapter)
@@ -419,6 +632,14 @@ if __name__ == "__main__":
     test_contract_moves_scoped_factory_send_to_zoen_imessage()
     test_retired_hello_http_post_is_dropped()
     test_retired_hello_is_dropped()
+    test_whatsapp_owner_phone_is_the_handle_digits()
+    test_whatsapp_poll_starts_when_the_line_connects()
+    test_whatsapp_credits_follow_the_inbound_and_imessage_stays_on_imessage()
+    test_agent_secret_is_stable_for_the_volume()
+    test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp()
+    test_imessage_quote_field_does_not_reach_plow()
+    test_whatsapp_turn_stays_in_the_session()
+    test_whatsapp_reply_stays_off_imessage()
     test_send_sequence_still_runs()
     test_native_final_media_and_typing_are_preserved_status_chatter_is_dropped()
     test_media_sequence_uploads_file_instead_of_the_path()

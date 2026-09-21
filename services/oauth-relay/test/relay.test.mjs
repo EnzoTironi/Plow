@@ -1,7 +1,7 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,7 +15,11 @@ before(async () => {
     "--port", "18791", "--persist-to", folder, "--var", "FLOW_TTL_SECONDS:3",
     "--var", "GOOGLE_CLIENT_ID:fixture.apps.googleusercontent.com", "--var", "GOOGLE_CLIENT_SECRET:fixture-secret",
     "--var", "GOOGLE_ENCRYPTION_KEY:" + "ab".repeat(32), "--var", "GOOGLE_REDIRECT_URI:https://auth.example.com/callback",
-    "--var", "GOOGLE_ENABLED_CAPABILITIES:identity,calendar_read", "--var", "GOOGLE_AUTH_MODE:testing", "--log-level", "error"],
+    "--var", "GOOGLE_ENABLED_CAPABILITIES:identity,calendar_read", "--var", "GOOGLE_AUTH_MODE:testing",
+    "--var", "KAPSO_WEBHOOK_SECRET:fixture-hook", "--var", "WHATSAPP_POLL_TOKEN:fixture-poll-token-32",
+    "--var", "KAPSO_API_KEY:fixture-key", "--var", "KAPSO_PHONE_NUMBER_ID:123456789012345",
+    "--var", "KAPSO_API_BASE:http://127.0.0.1:18791/__fixture/kapso/v24.0",
+    "--var", "PLOW_API_BASE:http://127.0.0.1:18791/__fixture/plow", "--log-level", "error"],
   { stdio: ["ignore", "ignore", "pipe"], env: { ...globalThis.process.env, WRANGLER_SEND_METRICS: "false" } });
   let errors = "";
   process.stderr.on("data", (data) => { errors += data; });
@@ -177,4 +181,246 @@ test("Google registration and PKCE rejection use the real isolated Durable Objec
   const headers = { Authorization: `Bearer ${poll_token}` };
   assert.equal((await fetch(`${base}/flows/${data.flow_id}`, { method: "DELETE", headers })).status, 200);
   assert.equal((await callback({ state })).status, 409);
+});
+
+function kapso(payload, key) {
+  return {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Webhook-Event": "whatsapp.message.received",
+      "X-Webhook-Signature": createHmac("sha256", "fixture-hook").update(payload).digest("hex"),
+      "X-Idempotency-Key": key,
+    },
+    body: payload,
+  };
+}
+
+test("the two-factor link is one clickable address that opens the setup SMS", async () => {
+  const start = await fetch(`${base}/whatsapp/start`);
+  assert.equal(start.status, 200);
+  const html = await start.text();
+  assert.match(html, /class="connection-page"/);
+  assert.match(html, /class="brand"/);
+  assert.match(html, /Confirmação de dois fatores/);
+  assert.match(html, /Esse botão manda um SMS pra confirmar o seu telefone/);
+  assert.match(html, /Assim que você enviar, eu respondo aqui no WhatsApp/);
+  assert.match(html, /class="button" href="sms:\+16282463032\?&amp;body=Set%20this%20up%20for%20me%3A%20aiworthusing.com%2Fagent-index%2Fzoen"/);
+});
+
+test("a new WhatsApp number gets the setup SMS, then only its own agent", async () => {
+  const first = JSON.stringify({
+    message: { id: "wamid.1", type: "text", from: "5511999999999", text: { body: "oi" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Ana", phone_number: "5511999999999" },
+  });
+  const opened = await (await fetch(`${base}/whatsapp/webhook`, kapso(first, "idem-1"))).json();
+  assert.equal(opened.setup, true);
+  assert.equal(opened.ok, true);
+  const duplicate = await (await fetch(`${base}/whatsapp/webhook`, kapso(first, "idem-1"))).json();
+  assert.equal(duplicate.duplicate, true);
+  assert.equal((await fetch(`${base}/whatsapp/inbox`)).status, 403);
+  const badSig = kapso(first, "idem-bad");
+  badSig.headers["X-Webhook-Signature"] = "ab".repeat(32);
+  assert.equal((await fetch(`${base}/whatsapp/webhook`, badSig)).status, 401);
+  assert.equal((await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer wrong-agent-token", "Content-Type": "application/json" },
+    body: JSON.stringify({ phone: "5511999999999" }),
+  })).status, 403);
+  assert.equal((await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer fixture-agent-token-32", "Content-Type": "application/json" },
+    body: JSON.stringify({ phone: "5511888888888" }),
+  })).status, 403);
+  const registered = await (await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer fixture-agent-token-32", "Content-Type": "application/json" },
+    body: JSON.stringify({ phone: "5511999999999" }),
+  })).json();
+  assert.equal(registered.ok, true);
+  assert.match(registered.token, /^[A-Za-z0-9_-]{43,}$/);
+  const second = JSON.stringify({
+    message: { id: "wamid.2", type: "text", from: "5511999999999", text: { body: "voltei" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Ana", phone_number: "5511999999999" },
+  });
+  const again = await (await fetch(`${base}/whatsapp/webhook`, kapso(second, "idem-2"))).json();
+  assert.equal(again.setup, false);
+  const auth = { Authorization: `Bearer ${registered.token}` };
+  const inbox = await (await fetch(`${base}/whatsapp/inbox`, { headers: auth })).json();
+  assert.deepEqual(inbox.messages.map((message) => message.text), ["oi", "voltei"]);
+  assert.equal((await fetch(`${base}/whatsapp/send`, {
+    method: "POST",
+    headers: { ...auth, "Content-Type": "application/json" },
+    body: JSON.stringify({ to: "5511888888888", text: "nao" }),
+  })).status, 403);
+  assert.equal((await fetch(`${base}/whatsapp/send`, {
+    method: "POST",
+    headers: { ...auth, "Content-Type": "application/json" },
+    body: JSON.stringify({ to: "5511999999999", text: "oi ana" }),
+  })).status, 200);
+  assert.equal((await fetch(`${base}/whatsapp/inbox/ack`, {
+    method: "POST",
+    headers: { ...auth, "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: ["wamid.1", "wamid.2"] }),
+  })).status, 200);
+  const empty = await (await fetch(`${base}/whatsapp/inbox`, { headers: auth })).json();
+  assert.deepEqual(empty.messages, []);
+  const third = JSON.stringify({
+    message: { id: "wamid.3", type: "text", from: "5511777777777", text: { body: "bia" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Bia", phone_number: "5511777777777" },
+  });
+  const bia = await (await fetch(`${base}/whatsapp/webhook`, kapso(third, "idem-3"))).json();
+  assert.equal(bia.setup, true);
+  const fromContacts = await (await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer fixture-agent-token-33", "Content-Type": "application/json" },
+    body: JSON.stringify({ phone: "5511777777777" }),
+  })).json();
+  assert.equal(fromContacts.ok, true);
+  const brazil = JSON.stringify({
+    message: { id: "wamid.4", type: "text", from: "553199941160", text: { body: "Fala comigo" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Lia", phone_number: "553199941160" },
+  });
+  const openedBrazil = await (await fetch(`${base}/whatsapp/webhook`, kapso(brazil, "idem-4"))).json();
+  assert.equal(openedBrazil.setup, true);
+  const matched = await (await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer fixture-agent-token-34", "Content-Type": "application/json" },
+    body: JSON.stringify({ phone: "5531999941160" }),
+  })).json();
+  assert.equal(matched.ok, true);
+  const lia = { Authorization: `Bearer ${matched.token}` };
+  const waiting = await (await fetch(`${base}/whatsapp/inbox`, { headers: lia })).json();
+  assert.equal(waiting.messages[0].text, "Fala comigo");
+  assert.equal(waiting.messages[0].to, "553199941160");
+  const resumedRegister = await (await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer fixture-agent-token-34", "Content-Type": "application/json" },
+    body: "{}",
+  })).json();
+  assert.equal(resumedRegister.ok, true);
+  const resumed = await (await fetch(`${base}/whatsapp/inbox`, { headers: { Authorization: `Bearer ${resumedRegister.token}` } })).json();
+  assert.equal(resumed.messages[0].text, "Fala comigo");
+  const one = JSON.stringify({
+    message: { id: "wamid.5", type: "text", from: "5511611111111", text: { body: "um" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Um", phone_number: "5511611111111" },
+  });
+  const two = JSON.stringify({
+    message: { id: "wamid.6", type: "text", from: "5511622222222", text: { body: "dois" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Dois", phone_number: "5511622222222" },
+  });
+  assert.equal((await (await fetch(`${base}/whatsapp/webhook`, kapso(one, "idem-5"))).json()).setup, true);
+  assert.equal((await (await fetch(`${base}/whatsapp/webhook`, kapso(two, "idem-6"))).json()).setup, true);
+  const crowded = await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer fixture-agent-token-35", "Content-Type": "application/json" },
+    body: "{}",
+  });
+  assert.equal(crowded.status, 409);
+  const posts = await (await fetch(`${base}/__fixture/kapso/posts`)).json();
+  const button = posts.find((post) => post?.to === "5511611111111" && post?.type === "interactive");
+  const claim = new URL(button.interactive.action.parameters.url).searchParams.get("c");
+  assert.equal((await fetch(`${base}/whatsapp/start?c=${claim}`)).status, 200);
+  const claimed = await (await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer fixture-agent-token-35", "Content-Type": "application/json" },
+    body: "{}",
+  })).json();
+  assert.equal(claimed.ok, true);
+  const emailOwner = { Authorization: `Bearer ${claimed.token}` };
+  const held = await (await fetch(`${base}/whatsapp/inbox`, { headers: emailOwner })).json();
+  assert.equal(held.messages[0].text, "um");
+  assert.equal(held.messages[0].to, "5511611111111");
+});
+
+test("a cloud VM links with the uid it read from its own proxy", async () => {
+  const inbound = JSON.stringify({
+    message: { id: "wamid.cloud", type: "text", from: "5511633333333", text: { body: "cloud" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Cloud", phone_number: "5511633333333" },
+  });
+  assert.equal((await (await fetch(`${base}/whatsapp/webhook`, kapso(inbound, "idem-cloud"))).json()).setup, true);
+  const uid = "ab".repeat(16);
+  const secret = "a".repeat(43);
+  const register = (body) => fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer proxied", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  assert.equal((await register({})).status, 403);
+  const linked = await (await register({ agent_uid: uid, secret, phone: "5511633333333" })).json();
+  assert.equal(linked.ok, true);
+  const inbox = await (await fetch(`${base}/whatsapp/inbox`, { headers: { Authorization: `Bearer ${linked.token}` } })).json();
+  assert.equal(inbox.messages[0].text, "cloud");
+  assert.equal((await register({ agent_uid: uid, secret: "b".repeat(43) })).status, 403);
+  const resumed = await (await register({ agent_uid: uid, secret })).json();
+  assert.equal(resumed.ok, true);
+  assert.equal((await register({ agent_uid: "cd".repeat(16), secret: "c".repeat(43), phone: "5511633333333" })).status, 409);
+  assert.equal((await fetch(`${base}/whatsapp/release`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${resumed.token}` },
+  })).status, 200);
+  assert.equal((await fetch(`${base}/whatsapp/inbox`, { headers: { Authorization: `Bearer ${resumed.token}` } })).status, 403);
+  const again = JSON.stringify({
+    message: { id: "wamid.cloud2", type: "text", from: "5511633333333", text: { body: "de novo" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Cloud", phone_number: "5511633333333" },
+  });
+  assert.equal((await (await fetch(`${base}/whatsapp/webhook`, kapso(again, "idem-cloud-2"))).json()).setup, true);
+});
+
+test("a WhatsApp photo, quote and tapback stay on that chat", async () => {
+  const photo = JSON.stringify({
+    message: {
+      id: "wamid.photo",
+      type: "image",
+      from: "5511644444444",
+      image: { id: "media-jpeg", mime_type: "image/jpeg", caption: "olha" },
+      context: { id: "wamid.earlier" },
+      kapso: { direction: "inbound", quoted_content: "a mensagem de antes" },
+    },
+    conversation: { contact_name: "Foto", phone_number: "5511644444444" },
+  });
+  assert.equal((await (await fetch(`${base}/whatsapp/webhook`, kapso(photo, "idem-photo"))).json()).setup, true);
+  const registered = await (await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer fixture-agent-token-32", "Content-Type": "application/json" },
+    body: JSON.stringify({ phone: "5511644444444" }),
+  })).json();
+  const auth = { Authorization: `Bearer ${registered.token}`, "Content-Type": "application/json" };
+  const inbox = await (await fetch(`${base}/whatsapp/inbox`, { headers: auth })).json();
+  assert.equal(inbox.messages[0].text, "olha");
+  assert.equal(inbox.messages[0].media_id, "media-jpeg");
+  assert.equal(inbox.messages[0].kind, "image");
+  assert.equal(inbox.messages[0].reply_to, "wamid.earlier");
+  assert.equal(inbox.messages[0].reply_text, "a mensagem de antes");
+  const file = await fetch(`${base}/whatsapp/media?id=media-jpeg`, { headers: auth });
+  assert.equal(file.status, 200);
+  assert.equal(file.headers.get("content-type"), "image/jpeg");
+  assert.equal((await file.arrayBuffer()).byteLength, 4);
+  assert.equal((await fetch(`${base}/whatsapp/send`, {
+    method: "POST",
+    headers: auth,
+    body: JSON.stringify({ to: "5511644444444", text: "vi", reply_to: "wamid.photo" }),
+  })).status, 200);
+  assert.equal((await fetch(`${base}/whatsapp/send`, {
+    method: "POST",
+    headers: auth,
+    body: JSON.stringify({ to: "5511644444444", reaction: { type: "love", message_id: "wamid.photo" } }),
+  })).status, 200);
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64");
+  assert.equal((await fetch(`${base}/whatsapp/send`, {
+    method: "POST",
+    headers: auth,
+    body: JSON.stringify({
+      to: "5511644444444",
+      media: { mime: "image/png", name: "shot.png", data: png },
+      reply_to: "wamid.photo",
+    }),
+  })).status, 200);
+  const posts = await (await fetch(`${base}/__fixture/kapso/posts`)).json();
+  const quote = posts.find((post) => post?.context?.message_id === "wamid.photo" && post?.type === "text");
+  const heart = posts.find((post) => post?.type === "reaction" && post?.to === "5511644444444");
+  const picture = posts.find((post) => post?.type === "image" && post?.image?.id === "uploaded-media");
+  assert.equal(quote.text.body, "vi");
+  assert.equal(heart.reaction.emoji, "❤️");
+  assert.equal(picture.context.message_id, "wamid.photo");
 });

@@ -2,6 +2,9 @@ import { page } from "./page.js";
 
 import { HEADERS, capability, response, digest, readBody } from "./http.js";
 import { googleRoute, exchangeGoogleFlow } from "./google.js";
+import { whatsappRoute, WhatsAppInbox } from "./whatsapp.js";
+
+export { WhatsAppInbox };
 const ASSETS = new Set(["/style.css", "/sky-midnight.webp", "/zoen-avatar.webp"]);
 
 function callbackFrom(url) {
@@ -43,6 +46,10 @@ export default {
     }
     try {
       if (url.pathname.startsWith("/google/")) return await googleRoute(request, env);
+      if (url.pathname.startsWith("/whatsapp/")) {
+        const result = await whatsappRoute(request, env);
+        if (result) return result;
+      }
       if (url.pathname === "/flows" && request.method === "POST") {
         const { success } = await env.CREATE_LIMITER.limit({ key: request.headers.get("CF-Connecting-IP") || "local" });
         if (!success) return response({ error: "rate_limited" }, 429);

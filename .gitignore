@@ -16,3 +16,4 @@ client_secret_*.json
 # Live bearer from `plow-agents mint`. Never commit.
 plow-credentials
 /plow-credentials
+plow-credentials.orphaned

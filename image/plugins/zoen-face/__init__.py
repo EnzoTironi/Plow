@@ -26,6 +26,7 @@ import listen  # noqa: E402
 from . import presence  # noqa: E402
 from . import connections  # noqa: E402
 from . import owner_profile  # noqa: E402
+from . import whatsapp  # noqa: E402
 
 
 def _reset_home_skill() -> None:
@@ -46,6 +47,8 @@ def configure_adapters():
         if module is None:
             continue
         listen.install(module)
+        whatsapp.bind(quiet)
+        whatsapp.install(adapter, module)
         if hasattr(adapter, "_on_message"):
             quiet.configure_contract(module)
             quiet.claim_identity(module)

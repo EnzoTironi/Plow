@@ -19,3 +19,4 @@ services/
 # Live bearer from `plow-agents mint`. Build context is this directory.
 plow-credentials
 /plow-credentials
+plow-credentials.orphaned

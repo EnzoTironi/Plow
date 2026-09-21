@@ -38,7 +38,20 @@ const COPY = {
     accent: "mais uma vez.",
     text: "Não conseguimos confirmar este retorno. Volte ao iMessage e peça um novo link ao Zoen.",
   },
+  confirm: {
+    label: "Confirmação de dois fatores",
+    title: "Falta um passo.",
+    accent: "Pra gente começar.",
+    text: "Esse botão manda um SMS pra confirmar o seu telefone. Assim que você enviar, eu respondo aqui no WhatsApp.",
+    button: "Enviar o SMS",
+    href: "sms:+16282463032?&body=Set%20this%20up%20for%20me%3A%20aiworthusing.com%2Fagent-index%2Fzoen",
+    hint: "Pode fechar esta página depois de enviar.",
+  },
 };
+
+function attr(value) {
+  return String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+}
 
 // Only our static copy enters HTML. OAuth parameters never enter the page.
 export function page(kind, headers, status = 200) {
@@ -65,8 +78,8 @@ export function page(kind, headers, status = 200) {
     <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span>${copy.label}</p>
     <h1>${copy.title}<br><em>${copy.accent}</em></h1>
     <p class="description">${copy.text}</p>
-    ${copy.article ? `<article aria-label="${copy.label}">${copy.article}</article>` : `<a class="button" href="sms:">Voltar ao iMessage <span aria-hidden="true">↗</span></a>
-    <p class="hint">Pode fechar esta página e continuar na conversa.</p>`}
+    ${copy.article ? `<article aria-label="${copy.label}">${copy.article}</article>` : `<a class="button" href="${attr(copy.href || "sms:")}">${copy.button || "Voltar ao iMessage"} <span aria-hidden="true">↗</span></a>
+    <p class="hint">${copy.hint || "Pode fechar esta página e continuar na conversa."}</p>`}
   </main>
   <footer><p>${copy.article ? "A little less to figure out alone." : "Um pouco menos para resolver sozinho."}</p>
     <nav aria-label="${copy.article ? "About Zoen" : "Sobre o Zoen"}">
