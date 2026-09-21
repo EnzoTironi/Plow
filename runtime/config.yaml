@@ -17,15 +17,16 @@ model:
   provider: plow
 fallback_model:
   provider: plow
-  model: anthropic/claude-sonnet-5
+  model: z-ai/glm-5.3-flash
 providers:
   plow:
     models:
-      anthropic/claude-sonnet-5: {}
-      anthropic/claude-opus-5: {}
       openai/gpt-5.6-luna: {}
+      z-ai/glm-5.3-flash: {}
+      moonshotai/kimi-k2.5: {}
       moonshotai/kimi-k3: {}
+      anthropic/claude-opus-5: {}
 auxiliary:
   vision:
     provider: plow
-    model: anthropic/claude-sonnet-5
+    model: z-ai/glm-5.3-flash

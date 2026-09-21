@@ -8,7 +8,7 @@ description: Backstage for Zoen. Scanners plus interrogate plus the picture-map 
 Zoen is the talker. Code and comments. You are lead.
 
 `python3 /opt/plow/zoen/bundle.py` on the diff. Then **interrogate**
-(Opus + Sonnet reviewers).
+(Opus + Kimi K3 reviewers).
 
 Same finding schema:
 

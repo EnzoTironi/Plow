@@ -87,14 +87,34 @@ def test_apply_runtime_pins_talker_and_leaf_catalog():
     models = data["providers"]["plow"]["models"]
     assert models["z-ai/glm-5.2"]["prompt_caching"] is True
     for slug in (
-        "anthropic/claude-sonnet-5",
-        "anthropic/claude-opus-5",
         "openai/gpt-5.6-luna",
+        "z-ai/glm-5.3-flash",
+        "moonshotai/kimi-k2.5",
         "moonshotai/kimi-k3",
+        "anthropic/claude-opus-5",
     ):
         assert slug in models
-    assert data["auxiliary"]["vision"]["model"] == "anthropic/claude-sonnet-5"
+    assert "anthropic/claude-sonnet-5" not in models
+    assert data["fallback_model"]["model"] == "z-ai/glm-5.3-flash"
+    assert data["auxiliary"]["vision"]["model"] == "z-ai/glm-5.3-flash"
     assert enable.apply_runtime(data) is False
+
+
+def test_apply_runtime_drops_sonnet_from_an_existing_catalog():
+    data = {
+        "providers": {
+            "plow": {
+                "models": {
+                    "anthropic/claude-sonnet-5": {},
+                    "openai/gpt-5.6-luna": {},
+                }
+            }
+        }
+    }
+    assert enable.apply_runtime(data) is True
+    models = data["providers"]["plow"]["models"]
+    assert "anthropic/claude-sonnet-5" not in models
+    assert "openai/gpt-5.6-luna" in models
 
 
 def test_already_listed_still_gains_yolo():
@@ -222,6 +242,7 @@ if __name__ == "__main__":
     test_live_dump_gains_zoen_face_and_keeps_plow_chat()
     test_apply_runtime_turns_yolo_on_and_quiets_plow_chat()
     test_apply_runtime_pins_talker_and_leaf_catalog()
+    test_apply_runtime_drops_sonnet_from_an_existing_catalog()
     test_already_listed_still_gains_yolo()
     test_seed_text_keeps_indent_and_neighbors()
     test_refresh_replaces_stale_home_face_and_reopens_first_contact()

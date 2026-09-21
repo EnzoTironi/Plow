@@ -27,25 +27,27 @@ MODELS = {
     },
     "fallback_model": {
         "provider": "plow",
-        "model": "anthropic/claude-sonnet-5",
+        "model": "z-ai/glm-5.3-flash",
     },
     "providers": {
         "plow": {
             "models": {
-                "anthropic/claude-sonnet-5": {},
-                "anthropic/claude-opus-5": {},
                 "openai/gpt-5.6-luna": {},
+                "z-ai/glm-5.3-flash": {},
+                "moonshotai/kimi-k2.5": {},
                 "moonshotai/kimi-k3": {},
+                "anthropic/claude-opus-5": {},
             }
         }
     },
     "auxiliary": {
         "vision": {
             "provider": "plow",
-            "model": "anthropic/claude-sonnet-5",
+            "model": "z-ai/glm-5.3-flash",
         }
     },
 }
+DROPPED_MODELS = ("anthropic/claude-sonnet-5",)
 YOLO = {
     "approvals": {
         "mode": "off",
@@ -111,7 +113,16 @@ def load_overlay() -> dict:
 
 def apply_runtime(data: dict) -> bool:
     changed = _merge(data, YOLO)
-    return _merge(data, load_overlay()) or changed
+    changed = _merge(data, load_overlay()) or changed
+    providers = data.get("providers")
+    plow = providers.get("plow") if isinstance(providers, dict) else None
+    models = plow.get("models") if isinstance(plow, dict) else None
+    if isinstance(models, dict):
+        for slug in DROPPED_MODELS:
+            if slug in models:
+                del models[slug]
+                changed = True
+    return changed
 
 
 def enable_plugin(data: dict) -> bool:

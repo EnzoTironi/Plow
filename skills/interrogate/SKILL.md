@@ -23,7 +23,7 @@ One paragraph from the Brief, commits, or PR body. Then spawn.
 ## Fan
 
 One `delegate_task` lot. Same schema from every leaf. Reviewers:
-`anthropic/claude-opus-5` and `anthropic/claude-sonnet-5`. Critical
+`anthropic/claude-opus-5` and `moonshotai/kimi-k3`. Critical
 auth/money/prod: Opus is lead.
 
 ```text
