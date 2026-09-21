@@ -42,7 +42,7 @@ Polling, acknowledgement and cancellation use `Authorization: Bearer <poll_token
 The browser never sees that token. The agent registers state before disclosing its
 authorization link. Random values require at least 256 bits of entropy. State is
 the native SDK's responsibility; the adapter creates the independent poll token.
-Only its hash is stored. Expiration is five minutes, checked on every request and
+Only its hash is stored. Expiration is 15 minutes, checked on every request and
 backed by a Durable Object alarm. There is no shared relay administrator key.
 
 The native MCP callback transport never receives provider tokens or the PKCE

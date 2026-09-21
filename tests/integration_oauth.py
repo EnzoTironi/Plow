@@ -184,9 +184,14 @@ finally:
             provider.challenge = parse_qs(urlsplit(retry_url).query)["code_challenge"][0]
             if outcome == "cancelled":
                 assert retry.cancel()
+            elif outcome == "denied":
+                callback = {"state": retry.expected_state, "error": "access_denied", "iss": provider.base}
+                async with aiohttp.ClientSession() as http:
+                    async with http.get(retry.redirect_uri, params=callback) as response:
+                        assert response.status == 200
+                assert retry.cancel()
             else:
-                callback = {"state": retry.expected_state, "iss": "https://wrong-issuer.example" if outcome == "wrong_issuer" else provider.base}
-                callback.update({"error": "access_denied"} if outcome == "denied" else {"code": "fixture-code"})
+                callback = {"state": retry.expected_state, "code": "fixture-code", "iss": "https://wrong-issuer.example"}
                 async with aiohttp.ClientSession() as http:
                     async with http.get(retry.redirect_uri, params=callback) as response:
                         assert response.status == 200

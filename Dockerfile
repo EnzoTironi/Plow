@@ -72,6 +72,21 @@ RUN apt-get update \
  && npm install -g agent-browser@${AGENT_BROWSER_VERSION}
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 
+# Inbound STT and outbound TTS for iMessage voice memos. ffmpeg is on the
+# base image. Bake faster-whisper so the first memo does not lazy-install.
+ARG WHISPER_MODEL=tiny
+ENV ZOEN_WHISPER_MODEL=${WHISPER_MODEL} \
+    ZOEN_WHISPER_DIR=/opt/plow/whisper
+RUN set -eu; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends espeak-ng; \
+    rm -rf /var/lib/apt/lists/*; \
+    mkdir -p /opt/plow/whisper; \
+    /usr/local/bin/uv pip install --python /opt/hermes/.venv/bin/python --no-cache faster-whisper==1.2.1; \
+    /opt/hermes/.venv/bin/python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['ZOEN_WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['ZOEN_WHISPER_DIR'])"; \
+    command -v espeak-ng >/dev/null; \
+    command -v ffmpeg >/dev/null
+
 # plow-init composes $HOME/SOUL.md every boot from this base plus persona.md.
 # Replace the Plow-assistant seed. Copying only $HOME/SOUL.md does not stick.
 COPY runtime/SOUL.md /opt/hermes/plow-seed/SOUL.md

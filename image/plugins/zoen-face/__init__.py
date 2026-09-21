@@ -10,6 +10,7 @@ from . import quiet
 _ENABLE = Path("/opt/hermes/enable-zoen-face.py")
 
 SCRIPTS = Path("/opt/plow/zoen")
+REPO_SCRIPTS = Path(__file__).resolve().parents[3] / "skills/zoen/scripts"
 if SCRIPTS.is_dir():
     sys.modules.pop("face", None)
     if str(SCRIPTS) in sys.path:
@@ -17,8 +18,11 @@ if SCRIPTS.is_dir():
     sys.path.insert(0, str(SCRIPTS))
 elif str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
+if REPO_SCRIPTS.is_dir() and str(REPO_SCRIPTS) not in sys.path:
+    sys.path.append(str(REPO_SCRIPTS))
 
 import face  # noqa: E402
+import listen  # noqa: E402
 from . import presence  # noqa: E402
 from . import connections  # noqa: E402
 from . import owner_profile  # noqa: E402
@@ -39,7 +43,10 @@ def configure_adapters():
     for adapter in quiet._adapters():
         quiet.silence(adapter)
         module = sys.modules.get(adapter.__module__)
-        if module is not None and hasattr(adapter, "_on_message"):
+        if module is None:
+            continue
+        listen.install(module)
+        if hasattr(adapter, "_on_message"):
             quiet.configure_contract(module)
             quiet.claim_identity(module)
             presence.install(adapter, module, face.greet_on_dispatch)

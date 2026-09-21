@@ -77,7 +77,7 @@ class GoogleJob:
                             "Do not substitute a different account. Never print credential files.")
 
     async def wait_for_callback(self, expires_at, state):
-        deadline = min(expires_at / 1000, time.time() + 300)
+        deadline = min(expires_at / 1000, time.time() + 900)
         while time.time() < deadline:
             status = await self.relay.poll()
             if status.get("status") == "ready":

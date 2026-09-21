@@ -95,10 +95,26 @@ test("denial is delivered without untrusted error descriptions", async () => {
   assert.equal(result.status, 200);
   const html = await result.text();
   assert.match(html, /Autorização não concluída/);
+  assert.match(html, /mesmo link/);
   assert.ok(!html.includes("sensitive text"));
   const data = await (await fetch(flow.url, { headers: flow.headers })).json();
-  assert.equal(data.callback.error, "access_denied");
-  assert.equal(data.callback.error_description, undefined);
+  assert.equal(data.status, "pending");
+  assert.equal(data.callback, undefined);
+});
+
+test("signup error keeps the flow open for a later code", async () => {
+  const flow = await create();
+  assert.equal((await callback(flow, { code: "", error: "access_denied" })).status, 200);
+  assert.equal((await callback(flow, { code: "", error: "login_required" })).status, 200);
+  assert.equal((await (await fetch(flow.url, { headers: flow.headers })).json()).status, "pending");
+  const result = await callback(flow);
+  assert.equal(result.status, 200);
+  assert.match(await result.text(), /Autorização recebida/);
+  const data = await (await fetch(flow.url, { headers: flow.headers })).json();
+  assert.equal(data.status, "ready");
+  assert.equal(data.callback.code, "test-code");
+  assert.equal((await callback(flow, { code: "", error: "access_denied" })).status, 200);
+  assert.equal((await (await fetch(flow.url, { headers: flow.headers })).json()).callback.code, "test-code");
 });
 
 test("callback pages load only bundled assets and never reflect malformed input", async () => {

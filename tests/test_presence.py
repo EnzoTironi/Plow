@@ -1,6 +1,7 @@
 """Reception behavior without network, model calls or real conversations."""
 import asyncio
 import importlib.util
+import os
 import sys
 import time
 from pathlib import Path
@@ -8,6 +9,39 @@ from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "skills/zoen/scripts"))
+
+
+def _stub_if_missing(name, module):
+    if name in sys.modules:
+        return
+    try:
+        __import__(name)
+    except ImportError:
+        sys.modules[name] = module
+
+
+class _ClientError(Exception):
+    pass
+
+
+class _ClientSession:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    async def close(self):
+        return None
+
+
+_stub_if_missing("aiohttp", SimpleNamespace(
+    ClientError=_ClientError,
+    ClientTimeout=lambda **_kwargs: None,
+    ClientSession=_ClientSession,
+))
+_stub_if_missing("yaml", SimpleNamespace(
+    YAMLError=type("YAMLError", (Exception,), {}),
+    safe_load=lambda _text: {},
+))
+
 spec = importlib.util.spec_from_file_location("presence", ROOT / "image/plugins/zoen-face/presence.py")
 presence = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(presence)
@@ -392,3 +426,54 @@ def test_legacy_receipts_remain_sealed_against_replay(tmp_path):
     receipts = presence.Receipts(path)
     assert receipts.state("chat", "message") == {"status": "uncertain", "reaction": "uncertain"}
     assert not receipts.claim("chat", [{"uid": "message"}])
+
+
+class _Patch:
+    def __init__(self):
+        self._env = []
+        self._attrs = []
+
+    def setenv(self, key, value):
+        self._env.append((key, os.environ.get(key)))
+        os.environ[key] = value
+
+    def setattr(self, target, name, value):
+        self._attrs.append((target, name, getattr(target, name)))
+        setattr(target, name, value)
+
+    def undo(self):
+        for target, name, previous in reversed(self._attrs):
+            setattr(target, name, previous)
+        for key, previous in reversed(self._env):
+            if previous is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = previous
+
+
+if __name__ == "__main__":
+    import tempfile
+    import traceback
+
+    failed = 0
+    for name, fn in list(globals().items()):
+        if not name.startswith("test_") or not callable(fn):
+            continue
+        params = fn.__code__.co_varnames[: fn.__code__.co_argcount]
+        with tempfile.TemporaryDirectory() as folder:
+            patch = _Patch()
+            kwargs = {}
+            if "tmp_path" in params:
+                kwargs["tmp_path"] = Path(folder)
+            if "monkeypatch" in params:
+                kwargs["monkeypatch"] = patch
+            try:
+                fn(**kwargs)
+            except Exception:
+                failed += 1
+                traceback.print_exc()
+            finally:
+                patch.undo()
+    if failed:
+        raise SystemExit(failed)
+    print("ok")

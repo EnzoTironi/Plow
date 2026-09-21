@@ -20,7 +20,7 @@ def run_authorization(flow, config):
     # The native dashboard extends the outer probe timeout, but the transport's
     # initialize() has its own shorter timeout. Give human consent the same
     # window there; retain the normal configured timeout after connection.
-    resolved = {**resolved, "connect_timeout": max(float(resolved.get("connect_timeout", 0) or 0), 330)}
+    resolved = {**resolved, "connect_timeout": max(float(resolved.get("connect_timeout", 0) or 0), 930)}
     staging_parent = Path(target_home) / "zoen" / "oauth-pending"
     staging_parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     try:

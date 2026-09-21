@@ -99,7 +99,7 @@ class RelayOAuthFlow(DashboardOAuthFlow):
         await super().publish_authorization_url(url)
         self.phase = "awaiting_consent"
 
-    async def wait_for_callback(self, timeout=300):
+    async def wait_for_callback(self, timeout=900):
         deadline = time.monotonic() + timeout
         try:
             while time.monotonic() < deadline:

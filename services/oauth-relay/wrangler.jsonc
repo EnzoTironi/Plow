@@ -7,7 +7,7 @@
   "observability": { "enabled": false },
   "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": true },
   "vars": {
-    "FLOW_TTL_SECONDS": "300",
+    "FLOW_TTL_SECONDS": "900",
     // External / In production, published September 19. Scope verification
     // is pending; Google's warning, user cap and account policies still apply.
     "GOOGLE_AUTH_MODE": "unverified",

@@ -89,7 +89,7 @@ alone does not establish reliable automatic delivery of every notification.
    Worker using the opaque refresh handle. The Worker does not read Gmail, events
    or Drive contents. API outputs used in conversation enter the agent's context.
 
-The callback flow expires after five minutes. A successful exchange response is
+The callback flow expires after 15 minutes. A successful exchange response is
 encrypted in the same expiring record so a lost HTTP response can be recovered
 without redeeming the code twice. Acknowledgement/cancellation removes that
 delivery record. AES-GCM envelopes are bound to their purpose and OAuth client.

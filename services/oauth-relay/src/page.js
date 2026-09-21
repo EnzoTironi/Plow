@@ -18,7 +18,7 @@ const COPY = {
     label: "Autorização não concluída",
     title: "Tudo bem.",
     accent: "Você escolhe o acesso.",
-    text: "Esta tentativa não conectou sua conta. Se quiser tentar de novo, é só pedir ao Zoen na conversa.",
+    text: "Esta volta ainda não conectou a conta. Se você acabou de criar o cadastro, toque de novo no mesmo link que o Zoen mandou. A autorização continua aberta.",
   },
   expired: {
     label: "Link expirado",

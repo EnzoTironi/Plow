@@ -162,7 +162,7 @@ from the browser URL does not authorize retrieval.
 
 The relay temporarily holds the authorization code, state, issuer and error fields.
 It preserves those fields for native OAuth validation, does not log requests, and
-expires abandoned flows after five minutes. Hermes retains the PKCE verifier and performs token exchange
+expires abandoned flows after 15 minutes. Hermes retains the PKCE verifier and performs token exchange
 directly with the provider. Access tokens, refresh tokens and OAuth client secrets
 remain in the instance's native storage. The relay does not act as an OAuth provider
 or credential vault, and the public image contains no shared relay administration

@@ -90,8 +90,17 @@ export class OAuthFlow {
       if (!flow) return response({ error: "expired_or_unknown" }, 410);
       if (path === "/callback") {
         const callback = await request.json();
+        if (callback.state !== flow.state) return response({ error: "already_used" }, 409);
         if (flow.status === "ready" && JSON.stringify(flow.callback) === JSON.stringify(callback)) return response({ ok: true });
-        if (flow.status !== "pending" || callback.state !== flow.state) return response({ error: "already_used" }, 409);
+        if (flow.status === "ready" && flow.callback?.code && callback.error) return response({ ok: true });
+        if (flow.status !== "pending") return response({ error: "already_used" }, 409);
+        if (callback.error && !callback.code) {
+          // Signup and account-picker hops often return error first. Keep the
+          // attempt open so the same authorization URL can still deliver a code.
+          flow.last_error = callback.error;
+          await this.ctx.storage.put("flow", flow);
+          return response({ ok: true });
+        }
         flow.callback = callback;
         flow.status = "ready";
         await this.ctx.storage.put("flow", flow);
@@ -119,7 +128,7 @@ export class OAuthFlow {
       const same = flow.secretHash === body.secretHash && flow.provider === body.provider && flow.challenge === body.challenge;
       return response({ status: flow.status, expires_at: flow.expires }, same ? 200 : 409);
     }
-    const ttl = Math.min(600, Math.max(1, Number(this.env.FLOW_TTL_SECONDS) || 300));
+    const ttl = Math.min(1800, Math.max(1, Number(this.env.FLOW_TTL_SECONDS) || 900));
     flow = { ...body, expires: Date.now() + ttl * 1000, status: "pending" };
     await this.ctx.storage.put("flow", flow);
     await this.ctx.storage.setAlarm(flow.expires);

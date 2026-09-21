@@ -105,7 +105,7 @@ class ConnectionJob:
                 await self.announce(
                     "Pending authorization. Do not claim the account is connected yet. "
                     "The result arrives automatically; do not poll or start another login. "
-                    "This link expires in five minutes.\n"
+                    "This link expires in 15 minutes.\n"
                     f"Authorization URL:\n{snapshot['authorization_url']}"
                 )
             await asyncio.sleep(.2)

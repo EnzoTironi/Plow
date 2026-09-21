@@ -141,6 +141,14 @@ def test_pack_does_not_push_the_mac_when_latch_is_off():
     assert context.MAC_NUDGE not in packed
 
 
+def test_reminder_tells_the_model_to_transcribe_inbound_audio():
+    packed = context.pack("/tmp/zoen-context-missing-home", seed=False)
+    assert "listen.py" in packed
+    assert "speak.py" in packed
+    assert "Never ask them to type it" in packed
+    assert "Never say it was not transcribed" in packed
+
+
 def test_long_journal_keeps_latest_entry(tmp_path):
     folder = tmp_path / "zoen"
     folder.mkdir()
@@ -169,4 +177,5 @@ if __name__ == "__main__":
     test_pack_does_not_treat_an_acked_file_as_plugin_ack()
     test_pack_tells_the_model_to_drive_the_mac_when_latch_is_connected()
     test_pack_does_not_push_the_mac_when_latch_is_off()
+    test_reminder_tells_the_model_to_transcribe_inbound_audio()
     print("ok")
