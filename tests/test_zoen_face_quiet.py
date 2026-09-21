@@ -361,6 +361,8 @@ def test_seed_soul_is_zoen_not_a_plow_assistant():
     assert persona.lstrip().startswith("# Who you are")
     assert soul.split("\n", 1)[1] == persona.split("\n", 1)[1]
     assert "You are **Zoen**" in soul
+    assert "https://tryzoen.com" in soul
+    assert "add you to an iMessage group" in soul
     assert "You are a Plow assistant" not in soul
     assert "mention /help" in soul.lower()
     assert "zoen_connections" in soul
