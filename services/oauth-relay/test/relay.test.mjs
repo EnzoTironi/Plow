@@ -602,6 +602,7 @@ test("reset drops every registered number and a new one can start again", async 
   assert.deepEqual({ pending: cleared.pending, bindings: cleared.bindings, queued: cleared.queued }, {
     pending: 0, bindings: 0, queued: 0,
   });
+  assert.equal(cleared.note.stage, "reset");
   const phone = "5511900000099";
   assert.equal((await fetch(`${base}/whatsapp/webhook`, kapso(JSON.stringify({
     message: { id: "wamid.reset", type: "text", from: phone, text: { body: "oi" }, kapso: { direction: "inbound" } },

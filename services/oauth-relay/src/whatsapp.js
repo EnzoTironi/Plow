@@ -724,6 +724,7 @@ export class WhatsAppInbox {
     box.codes = {};
     box.heard = {};
     box.seen = [];
+    box.note = { at: Date.now(), stage: "reset", status: 200, error: "", uid_len: 0 };
     await this.ctx.storage.put("box", box);
     return response({ ok: true });
   }
