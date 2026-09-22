@@ -23,6 +23,8 @@ for _path in (_SCRIPTS, _REPO_SCRIPTS):
         sys.path.insert(0, str(_path))
 
 from credits import (  # noqa: E402
+    clear_told,
+    is_notice as credits_is_notice,
     language as credits_language,
     looks_like as credits_looks_like,
     mark_told,
@@ -606,20 +608,46 @@ async def _deliver_whatsapp(items):
     return {"success": True, "completed": completed}
 
 
+def _bubble_text(items) -> str:
+    parts = []
+    for item in items or []:
+        if isinstance(item, dict):
+            body = item.get("body") or item.get("text") or ""
+        else:
+            body = item
+        if str(body).strip():
+            parts.append(str(body))
+    return "\n".join(parts)
+
+
+def _remember_credits(result, channel: str, credits_only: bool):
+    if not isinstance(result, dict) or not result.get("success"):
+        return result
+    if credits_only:
+        mark_told(credits_notice(credits_language()), channel=channel)
+    else:
+        clear_told(channel=channel)
+    return result
+
+
 def _wrap_sequence(orig_seq, orig_attach, orig_voice):
     async def send_sequence(self, args, turn, receipt=None):
         items = [item for item in list((args or {}).get("items") or []) if not _retired_hello(item)]
         args = {**(args or {}), "items": items}
         if not items:
             return {"success": True, "completed": []}
+        channel = _channel_name(WHATSAPP.get())
+        credits_only = credits_is_notice(_bubble_text(items))
+        if credits_only and recently_told(channel=channel):
+            return {"success": True, "completed": []}
         delivered = await _deliver_whatsapp(items)
         if delivered is not None:
-            return delivered
+            return _remember_credits(delivered, channel, credits_only)
         items = _plain_items(items)
         args = {**args, "items": items}
         chunks = expand_items(items)
         if not any(kind in {"file", "voice"} for kind, _ in chunks):
-            return await orig_seq(self, args, turn, receipt)
+            return _remember_credits(await orig_seq(self, args, turn, receipt), channel, credits_only)
         chat_id = (turn or {}).get("chat_uid")
         report = receipt if receipt is not None else {}
         report.update(success=False, completed=[])
@@ -647,7 +675,7 @@ def _wrap_sequence(orig_seq, orig_attach, orig_voice):
                 return report
             report["completed"].append({"index": index, "type": kind})
         report["success"] = bool(report["completed"])
-        return report
+        return _remember_credits(report, channel, credits_only)
 
     send_sequence.__name__ = "send_sequence"
     send_sequence.__qualname__ = "send_sequence"

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +29,6 @@ NOTICE = {
         "recharge sur app.plow.co/dashboard pour que je continue"
     ),
 }
-STAMP_S = 180
 
 
 def notice(lang: str | None) -> str:
@@ -70,9 +68,20 @@ def looks_like(text: Any) -> bool:
     blob = _blob(text)
     if "out of plow credits" in blob or "billing or credits exhausted" in blob:
         return True
-    if "app.plow.co/dashboard" in blob and "credit" in blob:
+    if "app.plow.co/dashboard" in blob and any(
+        word in blob for word in ("credit", "crédit", "crédito")
+    ):
         return True
     return "credit" in blob and "402" in blob
+
+
+def is_notice(text: Any) -> bool:
+    if looks_like(text):
+        return True
+    blob = " ".join(_blob(text).split())
+    if not blob:
+        return False
+    return blob in {" ".join(body.lower().split()) for body in NOTICE.values()}
 
 
 def result_is_credits(result: dict[str, Any] | None) -> bool:
@@ -93,9 +102,13 @@ def stamp_path(home: str | None = None, channel: str = "imessage") -> Path | Non
 
 def recently_told(home: str | None = None, channel: str = "imessage") -> bool:
     path = stamp_path(home, channel)
-    if path is None or not path.is_file():
-        return False
-    return (time.time() - path.stat().st_mtime) < STAMP_S
+    return path is not None and path.is_file()
+
+
+def clear_told(home: str | None = None, channel: str = "imessage") -> None:
+    path = stamp_path(home, channel)
+    if path is not None and path.is_file():
+        path.unlink()
 
 
 def mark_told(body: str, home: str | None = None, channel: str = "imessage") -> None:

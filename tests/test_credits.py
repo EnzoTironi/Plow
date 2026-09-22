@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Run: python3 tests/test_credits.py"""
 import importlib.util
+import os
 import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +48,13 @@ def test_recently_told_is_scoped_to_home():
         credits.mark_told(credits.notice("pt"), d, "whatsapp")
         assert credits.recently_told(d, "whatsapp")
         assert (Path(d) / "zoen" / "credits-whatsapp").is_file()
+        stamp = Path(d) / "zoen" / "credits"
+        old = time.time() - 3 * 60 * 60
+        os.utime(stamp, (old, old))
+        assert credits.recently_told(d)
+        credits.clear_told(d)
+        assert not credits.recently_told(d)
+        assert credits.recently_told(d, "whatsapp")
 
 
 if __name__ == "__main__":

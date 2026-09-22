@@ -77,6 +77,42 @@ def test_leftover_credits_error_becomes_the_dashboard_bubble():
     assert result.success is True
 
 
+def test_credits_notice_stays_quiet_until_a_normal_reply():
+    Adapter = _adapter()
+    blob = (
+        'HTTP 402: {"detail":"You\'re out of Plow credits. '
+        'Top up at app.plow.co/dashboard to keep going."}'
+    )
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        (Path(home) / "zoen").mkdir()
+        (Path(home) / "zoen" / "VOICE.md").write_text("language: pt\n")
+        try:
+            quiet.silence(Adapter)
+            box = Adapter()
+            asyncio.run(box.send("cht_x", blob))
+            stamp = Path(home) / "zoen" / "credits"
+            old = time.time() - 3 * 60 * 60
+            os.utime(stamp, (old, old))
+            asyncio.run(box.send("cht_x", blob))
+            asyncio.run(box.send_sequence(
+                {"items": [{"type": "text", "body": quiet.credits_notice("pt")}]},
+                {"chat_uid": "cht_x"},
+            ))
+            asyncio.run(box.send_sequence(
+                {"items": [{"type": "text", "body": "voltei"}]},
+                {"chat_uid": "cht_x"},
+            ))
+            asyncio.run(box.send("cht_x", blob))
+        finally:
+            os.environ.pop("HERMES_HOME", None)
+    assert box.posted == [
+        ("send", quiet.credits_notice("pt")),
+        ("sequence", {"items": [{"type": "text", "body": "voltei"}]}),
+        ("send", quiet.credits_notice("pt")),
+    ]
+
+
 def test_normal_final_is_dropped():
     Adapter = _adapter()
     quiet.silence(Adapter)

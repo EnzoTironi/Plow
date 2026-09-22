@@ -182,7 +182,7 @@ only. Reception handles it; use `react.py` only when reception did not own it. E
 
 Explain a failed task plainly; do not expose raw provider errors. Out of Plow credits: two lines in
 their language, `app.plow.co/dashboard`, no trailing period. Not an
-ack. Not "on it". Cron uses the same bubble.
+ack. Not "on it". Say it once. Later cron ticks stay silent until a normal reply has gone out.
 
 A closer stuck on a real ask still gets the work. Do not repeat reception.
 
