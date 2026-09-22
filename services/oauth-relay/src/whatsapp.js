@@ -583,6 +583,7 @@ export class WhatsAppInbox {
       let box = await this.ctx.storage.get("box");
       const now = Date.now();
       box = normalize(box, now);
+      if (await this.retire(box)) await this.ctx.storage.put("box", box);
       if (path === "/ingest") return this.ingest(box, await request.json(), now);
       if (path === "/forget-setup") return this.forgetSetup(box, await request.json());
       if (path === "/confirm") return this.confirm(box, await request.json());
@@ -713,26 +714,22 @@ export class WhatsAppInbox {
   async release(box, hash) {
     const phone = phoneFor(box, hash);
     if (!phone) return response({ error: "unauthorized" }, 403);
-    const agent = box.bindings[phone]?.agent || "";
-    if (agent) {
-      for (const code of Object.keys(box.codes)) {
-        if (box.codes[code].agent === agent) delete box.codes[code];
-      }
-    }
-    for (const code of Object.keys(box.heard)) {
-      if (samePhone(box.heard[code], phone)) delete box.heard[code];
-    }
-    for (const key of Object.keys(box.bindings)) {
-      if (samePhone(key, phone)) delete box.bindings[key];
-    }
-    for (const key of Object.keys(box.pending)) {
-      if (samePhone(key, phone)) delete box.pending[key];
-    }
-    for (const key of Object.keys(box.queues)) {
-      if (samePhone(key, phone)) delete box.queues[key];
-    }
+    dropPhone(box, phone);
     await this.ctx.storage.put("box", box);
     return response({ ok: true });
+  }
+
+  // FORGET_PHONE clears one number the first time it is actually stored.
+  // After that the same number can pair again, so a leftover secret does not
+  // lock the owner out.
+  async retire(box) {
+    const phone = digits(this.env?.FORGET_PHONE);
+    if (!phone) return false;
+    const mark = await digest(phone);
+    if (box.retired === mark || !phoneIsPresent(box, phone)) return false;
+    dropPhone(box, phone);
+    box.retired = mark;
+    return true;
   }
 
   async allow(box, hash, body) {
@@ -750,6 +747,7 @@ export class WhatsAppInbox {
 
   async alarm() {
     const box = normalize(await this.ctx.storage.get("box"), Date.now());
+    await this.retire(box);
     await this.ctx.storage.put("box", box);
     if (Object.values(box.queues).some((queue) => queue.length)) await this.ctx.storage.setAlarm(Date.now() + HOLD_MS);
   }
@@ -766,6 +764,36 @@ function normalize(box, now) {
     if ((box.codes[code]?.at || 0) <= now - HOLD_MS) delete box.codes[code];
   }
   return box;
+}
+
+function phoneIsPresent(box, phone) {
+  const target = digits(phone);
+  if (!target) return false;
+  for (const bucket of [box.bindings, box.pending, box.queues]) {
+    if (Object.keys(bucket).some((key) => samePhone(key, target))) return true;
+  }
+  return Object.values(box.heard || {}).some((value) => samePhone(value, target));
+}
+
+function dropPhone(box, phone) {
+  const target = digits(phone);
+  if (!target) return false;
+  const bound = Object.keys(box.bindings).find((key) => samePhone(key, target));
+  const agent = bound ? box.bindings[bound]?.agent || "" : "";
+  if (agent) {
+    for (const code of Object.keys(box.codes)) {
+      if (box.codes[code].agent === agent) delete box.codes[code];
+    }
+  }
+  for (const code of Object.keys(box.heard)) {
+    if (samePhone(box.heard[code], target)) delete box.heard[code];
+  }
+  for (const bucket of [box.bindings, box.pending, box.queues]) {
+    for (const key of Object.keys(bucket)) {
+      if (samePhone(key, target)) delete bucket[key];
+    }
+  }
+  return true;
 }
 
 function phoneFor(box, hash) {

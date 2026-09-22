@@ -18,6 +18,7 @@ before(async () => {
     "--var", "GOOGLE_ENABLED_CAPABILITIES:identity,calendar_read", "--var", "GOOGLE_AUTH_MODE:testing",
     "--var", "KAPSO_WEBHOOK_SECRET:fixture-hook", "--var", "WHATSAPP_POLL_TOKEN:fixture-poll-token-32",
     "--var", "KAPSO_API_KEY:fixture-key", "--var", "KAPSO_PHONE_NUMBER_ID:123456789012345",
+    "--var", "FORGET_PHONE:5511900000001",
     "--var", "KAPSO_API_BASE:http://127.0.0.1:18791/__fixture/kapso/v24.0",
     "--var", "PLOW_API_BASE:http://127.0.0.1:18791/__fixture/plow", "--log-level", "error"],
   { stdio: ["ignore", "ignore", "pipe"], env: { ...globalThis.process.env, WRANGLER_SEND_METRICS: "false" } });
@@ -315,14 +316,14 @@ test("a new WhatsApp number gets the setup SMS, then only its own agent", async 
   )).linked;
   assert.equal(fromContacts.ok, true);
   const brazil = JSON.stringify({
-    message: { id: "wamid.4", type: "text", from: "553199941160", text: { body: "Fala comigo" }, kapso: { direction: "inbound" } },
-    conversation: { contact_name: "Lia", phone_number: "553199941160" },
+    message: { id: "wamid.4", type: "text", from: "551100000000", text: { body: "Fala comigo" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Lia", phone_number: "551100000000" },
   });
   const openedBrazil = await (await fetch(`${base}/whatsapp/webhook`, kapso(brazil, "idem-4"))).json();
   assert.equal(openedBrazil.setup, true);
   const matched = (await pair(
     { Authorization: "Bearer fixture-agent-token-34" },
-    "553199941160",
+    "551100000000",
     "333333",
     "pair-lia",
   )).linked;
@@ -330,7 +331,7 @@ test("a new WhatsApp number gets the setup SMS, then only its own agent", async 
   const lia = { Authorization: `Bearer ${matched.token}` };
   const waiting = await (await fetch(`${base}/whatsapp/inbox`, { headers: lia })).json();
   assert.equal(waiting.messages[0].text, "Fala comigo");
-  assert.equal(waiting.messages[0].to, "553199941160");
+  assert.equal(waiting.messages[0].to, "551100000000");
   const resumedRegister = await (await fetch(`${base}/whatsapp/register`, {
     method: "POST",
     headers: { Authorization: "Bearer fixture-agent-token-34", "Content-Type": "application/json" },
@@ -560,4 +561,27 @@ test("a code that already came from SMS links WhatsApp without another two-facto
   assert.match(linked.token, /^[A-Za-z0-9_-]{43,}$/);
   const posts = await (await fetch(`${base}/__fixture/kapso/posts`)).json();
   assert.equal(posts.filter((post) => post?.to === phone).length, 0);
+});
+
+test("the configured phone is cleared once and every other number stays", async () => {
+  const diag = async () => (await fetch(`${base}/whatsapp/diag`)).json();
+  const inbound = (phone, key) => fetch(`${base}/whatsapp/webhook`, kapso(JSON.stringify({
+    message: { id: key, type: "text", from: phone, text: { body: "oi" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Alvo", phone_number: phone },
+  }), key));
+  const before = await diag();
+  assert.equal((await inbound("551100000001", "idem-forget-1")).status, 200);
+  const wiped = await diag();
+  assert.equal(wiped.pending, before.pending);
+  assert.equal(wiped.queued, before.queued);
+  assert.equal(wiped.bindings, before.bindings);
+  assert.equal((await inbound("5511900000002", "idem-forget-keep")).status, 200);
+  const kept = await diag();
+  assert.equal(kept.pending, before.pending + 1);
+  assert.equal(kept.queued, before.queued + 1);
+  assert.equal((await inbound("551100000001", "idem-forget-2")).status, 200);
+  const again = await diag();
+  assert.equal(again.pending, before.pending + 2);
+  assert.equal(again.queued, before.queued + 2);
+  assert.equal(again.bindings, before.bindings);
 });
