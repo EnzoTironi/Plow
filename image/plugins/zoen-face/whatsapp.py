@@ -1100,11 +1100,20 @@ async def _ensure_pairing(agent: str) -> None:
         await _push_pairing(agent, found)
 
 
+def poll_pause(idle: int) -> float:
+    """Seconds until the next inbox check. A delivery passes 0 and checks again in a second."""
+    if idle <= 0:
+        return 1
+    return (2, 5, 15, 30)[min(idle, 4) - 1]
+
+
 async def _run(adapter_cls, module, base) -> None:
     global _TOKEN
     _TOKEN = ""
     adopted = False
+    idle = 0
     while True:
+        found = False
         try:
             agent = os.environ.get("PLOW_AGENT_TOKEN", "").strip()
             if not adopted:
@@ -1139,9 +1148,11 @@ async def _run(adapter_cls, module, base) -> None:
                         codes = codes[:-1]
                 for message in codes:
                     await _request("POST", base + "/whatsapp/inbox/ack", _TOKEN, {"ids": [message.get("id")]})
+                found = bool(real or codes)
         except Exception:
             log.warning("whatsapp poll failed")
-        await asyncio.sleep(2)
+        idle = 0 if found else idle + 1
+        await asyncio.sleep(poll_pause(0 if found else idle))
 
 
 def _owner_chat(adapter, module):

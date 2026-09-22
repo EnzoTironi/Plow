@@ -925,6 +925,20 @@ def test_whatsapp_uncertain_send_is_not_repeated():
     assert calls == ["oi"]
 
 
+def test_whatsapp_idle_poll_backs_off():
+    spec = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_poll", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.poll_pause(0) == 1
+    assert module.poll_pause(1) == 2
+    assert module.poll_pause(2) == 5
+    assert module.poll_pause(3) == 15
+    assert module.poll_pause(4) == 30
+    assert module.poll_pause(9) == 30
+
+
 def test_whatsapp_reaction_is_the_agents_tapback_not_a_second_model():
     source = (ROOT / "image/plugins/zoen-face/whatsapp.py").read_text()
     assert "_react(" not in source
@@ -1278,6 +1292,7 @@ if __name__ == "__main__":
     test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp()
     test_whatsapp_line_break_is_its_own_bubble()
     test_whatsapp_uncertain_send_is_not_repeated()
+    test_whatsapp_idle_poll_backs_off()
     test_whatsapp_reaction_is_the_agents_tapback_not_a_second_model()
     test_imessage_quote_field_does_not_reach_plow()
     test_whatsapp_turn_stays_in_the_session()
