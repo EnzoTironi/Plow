@@ -8,7 +8,7 @@ description: Backstage for Zoen. The one fact this change is safe because of. Pr
 Zoen is the talker. What the change breaks somewhere else, before it
 ships. Listing callers is not the job. Grep those in a second. The
 job is the breakage grep will not show. High-risk / critical:
-`anthropic/claude-opus-5`.
+`openai/gpt-5.6-luna`.
 
 Companion to how and why.
 

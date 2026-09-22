@@ -187,10 +187,8 @@ similar speed, not a claim that Luna is always faster. The
 [OpenRouter model catalog](https://openrouter.ai/api/v1/models) listed Luna at
 $0.20/M input and $1.20/M output tokens, versus Sonnet at $2/M and $10/M, for the
 short-context pricing tier on 2026-09-19. These are catalog rates, not a guarantee
-of Plow billing. Luna is the main and reception default; only reception explicitly
-disables reasoning. The vision auxiliary is GLM 5.3 Flash. The main agent also has
-a native Hermes fallback to GLM 5.3 Flash through the same Plow provider when Luna is
-unavailable. Sonnet is not in the pinned catalog. Live Treg validation exposed
+of Plow billing. Luna is the only pinned model: main turn, reception, vision,
+and fallback. Only reception explicitly disables reasoning. Live Treg validation exposed
 temporary upstream Luna rate limits; a streamed Sonnet response through Plow was
 verified before the first fallback existed. This cannot bypass an outage of Plow itself,
 and the reception call still uses Luna.

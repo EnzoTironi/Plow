@@ -20,34 +20,30 @@ REPO_OVERLAY = Path(__file__).resolve().parents[1] / "runtime/config.yaml"
 LIVE = Path(os.environ.get("HERMES_HOME", "/var/lib/hermes")) / "config.yaml"
 BUNDLED_SKILL = Path("/opt/hermes/skills/zoen")
 BUNDLED_SCRIPTS = Path("/opt/hermes/skills/zoen/scripts")
+LUNA = "openai/gpt-5.6-luna"
 MODELS = {
     "model": {
-        "default": "openai/gpt-5.6-luna",
+        "default": LUNA,
         "provider": "plow",
     },
     "fallback_model": {
         "provider": "plow",
-        "model": "z-ai/glm-5.3-flash",
+        "model": LUNA,
     },
     "providers": {
         "plow": {
             "models": {
-                "openai/gpt-5.6-luna": {},
-                "z-ai/glm-5.3-flash": {},
-                "moonshotai/kimi-k2.5": {},
-                "moonshotai/kimi-k3": {},
-                "anthropic/claude-opus-5": {},
+                LUNA: {},
             }
         }
     },
     "auxiliary": {
         "vision": {
             "provider": "plow",
-            "model": "z-ai/glm-5.3-flash",
+            "model": LUNA,
         }
     },
 }
-DROPPED_MODELS = ("anthropic/claude-sonnet-5",)
 YOLO = {
     "approvals": {
         "mode": "off",
@@ -118,8 +114,8 @@ def apply_runtime(data: dict) -> bool:
     plow = providers.get("plow") if isinstance(providers, dict) else None
     models = plow.get("models") if isinstance(plow, dict) else None
     if isinstance(models, dict):
-        for slug in DROPPED_MODELS:
-            if slug in models:
+        for slug in list(models):
+            if slug != LUNA:
                 del models[slug]
                 changed = True
     return changed

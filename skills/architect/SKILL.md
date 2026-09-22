@@ -6,7 +6,7 @@ description: Backstage for Zoen. Ground, sketch competing shapes, pick, scrap. I
 # Architect
 
 Zoen is the talker. Design before implementing. Spawn this lead on
-`anthropic/claude-opus-5`. Types, signatures, modules, bodies
+`openai/gpt-5.6-luna`. Types, signatures, modules, bodies
 `not implemented`. If fill-in proves the sketch wrong, throw it out.
 
 ## Ground
