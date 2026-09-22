@@ -463,6 +463,11 @@ test("a WhatsApp photo, quote and tapback stay on that chat", async () => {
   assert.equal((await fetch(`${base}/whatsapp/send`, {
     method: "POST",
     headers: auth,
+    body: JSON.stringify({ to: "5511644444444", reaction: { emoji: "👍", message_id: "wamid.photo" } }),
+  })).status, 200);
+  assert.equal((await fetch(`${base}/whatsapp/send`, {
+    method: "POST",
+    headers: auth,
     body: JSON.stringify({ to: "5511644444444", typing: true, message_id: "wamid.photo" }),
   })).status, 200);
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64");
@@ -477,11 +482,15 @@ test("a WhatsApp photo, quote and tapback stay on that chat", async () => {
   })).status, 200);
   const posts = await (await fetch(`${base}/__fixture/kapso/posts`)).json();
   const quote = posts.find((post) => post?.context?.message_id === "wamid.photo" && post?.type === "text");
-  const heart = posts.find((post) => post?.type === "reaction" && post?.to === "5511644444444");
+  const heart = posts.find((post) => post?.reaction?.emoji === "❤️");
+  const thumb = posts.find((post) => post?.reaction?.emoji === "👍");
   const typing = posts.find((post) => post?.typing_indicator?.type === "text" && post?.message_id === "wamid.photo");
   const picture = posts.find((post) => post?.type === "image" && post?.image?.id === "uploaded-media");
   assert.equal(quote.text.body, "vi");
-  assert.equal(heart.reaction.emoji, "❤️");
+  assert.equal(heart.reaction.message_id, "wamid.photo");
+  assert.equal(heart.messaging_product, "whatsapp");
+  assert.equal(thumb.reaction.message_id, "wamid.photo");
+  assert.equal(thumb.to, "5511644444444");
   assert.equal(typing.status, "read");
   assert.equal(typing.typing_indicator.type, "text");
   assert.equal(picture.context.message_id, "wamid.photo");

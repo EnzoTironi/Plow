@@ -9,11 +9,19 @@ import logging
 import os
 import re
 import secrets
+import time
 from pathlib import Path
 from urllib.parse import quote
 
 log = logging.getLogger("zoen-whatsapp")
 WHATSAPP_DOOR = "553798136141"
+ONBOARD_SECONDS = 10.0
+CARD_RESERVE = 4.0
+try:
+    import face as _face
+except ImportError:
+    # Tests load this file before /opt/plow/zoen is on sys.path.
+    _face = None
 _IMAGE_STAMP = "/etc/zoen-image-id"
 _QUIET = None
 _TASK = None
@@ -42,16 +50,24 @@ def _prompt(message_id: str, *, first: bool = False) -> str:
         )
     return (
         opening
-        + "The only way they see a reply is zoen_imessage, and that call is delivered on WhatsApp. "
+        + "WhatsApp has no reception agent. Nothing has been sent for this bubble. "
+        "First, understand the request, then do these two before the rest of the work: "
+        f"python3 /opt/plow/zoen/react.py TYPE --message {message_id} "
+        "and one short zoen_imessage with purpose progress that shows you understood. "
+        "TYPE is like, love, laugh, emphasize, question, or dislike. "
+        "The relay turns that into Kapso's reaction body: reaction.message_id and reaction.emoji. "
+        "A quote is reply_to on that zoen_imessage item. The relay sends it as context.message_id. "
+        "Read skill kapso before a reaction, quote, voice note, or contact card. Do not call Kapso. "
+        "An uncertain send already counts. Do not send that bubble again and do not explain the delivery. "
+        "At each later step, send another short zoen_imessage with purpose progress "
+        "before you move on. Say what you are doing for them, in their words. "
+        "The last message of the turn is the result, with purpose answer. "
+        "The only way they see a reply is zoen_imessage, and that call is delivered on WhatsApp. "
         "Each text item is its own bubble. A line break inside that item is another bubble. "
         "MEDIA:/absolute/path sends the picture here. "
         "VOICE:/absolute/path sends the voice note here. "
         f"This bubble's id is {message_id}. "
-        "To quote a bubble, set reply_to on that zoen_imessage item to its id. "
-        "A tapback is react.py and lands on this bubble. "
-        "Reception owns this burst's opening and tapback. "
-        "Continue the actual work immediately; do not repeat the opening or reaction. "
-        "Do not mention Kapso, the relay, or this note."
+        "Do not mention Kapso, the relay, or this note to them."
     )
 _HOME = ""
 
@@ -301,6 +317,7 @@ def pairing_bubbles(code: str, door: str = WHATSAPP_DOOR) -> list[str]:
         "pode continuar conversando comigo por aqui",
         "ou conversar comigo pelo whatsapp, clicando no link e enviando o código",
         f"https://wa.me/{door}?text={code}",
+        "Enzo me criou. consigo conectar seus apps, mais de mil, onde você precisar",
     ]
 
 
@@ -527,6 +544,31 @@ def _code_announced(code: str, chat: str = "") -> bool:
     return bool(sent)
 
 
+def _cards_sync(chat: str, deadline: float) -> dict:
+    """Send both vCards on this chat. Stops when the onboarding budget is gone."""
+    base = os.environ.get("PLOW_API_BASE", "")
+    if _face is None or "plow.example" in base or not os.environ.get("PLOW_AGENT_TOKEN", "").strip():
+        return {"ok": False, "skipped": "no live token"}
+    return _face.cards(chat=chat, deadline=deadline)
+
+
+async def _attach_cards(chat: str, deadline: float) -> None:
+    """Both contact cards, inside the time still left of the 10 second burst."""
+    if not str(chat).startswith("cht_"):
+        return
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        log.warning("onboarding cards missed the 10s budget")
+        return
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(_cards_sync, chat, deadline),
+            timeout=remaining,
+        )
+    except (Exception, SystemExit, asyncio.TimeoutError):
+        log.warning("onboarding cards stopped inside the 10s budget")
+
+
 async def _announce_code(agent: str, chat: str, code: str) -> None:
     """One normal message on the chat the owner already has. RCS and iMessage both use this send."""
     if not agent or not chat:
@@ -534,9 +576,12 @@ async def _announce_code(agent: str, chat: str, code: str) -> None:
     api = os.environ.get("PLOW_API_BASE", "").strip().rstrip("/")
     if not api or not _claim_chat(chat):
         return
+    deadline = time.monotonic() + ONBOARD_SECONDS
     sent = False
     try:
         for bubble in pairing_bubbles(code):
+            if time.monotonic() >= deadline - CARD_RESERVE:
+                break
             await _request(
                 "POST",
                 f"{api}/v1/chats/{quote(chat, safe='')}/messages",
@@ -547,7 +592,11 @@ async def _announce_code(agent: str, chat: str, code: str) -> None:
     except RuntimeError as exc:
         if str(exc).startswith("whatsapp_http_") and not sent:
             _release_chat(chat)
-        raise
+            raise
+        log.warning("onboarding text stopped inside the 10s budget")
+    except _Uncertain:
+        log.warning("onboarding text uncertain; cards still go once")
+    await _attach_cards(chat, deadline)
 
 
 async def _announce_chats(agent: str, chats: list[str], code: str) -> None:
@@ -579,6 +628,7 @@ async def _open_pairing(agent: str, line_uid: str, handle: str, code: str) -> No
     api = os.environ.get("PLOW_API_BASE", "").strip().rstrip("/")
     if not api or not _claim_chat(key):
         return
+    deadline = time.monotonic() + ONBOARD_SECONDS
     try:
         data = await _request(
             "POST",
@@ -598,6 +648,7 @@ async def _open_pairing(agent: str, line_uid: str, handle: str, code: str) -> No
     uid = str((data or {}).get("uid") or "") if isinstance(data, dict) else ""
     if uid.startswith("cht_"):
         _claim_chat(uid)
+        await _attach_cards(uid, deadline)
 
 
 async def _mailbox_uid(agent: str, me: dict) -> str:
@@ -778,25 +829,63 @@ def _write_token(token: str) -> None:
         handle.write(token + "\n")
 
 
+class _Uncertain(Exception):
+    """The phone may already have this bubble. A retry would duplicate it."""
+
+
+_RECENT: dict[str, float] = {}
+_RECENT_TTL = 180.0
+
+
+def _text_key(body: dict) -> str:
+    text = body.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return ""
+    return f"{body.get('to') or body.get('recipient')}\n{text.strip()}"
+
+
+def _claim_text(key: str) -> bool:
+    """True when this exact bubble is already in flight or already counted as sent."""
+    now = time.monotonic()
+    stale = [item for item, at in _RECENT.items() if now - at > _RECENT_TTL]
+    for item in stale:
+        del _RECENT[item]
+    if key in _RECENT:
+        return True
+    _RECENT[key] = now
+    return False
+
+
+def _release_text(key: str) -> None:
+    _RECENT.pop(key, None)
+
+
 async def _request(method, url, token, body=None):
     import aiohttp
     headers = {"Authorization": f"Bearer {token}"}
-    timeout = aiohttp.ClientTimeout(total=8)
-    async with aiohttp.ClientSession(timeout=timeout) as http:
-        async with http.request(method, url, json=body, headers=headers, allow_redirects=False) as result:
-            if result.status >= 300:
-                error = ""
-                try:
-                    payload = await result.json()
-                    if isinstance(payload, dict):
-                        error = str(payload.get("error") or "")
-                except Exception:
+    timeout = aiohttp.ClientTimeout(total=20)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as http:
+            async with http.request(method, url, json=body, headers=headers, allow_redirects=False) as result:
+                if result.status in (408, 409, 429) or result.status >= 500:
+                    raise _Uncertain()
+                if result.status >= 300:
                     error = ""
-                raise RuntimeError(f"whatsapp_http_{result.status}" + (f"_{error}" if error else ""))
-            data = await result.json()
-            if not isinstance(data, (dict, list)):
-                raise RuntimeError("whatsapp_response_invalid")
-            return data
+                    try:
+                        payload = await result.json()
+                        if isinstance(payload, dict):
+                            error = str(payload.get("error") or "")
+                    except Exception:
+                        error = ""
+                    raise RuntimeError(f"whatsapp_http_{result.status}" + (f"_{error}" if error else ""))
+                data = await result.json()
+                if not isinstance(data, (dict, list)):
+                    raise RuntimeError("whatsapp_response_invalid")
+                return data
+    except _Uncertain:
+        raise
+    except (asyncio.TimeoutError, TimeoutError, aiohttp.ClientError):
+        raise _Uncertain() from None
 
 
 _MIME = {
@@ -830,9 +919,17 @@ async def _send(base, payload) -> bool:
         return False
     if not body.get("text") and not body.get("media") and not body.get("reaction") and body.get("typing") is not True:
         return False
+    key = _text_key(body)
+    if key and _claim_text(key):
+        return True
     try:
         await _request("POST", base + "/whatsapp/send", _TOKEN, body)
+    except _Uncertain:
+        log.warning("whatsapp send uncertain; not retrying")
+        return True
     except Exception:
+        if key:
+            _release_text(key)
         log.warning("whatsapp send failed")
         return False
     if body.get("text") or body.get("media"):
@@ -840,10 +937,7 @@ async def _send(base, payload) -> bool:
     return True
 
 
-_CONTEXT: list[str] = []
 _TYPING_TASK = None
-_BACKGROUND: set = set()
-_REACTION = {"like", "love", "laugh", "emphasize"}
 
 
 def _stop_typing() -> None:
@@ -852,12 +946,6 @@ def _stop_typing() -> None:
     _TYPING_TASK = None
     if task is not None:
         task.cancel()
-
-
-def _spawn(coro) -> None:
-    task = asyncio.create_task(coro)
-    _BACKGROUND.add(task)
-    task.add_done_callback(_BACKGROUND.discard)
 
 
 async def _typing(base, message) -> None:
@@ -881,41 +969,6 @@ def _arm_typing(base, message) -> None:
     global _TYPING_TASK
     _stop_typing()
     _TYPING_TASK = asyncio.create_task(_typing_session(base, message))
-
-
-async def _draft_opening(module, live, message, context):
-    # statusline sits on the image script path, which is absent when this file is loaded alone.
-    from statusline import draft
-    import aiohttp
-    text = str(message.get("text") or "").strip() or "(attachment)"
-    home = Path((os.environ.get("HERMES_HOME") or "").strip() or "/var/lib/hermes")
-    burst = [{
-        "body": text,
-        "attachments": [message["media_id"]] if message.get("media_id") else [],
-    }]
-    async with aiohttp.ClientSession(base_url=module.BASE, headers=live.auth) as http:
-        return await draft(burst, http=http, home=home, recent=[], context=context)
-
-
-async def _react(base, module, live, message) -> None:
-    """Same reception tapback as iMessage: the model picks it from the burst, or sends nothing."""
-    text = str(message.get("text") or "").strip()
-    context = list(_CONTEXT)
-    if text:
-        _CONTEXT.append(text[:500])
-        del _CONTEXT[:-6]
-    try:
-        opening = await _draft_opening(module, live, message, context)
-    except Exception:
-        log.warning("whatsapp reaction unavailable")
-        return
-    kind = opening.get("reaction") if isinstance(opening, dict) else None
-    if kind not in _REACTION:
-        return
-    await _send(base, {
-        "reaction": {"type": kind, "message_id": str(message.get("id") or "")[:256]},
-        **_address(message),
-    })
 
 
 async def _voice_note(path: Path) -> Path | None:
@@ -1240,7 +1293,6 @@ async def _accept(adapter_cls, module, message, base, pairing: bool = False) -> 
     event.reply_to_text = message.get("reply_text") or None
     event.interrupts_run = not media_urls and text != "(attachment)"
     _arm_typing(base, message)
-    _spawn(_react(base, module, live, message))
     event.zoen_whatsapp = {
         "to": message.get("to"),
         "recipient": message.get("recipient"),

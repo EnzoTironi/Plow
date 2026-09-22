@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import urllib.request
 from contextlib import nullcontext
 from pathlib import Path
@@ -487,6 +488,45 @@ def test_activation_code_uses_the_onboarding_chat_a_normal_reply_uses():
     assert [row[2]["body"] for row in sends] == bubbles
 
 
+def test_onboarding_cards_stay_inside_ten_seconds():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_budget", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    seen = {}
+
+    def cards_sync(chat, deadline):
+        seen["chat"] = chat
+        seen["left"] = deadline - time.monotonic()
+        return {"ok": True, "cards": ["Zoen.vcf", "Enzo.vcf"]}
+
+    async def fake_request(method, url, token, payload=None, extra=None):
+        return {}
+
+    whatsapp._cards_sync = cards_sync
+    whatsapp._request = fake_request
+    previous_home = os.environ.get("HERMES_HOME")
+    previous_api = os.environ.get("PLOW_API_BASE")
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        os.environ["PLOW_API_BASE"] = "https://api.plow.co"
+        try:
+            asyncio.run(whatsapp._announce_code("agt_test", "cht_home", "142857"))
+            asyncio.run(whatsapp._attach_cards("cht_home", time.monotonic() - 1))
+        finally:
+            if previous_home is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous_home
+            if previous_api is None:
+                os.environ.pop("PLOW_API_BASE", None)
+            else:
+                os.environ["PLOW_API_BASE"] = previous_api
+    assert seen["chat"] == "cht_home"
+    assert 0 < seen["left"] <= whatsapp.ONBOARD_SECONDS
+
+
 def test_pairing_code_is_sent_without_the_owner_texting_first():
     spec_wa = importlib.util.spec_from_file_location(
         "zoen_face_whatsapp_open", ROOT / "image/plugins/zoen-face/whatsapp.py"
@@ -827,41 +867,33 @@ def test_whatsapp_line_break_is_its_own_bubble():
     assert box.posted == []
 
 
-def test_whatsapp_reaction_uses_the_burst_and_skips_a_blank_one():
+def test_whatsapp_uncertain_send_is_not_repeated():
     spec = importlib.util.spec_from_file_location(
-        "zoen_face_whatsapp_react", ROOT / "image/plugins/zoen-face/whatsapp.py"
+        "zoen_face_whatsapp_once", ROOT / "image/plugins/zoen-face/whatsapp.py"
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    sent = []
-
-    async def fake_request(method, url, token, body=None):
-        sent.append(body)
-        return {}
-
-    async def laugh(_module, _live, message, context):
-        assert message["text"] == "que piada"
-        assert context == []
-        return {"line": None, "reaction": "laugh"}
-
-    async def quiet_opening(_module, _live, message, context):
-        assert context == ["que piada"]
-        return {"line": None, "reaction": None}
-
-    module._request = fake_request
+    module._RECENT.clear()
     module._TOKEN = "a" * 43
-    module._draft_opening = laugh
-    asyncio.run(module._react("https://relay.example", None, None, {
-        "id": "wamid.joke", "text": "que piada", "to": "5511999999999",
-    }))
-    module._draft_opening = quiet_opening
-    asyncio.run(module._react("https://relay.example", None, None, {
-        "id": "wamid.hard", "text": "notícia difícil", "to": "5511999999999",
-    }))
-    assert sent == [{
-        "reaction": {"type": "laugh", "message_id": "wamid.joke"},
-        "to": "5511999999999",
-    }]
+    calls = []
+
+    async def flaky(method, url, token, body=None):
+        calls.append(body["text"])
+        if len(calls) == 1:
+            raise module._Uncertain()
+        raise AssertionError("retried an uncertain bubble")
+
+    module._request = flaky
+    assert asyncio.run(module._send("https://relay.example", {"text": "oi", "to": "5511999999999"})) is True
+    assert asyncio.run(module._send("https://relay.example", {"text": "oi", "to": "5511999999999"})) is True
+    assert calls == ["oi"]
+
+
+def test_whatsapp_reaction_is_the_agents_tapback_not_a_second_model():
+    source = (ROOT / "image/plugins/zoen-face/whatsapp.py").read_text()
+    assert "_react(" not in source
+    assert "reaction.emoji" in source
+    assert "skill kapso" in source
 
 
 def test_imessage_quote_field_does_not_reach_plow():
@@ -885,7 +917,11 @@ def test_whatsapp_turn_stays_in_the_session():
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert "history" in module._prompt("wamid.1")
+    prompt = module._prompt("wamid.1")
+    assert "history" in prompt
+    assert "reaction.emoji" in prompt
+    assert "context.message_id" in prompt
+    assert "skill kapso" in prompt
     first = module._prompt("wamid.1", first=True)
     assert "first-contact" in first
     assert "Do not greet again" not in first
@@ -1070,7 +1106,8 @@ def test_failed_media_does_not_become_a_successful_text_delivery(tmp_path):
             {"type": "text", "body": "done"},
         ]}, {"chat_uid": "cht_x"}))
         assert result["success"] is False
-        assert result["failure"]["status"] == "delivery_unknown"
+        assert result["failure"]["status"] == "rejected"
+        assert result["failure"]["retryable"] is False
         assert len(box.posted) == 1
     finally:
         quiet._MEDIA_ROOTS = saved
@@ -1158,6 +1195,7 @@ def test_persona_route_index_names_playbooks_and_skills():
         "`figure-it-out`",
         "`find-skills`",
         "`floor`",
+        "`kapso`",
     ):
         assert needle in persona, needle
     index = (ROOT / "skills" / "zoen" / "playbooks" / "index.md").read_text()
@@ -1195,6 +1233,7 @@ if __name__ == "__main__":
     test_pairing_code_reaches_every_phone_chat()
     test_pairing_code_alone_opens_whatsapp_and_a_real_text_owns_the_turn()
     test_activation_code_uses_the_onboarding_chat_a_normal_reply_uses()
+    test_onboarding_cards_stay_inside_ten_seconds()
     test_pairing_code_is_sent_without_the_owner_texting_first()
     test_pairing_code_opens_the_owner_email_when_nobody_texted()
     test_pairing_code_uses_the_mailbox_when_the_phone_line_has_no_thread()
@@ -1202,7 +1241,8 @@ if __name__ == "__main__":
     test_same_agent_texts_the_code_once_when_the_image_changes()
     test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp()
     test_whatsapp_line_break_is_its_own_bubble()
-    test_whatsapp_reaction_uses_the_burst_and_skips_a_blank_one()
+    test_whatsapp_uncertain_send_is_not_repeated()
+    test_whatsapp_reaction_is_the_agents_tapback_not_a_second_model()
     test_imessage_quote_field_does_not_reach_plow()
     test_whatsapp_turn_stays_in_the_session()
     test_whatsapp_reply_stays_off_imessage()

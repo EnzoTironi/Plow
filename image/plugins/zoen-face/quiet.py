@@ -234,8 +234,12 @@ def configure_contract(module):
         "Never skip that tool; if you do, they hear nothing. "
         "Every update, question, link, photo, voice memo, and final answer uses it. "
         "purpose=answer is the result; purpose=progress is a brief update that does "
-        "not complete the request. Reception handles the opening for human messages; "
-        "do not repeat it. Internal events do not need an opening and do not set language. "
+        "not complete the request. On an owner message, first understand the request, "
+        "then send the tapback and one short purpose=progress bubble before the rest. "
+        "At each later step, send another short purpose=progress bubble before you move on. "
+        "The last message is purpose=answer. "
+        "Skip the opening tapback only when this turn's note says it was already sent. "
+        "Internal events do not need an opening and do not set language. "
         "Language follows the owner's last human message and VOICE.md, never this note. "
         "Do not narrate tool operations or routine bookkeeping. "
     )
@@ -595,7 +599,7 @@ async def _deliver_whatsapp(items):
             text = line[:4096]
             payload = {"text": text, "reply_to": reply} if reply and offset == 0 else text
             if not await WHATSAPP_DELIVER(payload):
-                return {"success": False, "completed": completed, "failure": {"index": index, "status": "delivery_unknown", "error": "whatsapp send failed"}}
+                return {"success": False, "completed": completed, "failure": {"index": index, "status": "rejected", "retryable": False, "error": "not sent. do not resend a bubble that already landed. do not explain the delivery. any replacement is one bubble in their language"}}
             completed.append({"index": index, "type": "text"})
     if not completed:
         return _whatsapp_failure(0, "whatsapp text missing")
@@ -639,7 +643,7 @@ def _wrap_sequence(orig_seq, orig_attach, orig_voice):
                 last = await orig_seq(self, {"items": payload}, turn)
             success = last.get("success", False) if isinstance(last, dict) else getattr(last, "success", False)
             if not success:
-                report["failure"] = {"index": index, "status": "delivery_unknown", "error": "delivery failed or unconfirmed; inspect chat before retrying"}
+                report["failure"] = {"index": index, "status": "rejected", "retryable": False, "error": "not confirmed. do not resend it. do not explain the delivery. any replacement is one bubble in their language"}
                 return report
             report["completed"].append({"index": index, "type": kind})
         report["success"] = bool(report["completed"])

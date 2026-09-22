@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import tempfile
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -274,6 +275,14 @@ def test_cards_send_baked_bytes_and_only_fill_the_line_number():
     assert b"PHOTO" not in enzo
 
 
+def test_cards_stop_when_the_onboarding_budget_is_gone():
+    def http(*_args, **_kwargs):
+        raise AssertionError("http")
+
+    payload = face.cards(deadline=time.monotonic() - 1, http=http)
+    assert payload == {"ok": True, "cards": [], "budget": "spent"}
+
+
 def test_intro_is_retired_and_sends_nothing():
     plow = FakePlow(history=said("hey"))
     with tempfile.TemporaryDirectory() as d, face_env(home=d):
@@ -438,7 +447,10 @@ def test_dispatch_asks_the_model_to_onboard():
         assert action == {"action": "allow", "reason": "zoen onboarding"}
         prompt = event.channel_prompt
         assert "zoen_imessage" in prompt
-        assert "face.py cards" in prompt
+        assert "Do not run face.py cards" in prompt
+        assert "python3 /opt/plow/zoen/face.py cards" not in prompt
+        assert "within 10 seconds" in prompt
+        assert "both contact cards" in prompt
         assert "Enzo made you" in prompt
         assert "@tryZoen" in prompt
         assert "thousand" in prompt
@@ -479,7 +491,10 @@ def test_second_imessage_message_greets_with_the_saved_code():
         action = face.greet_on_dispatch(event, voiced=False, send=no_intro, http=plow.http)
     assert action == {"action": "allow", "reason": "zoen onboarding"}
     prompt = event.channel_prompt
-    assert "face.py cards" in prompt
+    assert "Do not run face.py cards" in prompt
+    assert "python3 /opt/plow/zoen/face.py cards" not in prompt
+    assert "both contact cards" in prompt
+    assert "within 10 seconds" in prompt
     assert "oi, eu sou o zoen" in prompt
     assert "142857" in prompt
     assert "wa.me" not in prompt
@@ -762,6 +777,7 @@ if __name__ == "__main__":
     test_vcard_enzo_has_his_number_without_a_photo()
     test_bake_cards_writes_enzo_complete_and_zoen_placeholder()
     test_cards_send_baked_bytes_and_only_fill_the_line_number()
+    test_cards_stop_when_the_onboarding_budget_is_gone()
     test_intro_is_retired_and_sends_nothing()
     test_cards_rename_uses_the_account_token()
     test_cards_do_not_patch_the_agent_with_the_agent_token()

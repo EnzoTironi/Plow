@@ -183,7 +183,6 @@ function withQuote(body, replyTo) {
 export function kapsoBody(target, text, replyTo = "") {
   return withQuote({
     messaging_product: "whatsapp",
-    recipient_type: "individual",
     type: "text",
     text: { body: text, preview_url: /https?:\/\//.test(text) },
     ...targetFields(target),
@@ -201,16 +200,26 @@ export function typingBody(messageId) {
   };
 }
 
+export function reactionEmoji(kind) {
+  const mapped = REACTIONS[kind];
+  if (mapped) return mapped;
+  const emoji = String(kind || "").trim();
+  if (!emoji || emoji.length > 16 || /^[a-z_]+$/.test(emoji)) return "";
+  return emoji;
+}
+
 export function reactionBody(target, messageId, kind) {
-  const emoji = REACTIONS[kind];
-  if (!emoji) return null;
-  return {
+  const emoji = reactionEmoji(kind);
+  const id = String(messageId || "").trim();
+  if (!emoji || !id) return null;
+  const body = {
     messaging_product: "whatsapp",
-    recipient_type: "individual",
     type: "reaction",
-    reaction: { message_id: String(messageId).slice(0, 256), emoji },
-    ...targetFields(target),
+    reaction: { message_id: id.slice(0, 512), emoji },
   };
+  if (target.to) body.to = target.to;
+  else if (target.recipient) body.recipient = target.recipient;
+  return body;
 }
 
 export function mediaBody(target, kind, mediaId, options = {}) {
@@ -482,7 +491,7 @@ async function sendWhatsapp(request, env, inbox, headers) {
   if (body.typing === true) {
     payload = typingBody(body.message_id);
   } else if (body.reaction && typeof body.reaction === "object") {
-    payload = reactionBody(target, body.reaction.message_id, body.reaction.type);
+    payload = reactionBody(target, body.reaction.message_id, body.reaction.emoji || body.reaction.type);
   } else if (body.media && typeof body.media === "object") {
     const file = decodeMedia(body.media);
     const mediaId = file ? await uploadMedia(env, file) : "";

@@ -7,7 +7,8 @@
     face.py bake
 
 Cards are the vCards. The image bakes them; send only fills Zoen's number.
-The agent writes first contact itself.
+The line sends both cards with onboarding, inside 10 seconds.
+The agent does not send them again.
 Rename is install. `intro` is a retired alias and sends nothing.
 Auth: PLOW_API_BASE + PLOW_AGENT_TOKEN, optional PLOW_ACCOUNT_TOKEN
 or ~/.config/plow/token.
@@ -21,6 +22,7 @@ import os
 import re
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote
@@ -250,22 +252,21 @@ def first_contact_prompt(
             )
         return (
             "\n[Zoen first contact]\n"
-            "VOICE.md is missing. They just linked WhatsApp. Answer them "
-            "normally via zoen_imessage, which delivers on WhatsApp, in "
-            "their language, like @tryZoen: short stacked thoughts, slightly "
-            "lowercase, dry, a little witty. "
+            "VOICE.md is missing. They just linked WhatsApp. The iMessage "
+            "onboarding already finished within 10 seconds, including both "
+            "contact cards, that Enzo made you, and that you can connect "
+            "their apps — more than a thousand connections and MCPs — "
+            "wherever they need. Do not send cards on WhatsApp. Do not run "
+            "face.py cards. Do not repeat that intro. Answer them via "
+            "zoen_imessage, which delivers on WhatsApp, in their language, "
+            "like @tryZoen: one short line, then their request. "
             + tongue
-            + "This turn they need to know: you "
-            "are Zoen, the little monster that makes their dreams happen; "
-            "Enzo made you; you can connect their apps — more than a "
-            "thousand connections and MCPs — wherever they need. How you "
-            "say it is yours. Not a menu. Do not copy an older intro from "
-            "this chat. Never send a phone number or 'a gente te ajuda'. "
-            "If their message is only the pairing code, do not repeat it. "
-            "Do not run face.py cards. Handle their request. This session, "
-            "learn what to call them: zoen_owner_profile action=save if the "
-            "name is already in the message or memory, else action=ask and "
-            "ask only if ask=true. Write VOICE.md this turn."
+            + "Do not copy an older intro from this chat. Never send a phone "
+            "number or 'a gente te ajuda'. If their message is only the "
+            "pairing code, do not repeat it. Handle their request. This "
+            "session, learn what to call them: zoen_owner_profile action=save "
+            "if the name is already in the message or memory, else action=ask "
+            "and ask only if ask=true. Write VOICE.md this turn."
         )
     offer = not whatsapp if offer_whatsapp is None else offer_whatsapp
     choice = ""
@@ -273,26 +274,24 @@ def first_contact_prompt(
         code = saved_pairing_code()
         if code:
             choice = (
-                "These bubbles already went out on this chat: oi, eu sou o "
-                "zoen; stay here; or send the code on WhatsApp; then the "
-                f"link with {code}. Do not send those lines again. Do not "
-                "invent another code or another link.\n"
+                "These bubbles already went out on this chat, with both "
+                "contact cards, within 10 seconds: oi, eu sou o zoen; stay "
+                "here; or send the code on WhatsApp; then the link with "
+                f"{code}. Do not send those lines again. Do not invent "
+                "another code or another link.\n"
             )
     return (
         "\n[Zoen first contact]\n"
-        "VOICE.md is missing. Answer them normally via zoen_imessage, in "
-        "their language, like @tryZoen: short stacked thoughts, slightly "
-        "lowercase, dry, a little witty. This turn they need to know: you "
-        "are Zoen, the little monster that makes their dreams happen; they "
-        "should save your card so they know it's you; Enzo made you; they "
-        "should save his card for questions or trouble; you can connect "
+        "VOICE.md is missing. The onboarding burst already went out on "
+        "iMessage within 10 seconds: who you are, staying here or WhatsApp, "
+        "both contact cards, that Enzo made you, and that you can connect "
         "their apps — more than a thousand connections and MCPs — wherever "
-        "they need. How you say it is yours. Not a menu. Do not copy an "
-        "older intro from this chat. Never send a phone number or 'a gente "
-        "te ajuda'. "
+        "they need. Do not send that burst again. Do not run face.py cards. "
+        "Answer them via zoen_imessage, like @tryZoen, in their language. "
+        "Do not copy an older intro from this chat. Never send a phone "
+        "number or 'a gente te ajuda'. "
         + choice
-        + "Then `python3 /opt/plow/zoen/face.py cards`. Handle "
-        "their request. This session, learn what to call them: "
+        + "Handle their request. This session, learn what to call them: "
         "zoen_owner_profile action=save if the name is already in the "
         "message or memory, else action=ask and ask only if ask=true. "
         "Write VOICE.md this turn."
@@ -939,10 +938,10 @@ def group_on_dispatch(
     return {"action": "skip", "reason": "group silence"}
 
 
-def put_bytes(url: str, headers: dict[str, str], data: bytes) -> dict:
+def put_bytes(url: str, headers: dict[str, str], data: bytes, timeout: float = 30) -> dict:
     req = Request(url, data=data, method="PUT", headers=headers)
     try:
-        with urlopen(req, timeout=30) as resp:
+        with urlopen(req, timeout=timeout) as resp:
             resp.read()
             return {"ok": True, "status": resp.status, "error": None}
     except HTTPError as exc:
@@ -1148,12 +1147,51 @@ def apply(
     return sent
 
 
+def _within_budget(deadline: float | None) -> bool:
+    return deadline is None or time.monotonic() < deadline
+
+
+def _budget_http(http: Http, deadline: float | None) -> Http:
+    if deadline is None:
+        return http
+
+    def call(method: str, url: str, headers: dict[str, str] | None = None, body: Any = None) -> dict:
+        if not _within_budget(deadline):
+            return {"ok": False, "status": None, "error": "onboarding budget"}
+        remaining = max(0.2, deadline - time.monotonic())
+        if http is request:
+            return request(method, url, headers=headers, body=body, timeout=remaining)
+        return http(method, url, headers=headers, body=body)
+
+    return call
+
+
+def _budget_put(put: Put, deadline: float | None) -> Put:
+    if deadline is None:
+        return put
+
+    def call(url: str, headers: dict[str, str], data: bytes) -> dict:
+        if not _within_budget(deadline):
+            return {"ok": False, "status": None, "error": "onboarding budget"}
+        remaining = max(0.2, deadline - time.monotonic())
+        if put is put_bytes:
+            return put_bytes(url, headers, data, timeout=remaining)
+        return put(url, headers, data)
+
+    return call
+
+
 def cards(
     force: bool = False,
     chat: str | None = None,
     http: Http = request,
     put: Put = put_bytes,
+    deadline: float | None = None,
 ) -> dict[str, Any]:
+    if deadline is not None and not _within_budget(deadline):
+        return {"ok": True, "cards": [], "budget": "spent"}
+    http = _budget_http(http, deadline)
+    put = _budget_put(put, deadline)
     base, headers, me = load_me(http)
     line = me.get("line") if isinstance(me.get("line"), dict) else {}
     tel = str(line.get("provider_key") or "").strip()
