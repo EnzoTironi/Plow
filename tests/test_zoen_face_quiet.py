@@ -195,9 +195,29 @@ def test_whatsapp_owner_phone_is_the_handle_digits():
     }
     assert whatsapp.phone_from_identity(me) == "5511999999999"
     assert whatsapp.home_chat_uid(me) == "cht_home"
+    me["chats"].append({
+        "uid": "cht_android",
+        "status": "active",
+        "participants": [
+            {"type": "agent", "relationship": "self"},
+            {"type": "member", "role": "owner", "provider_type": "imessage", "provider_key": "+55 31 98888-7777"},
+        ],
+    })
+    assert whatsapp.pairing_chat_uids(me) == ["cht_home", "cht_android"]
+    assert whatsapp.home_chat_uid(me) == "cht_home"
     me["chats"][0]["participants"][1]["provider_key"] = "ana@example.com"
     me["chats"][0]["participants"][1]["provider_type"] = "email"
-    assert whatsapp.phone_from_identity(me) == ""
+    assert whatsapp.pairing_chat_uids(me) == ["cht_home", "cht_android"]
+    me["chats"].append({
+        "uid": "cht_mail",
+        "status": "active",
+        "participants": [
+            {"type": "agent", "relationship": "self"},
+            {"type": "member", "role": "owner", "provider_type": "imessage", "provider_key": "enzo@example.com"},
+        ],
+    })
+    assert whatsapp.pairing_chat_uids(me) == ["cht_home", "cht_android", "cht_mail"]
+    assert whatsapp.phone_from_identity(me) == "5531988887777"
     assert whatsapp.phone_from_contacts([
         {"role": "member", "provider_key": "+15555550100"},
         {"role": "owner", "provider_key": "+55 (11) 99999-9999"},
@@ -315,6 +335,260 @@ def test_pairing_code_stays_on_the_volume_and_opens_whatsapp():
     assert first == second
     assert len(first) == 6 and first.isdigit()
     assert f"https://wa.me/553798136141?text={first}" in text
+
+
+def test_pairing_code_reaches_every_phone_chat():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_announce", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    previous_home = os.environ.get("HERMES_HOME")
+    previous_api = os.environ.get("PLOW_API_BASE")
+    previous_token = os.environ.get("PLOW_AGENT_TOKEN")
+    posted = []
+
+    async def fake_request(method, url, token, payload=None, extra=None):
+        posted.append((method, url, payload))
+        return {}
+
+    whatsapp._request = fake_request
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        os.environ["PLOW_API_BASE"] = "https://plow.example"
+        os.environ["PLOW_AGENT_TOKEN"] = "agt_test"
+        try:
+            code = whatsapp._pairing_code()
+            asyncio.run(whatsapp._announce_chats("agt_test", ["cht_home", "cht_android"], code))
+            asyncio.run(whatsapp._announce_chats("agt_test", ["cht_home", "cht_android"], code))
+            adapter = SimpleNamespace(
+                _chats={"cht_new": {"owner": True}},
+                _send_guard=lambda uid: None,
+            )
+            module = SimpleNamespace(
+                _owner_dm=lambda chat: chat.get("owner", False),
+                _owner_handle=lambda chat: "+55 31 98888-7777",
+            )
+            saved = whatsapp._TOKEN
+            whatsapp._TOKEN = ""
+            asyncio.run(whatsapp._offer_code(adapter, module, "cht_new"))
+            asyncio.run(whatsapp._offer_code(adapter, module, "cht_new"))
+            guarded = SimpleNamespace(_chats={}, _send_guard=lambda uid: "group")
+            asyncio.run(whatsapp._offer_code(guarded, module, "cht_group"))
+            whatsapp._TOKEN = "already-bound"
+            asyncio.run(whatsapp._offer_code(adapter, module, "cht_later"))
+            whatsapp._TOKEN = saved
+        finally:
+            if previous_home is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous_home
+            if previous_api is None:
+                os.environ.pop("PLOW_API_BASE", None)
+            else:
+                os.environ["PLOW_API_BASE"] = previous_api
+            if previous_token is None:
+                os.environ.pop("PLOW_AGENT_TOKEN", None)
+            else:
+                os.environ["PLOW_AGENT_TOKEN"] = previous_token
+    assert [row[1] for row in posted] == [
+        "https://plow.example/v1/chats/cht_home/messages",
+        "https://plow.example/v1/chats/cht_android/messages",
+        "https://plow.example/v1/chats/cht_new/messages",
+    ]
+    assert all(code in row[2]["body"] for row in posted)
+
+
+def test_pairing_code_alone_opens_whatsapp_and_a_real_text_owns_the_turn():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_pairing_turn", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    pairing = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(pairing)
+    code = "142857"
+    assert pairing.pairing_turn([{"text": code}], code)
+    assert pairing.pairing_turn([{"text": f"  {code}  "}], code)
+    assert not pairing.pairing_turn([{"text": "oi"}, {"text": code}], code)
+    assert not pairing.pairing_turn([{"text": code, "media_id": "mid"}], code)
+    assert not pairing.pairing_turn([{"text": code}], "")
+
+
+def test_activation_code_uses_the_onboarding_chat_a_normal_reply_uses():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_rcs", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    phrase = "Set this up for me: aiworthusing.com/agent-index/zoen"
+    me = {
+        "signup": {"name": "Zoen", "phrase": phrase},
+        "line": {"uid": "ln_p1", "provider_key": "+16503466610"},
+        "chats": [
+            {
+                "uid": "cht_mail",
+                "status": "active",
+                "participants": [
+                    {"type": "member", "role": "owner", "provider_type": "imessage", "provider_key": "enzo@example.com"},
+                ],
+            },
+            {
+                "uid": "cht_rcs",
+                "status": "active",
+                "participants": [
+                    {"type": "member", "role": "owner", "provider_type": "imessage", "provider_key": "+5531999941160"},
+                ],
+            },
+        ],
+    }
+    histories = {
+        "cht_mail": [{"direction": "inbound", "body": "Alo"}],
+        "cht_rcs": [{"direction": "inbound", "body": phrase}],
+    }
+    assert whatsapp.activation_chat_uids(me, histories) == ["cht_rcs"]
+    posted = []
+
+    async def fake_request(method, url, token, payload=None, extra=None):
+        posted.append((method, url, payload))
+        return {}
+
+    async def fake_plow(_agent, path):
+        if path.startswith("/v1/chats/cht_rcs/"):
+            return {"data": histories["cht_rcs"]}
+        if path.startswith("/v1/chats/cht_mail/"):
+            return {"data": histories["cht_mail"]}
+        return []
+
+    whatsapp._request = fake_request
+    whatsapp._plow_json = fake_plow
+    previous_home = os.environ.get("HERMES_HOME")
+    previous_api = os.environ.get("PLOW_API_BASE")
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        os.environ["PLOW_API_BASE"] = "https://plow.example"
+        try:
+            asyncio.run(whatsapp._push_pairing("agt_test", me))
+            code = whatsapp._pairing_code()
+        finally:
+            if previous_home is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous_home
+            if previous_api is None:
+                os.environ.pop("PLOW_API_BASE", None)
+            else:
+                os.environ["PLOW_API_BASE"] = previous_api
+    sends = [row for row in posted if row[0] == "POST"]
+    assert [row[1] for row in sends] == ["https://plow.example/v1/chats/cht_rcs/messages"]
+    assert sends[0][2]["format"] == "none"
+    assert code in sends[0][2]["body"]
+
+
+def test_pairing_code_is_sent_without_the_owner_texting_first():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_open", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    previous_home = os.environ.get("HERMES_HOME")
+    previous_api = os.environ.get("PLOW_API_BASE")
+    posted = []
+
+    async def fake_request(method, url, token, payload=None, extra=None):
+        posted.append((method, url, payload))
+        return {"uid": "cht_opened", "created": True}
+
+    async def fake_plow(_agent, path):
+        assert path == "/v1/contacts"
+        return [{"role": "owner", "provider_key": "+55 31 98888-7777"}, {"role": "member", "provider_key": "+15555550100"}]
+
+    whatsapp._request = fake_request
+    whatsapp._plow_json = fake_plow
+    me = {"line": {"uid": "ln_p4", "provider_key": "+16503156415"}, "chats": []}
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        os.environ["PLOW_API_BASE"] = "https://plow.example"
+        try:
+            asyncio.run(whatsapp._push_pairing("agt_test", me))
+            code = whatsapp._pairing_code()
+            asyncio.run(whatsapp._push_pairing("agt_test", me))
+            whatsapp._forget_code()
+            asyncio.run(whatsapp._push_pairing("agt_test", me))
+            replacement = whatsapp._pairing_code()
+            asyncio.run(whatsapp._push_pairing("agt_test", me))
+        finally:
+            if previous_home is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous_home
+            if previous_api is None:
+                os.environ.pop("PLOW_API_BASE", None)
+            else:
+                os.environ["PLOW_API_BASE"] = previous_api
+    assert [(row[0], row[1]) for row in posted] == [
+        ("POST", "https://plow.example/v1/chats"),
+        ("POST", "https://plow.example/v1/chats"),
+    ]
+    opened = posted[0][2]
+    assert opened["line_uid"] == "ln_p4"
+    assert opened["members"] == ["+5531988887777"]
+    assert code in opened["body"]
+    assert opened["idempotency_key"] == f"zoen-wa-{code}-5531988887777"
+    assert code != replacement
+    assert replacement in posted[1][2]["body"]
+
+
+def test_reused_line_volume_sends_the_code_once_for_the_new_agent():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_reuse", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    previous_home = os.environ.get("HERMES_HOME")
+    previous_api = os.environ.get("PLOW_API_BASE")
+    posted = []
+
+    async def fake_request(method, url, token, payload=None, extra=None):
+        posted.append((method, url, payload))
+        return {}
+
+    whatsapp._request = fake_request
+    previous = "a" * 32
+    current = "b" * 32
+    me = {
+        "agent": {"uid": current},
+        "line": {"uid": "ln_p5", "provider_key": "+16503156604"},
+        "chats": [{
+            "uid": "cht_alder",
+            "status": "active",
+            "participants": [
+                {"type": "agent", "relationship": "self"},
+                {"type": "member", "role": "owner", "provider_type": "imessage", "provider_key": "+55 31 98888-7777"},
+            ],
+        }],
+    }
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        os.environ["PLOW_API_BASE"] = "https://plow.example"
+        try:
+            whatsapp._write_install(previous)
+            whatsapp._write_token("T" * 43)
+            whatsapp._claim_chat("cht_alder")
+            asyncio.run(whatsapp._push_pairing("agt_test", me))
+            asyncio.run(whatsapp._push_pairing("agt_test", me))
+            assert whatsapp._read_install() == current
+            assert whatsapp._read_token() == ""
+        finally:
+            if previous_home is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous_home
+            if previous_api is None:
+                os.environ.pop("PLOW_API_BASE", None)
+            else:
+                os.environ["PLOW_API_BASE"] = previous_api
+    assert [row[1] for row in posted if row[0] == "POST"] == [
+        "https://plow.example/v1/chats/cht_alder/messages",
+    ]
 
 
 def test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp():
@@ -663,6 +937,11 @@ if __name__ == "__main__":
     test_whatsapp_credits_follow_the_inbound_and_imessage_stays_on_imessage()
     test_agent_secret_is_stable_for_the_volume()
     test_pairing_code_stays_on_the_volume_and_opens_whatsapp()
+    test_pairing_code_reaches_every_phone_chat()
+    test_pairing_code_alone_opens_whatsapp_and_a_real_text_owns_the_turn()
+    test_activation_code_uses_the_onboarding_chat_a_normal_reply_uses()
+    test_pairing_code_is_sent_without_the_owner_texting_first()
+    test_reused_line_volume_sends_the_code_once_for_the_new_agent()
     test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp()
     test_imessage_quote_field_does_not_reach_plow()
     test_whatsapp_turn_stays_in_the_session()

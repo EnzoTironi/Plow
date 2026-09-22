@@ -1109,6 +1109,14 @@ def greet_on_dispatch(
         return {"action": "skip", "reason": "plow setup"}
     if is_group(event):
         return group_on_dispatch(event, http=http)
+    if getattr(event, "zoen_pairing_code", False):
+        event.channel_prompt = (
+            (getattr(event, "channel_prompt", "") or "")
+            + first_contact_prompt(whatsapp=False)
+            + "\nTheir message is only the pairing code that linked WhatsApp. "
+            "Do not repeat the code. "
+        )
+        return {"action": "allow", "reason": "zoen onboarding"}
     live = voice_exists() if voiced is None else voiced
     if not live and already_introduced(event, http):
         stamp_voice("pt")

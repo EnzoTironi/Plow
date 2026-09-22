@@ -515,6 +515,28 @@ test("each line's code binds only the WhatsApp that sends it", async () => {
   })).json();
   assert.deepEqual(inboxB.messages.map((message) => message.text), ["oi bia", "314159"]);
   const posts = await (await fetch(`${base}/__fixture/kapso/posts`)).json();
-  const welcomes = posts.filter((post) => post?.text?.body === "pode falar. eu tô aqui." && (post.to === ana || post.to === bia));
-  assert.deepEqual(welcomes.map((post) => post.to).sort(), [ana, bia]);
+  const welcomes = posts.filter((post) => post?.text?.body === "pode falar. eu tô aqui.");
+  assert.deepEqual(welcomes, []);
+});
+
+test("a code that already came from SMS links WhatsApp without another two-factor prompt", async () => {
+  const phone = "5511688888881";
+  const code = "608214";
+  const register = () => fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer proxied", "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_uid: "cd".repeat(16), secret: "b".repeat(43), code }),
+  });
+  const waiting = await (await register()).json();
+  assert.equal(waiting.waiting, true);
+  const inbound = await (await fetch(`${base}/whatsapp/webhook`, kapso(JSON.stringify({
+    message: { id: "wamid.sms-code", type: "text", from: phone, text: { body: code }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Enzo", phone_number: phone },
+  }), "idem-sms-code"))).json();
+  assert.equal(inbound.setup, false);
+  const linked = await (await register()).json();
+  assert.equal(linked.ok, true);
+  assert.match(linked.token, /^[A-Za-z0-9_-]{43,}$/);
+  const posts = await (await fetch(`${base}/__fixture/kapso/posts`)).json();
+  assert.equal(posts.filter((post) => post?.to === phone).length, 0);
 });

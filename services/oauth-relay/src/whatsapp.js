@@ -362,7 +362,6 @@ async function registerAgent(request, env) {
   await remember(env, { stage: "bind", status: bound.status, error: data.error || "" });
   if (data.waiting) return response({ ok: true, waiting: true });
   if (!bound.ok) return response(data, bound.status);
-  if (data.fresh) await deliver(env, kapsoBody({ to: data.phone }, "pode falar. eu tô aqui."));
   return response({ ok: true, token: session });
 }
 
@@ -580,6 +579,8 @@ export class WhatsAppInbox {
       const code = pairingCode(message.text);
       if (code && box.codes[code]) box.heard[code] = phone;
       if (box.bindings[phone]) continue;
+      // The SMS onboarding already confirmed this phone. The code just links WhatsApp.
+      if (code && box.codes[code]) continue;
       const pending = asPending(box.pending[phone]);
       if (!pending.claim) pending.claim = claimToken();
       const due = !pending.at || now - pending.at >= SETUP_COOLDOWN_MS;
