@@ -1065,6 +1065,31 @@ def test_whatsapp_omitted_reply_does_not_quote():
     assert sent == ["oi", {"text": "sobre aquilo", "reply_to": "wamid.explicit"}]
 
 
+def test_a_reaction_alone_is_not_the_reply():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    reacted = []
+
+    async def react(spec):
+        reacted.append(spec)
+        return True
+
+    quiet.WHATSAPP_REACT = react
+    token = quiet.WHATSAPP.set({"to": "5511999999999", "message_id": "wamid.1"})
+    try:
+        result = asyncio.run(box.send_sequence(
+            {"items": [{"type": "reaction", "kind": "love"}]},
+            {"chat_uid": "cht_x"},
+        ))
+    finally:
+        quiet.WHATSAPP.reset(token)
+        quiet.WHATSAPP_REACT = None
+    assert result["success"] is False
+    assert "text" in result["failure"]["error"]
+    assert reacted == []
+
+
 def test_whatsapp_one_call_reacts_quotes_and_sends_a_card():
     Adapter = _adapter()
     quiet.silence(Adapter)
@@ -1487,20 +1512,18 @@ def test_whatsapp_turn_refuses_an_imessage_post():
     }
     token = quiet.WHATSAPP.set({"to": "5537999999999", "message_id": "wamid.1"})
     try:
-        blocked = quiet.guard_whatsapp_tool("terminal", posted)
-        slipped = quiet.guard_whatsapp_tool("terminal", {"command": "curl $PLOW_API_BASE/v1/chats/cht_x/messages"})
-        relay = quiet.guard_whatsapp_tool("terminal", {"command": "python3 -c \"open('/var/lib/hermes/zoen/whatsapp.token'); post('/whatsapp/send')\""})
-        allowed = quiet.guard_whatsapp_tool("terminal", {"command": "ls /tmp"})
-        wrote = quiet.guard_whatsapp_tool("write_file", {"path": "/var/lib/hermes/zoen/send_wa.py", "content": "print(1)"})
+        shell = quiet.guard_whatsapp_tool("terminal", posted)
+        download = quiet.guard_whatsapp_tool("terminal", {"command": "curl -fsS -o /tmp/ppc.pdf https://example.com/ppc.pdf"})
+        code = quiet.guard_whatsapp_tool("execute_code", {"code": "print(1)"})
+        wrote = quiet.guard_whatsapp_tool("write_file", {"path": "/var/lib/hermes/zoen/note.txt", "content": "1"})
         listed = quiet.guard_whatsapp_tool("plow_send_message", {"action": "list"})
         sent = quiet.guard_whatsapp_tool("plow_send_message", {"to": "cht_x", "body": "oi"})
     finally:
         quiet.WHATSAPP.reset(token)
-    assert blocked["action"] == "block"
-    assert slipped["action"] == "block"
-    assert relay["action"] == "block"
-    assert allowed["action"] == "block"
-    assert wrote["action"] == "block"
+    assert shell is None
+    assert download is None
+    assert code is None
+    assert wrote is None
     assert listed is None
     assert sent["action"] == "block"
     assert quiet.guard_whatsapp_tool("terminal", posted) is None
@@ -1716,7 +1739,12 @@ def test_seed_soul_is_zoen_not_a_plow_assistant():
     assert "two or three concrete jobs" not in soul
     assert "action steer" in soul
     assert "does not stop a leaf" not in (ROOT / "skills/zoen/SKILL.md").read_text()
-    assert "delegate_task action steer" in (ROOT / "skills/zoen/scripts/context.py").read_text()
+    reminder = (ROOT / "skills/zoen/scripts/context.py").read_text()
+    assert "delegate_task action steer" in reminder
+    assert "This thread stays free" in soul
+    assert "status question" in soul
+    assert "This thread stays free" in reminder
+    assert "Do not take over the child's tools" in reminder
 
 
 def test_persona_route_index_names_playbooks_and_skills():

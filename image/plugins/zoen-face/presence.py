@@ -88,6 +88,7 @@ class Presence:
         self.bursts = {}
         self.tasks = set()
         self.waiting = {}
+        self.eyed = set()
 
     def spawn(self, coroutine):
         task = asyncio.create_task(coroutine)
@@ -193,11 +194,11 @@ class Presence:
         if not self.receipts.claim(chat, messages):
             return
         opening = await burst["draft"] or {}
-        body, kind = opening.get("line"), opening.get("reaction")
+        body = opening.get("line")
+        # The eye goes out when the model is called. This draft does not pick a tapback.
         status, reaction = await asyncio.gather(
             self.deliver(chat, burst, "status", "messages", {"body": body, "format": "none"} if body else None),
-            self.deliver(chat, burst, "reaction", f"messages/{messages[-1]['uid']}/reactions",
-                         {"operation": "add", "type": kind} if kind else None),
+            self.deliver(chat, burst, "reaction", f"messages/{messages[-1]['uid']}/reactions", None),
         )
         if body and status in {"sent", "uncertain"}:
             self.recent[chat] = (self.recent.get(chat, []) + [body])[-3:]
@@ -239,6 +240,34 @@ class Presence:
         except (aiohttp.ClientError, TimeoutError, ValueError):
             return "uncertain"
 
+    async def notice_model(self, event):
+        """Eye, then typing, as the model turn starts. Once per message."""
+        if getattr(event, "internal", False) or getattr(event, "zoen_whatsapp", None):
+            return
+        source = getattr(event, "source", None)
+        chat = str(getattr(source, "chat_id", "") or "")
+        message = str(getattr(event, "message_id", "") or "")
+        if not chat.startswith("cht_") or not message.startswith("msg_"):
+            return
+        if not self.module._owner_dm(self.adapter._chats.get(chat, {})):
+            return
+        if (chat, message) in self.eyed:
+            return
+        self.eyed.add((chat, message))
+        log.info("zoen-face eye and typing")
+        await self.typing(chat)
+        session = aiohttp.ClientSession(base_url=self.module.BASE, headers=getattr(self.adapter, "auth", {}) or {})
+        try:
+            await self.post(
+                chat,
+                f"messages/{message}/reactions",
+                {"operation": "add", "type": "custom", "custom_emoji": "👀"},
+                session,
+                time.monotonic() + HTTP_TIMEOUT,
+            )
+        finally:
+            await session.close()
+
     async def annotate(self, event):
         if getattr(event, "internal", False):
             return
@@ -248,10 +277,12 @@ class Presence:
             return
         event.zoen_reception = state or {"status": "pending", "reaction": "pending"}
         event.channel_prompt = (event.channel_prompt or "") + (
-            "\n<reception>\nReception owns this burst's opening and tapback. "
+            "\n<reception>\nThe eye is already on this message. Do not send another reaction. "
+            "Reception owns this burst's opening. "
             "Continue the actual work immediately; do not repeat the opening or reaction. "
             "An acknowledgement is not completion. Owner bubbles only go through "
             "zoen_imessage; leftover prose is not delivered. Never skip that tool. "
+            "Send the reply as text. "
             "Reception outcomes: " + json.dumps(event.zoen_reception) + "\n</reception>")
 
 
@@ -283,6 +314,12 @@ def install(adapter_cls, module, prepare_dispatch=None):
 
     @functools.wraps(handoff)
     async def handoff_message(self, event):
+        if not hasattr(self, "_zoen_reception"):
+            self._zoen_reception = Presence(self, module)
+        try:
+            await self._zoen_reception.notice_model(event)
+        except (OSError, sqlite3.Error, aiohttp.ClientError):
+            log.exception("eye unavailable; the reply still runs")
         if hasattr(self, "_zoen_reception"):
             try:
                 await self._zoen_reception.annotate(event)

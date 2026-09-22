@@ -202,6 +202,15 @@ class ButtonDelivery:
 
 
 Delivery = TextDelivery | ReactionDelivery | TypingDelivery | ButtonDelivery
+EYE = "👀"
+
+
+def seen_deliveries(message_id: str) -> list[Delivery]:
+    """The eye and the typing indicator. They go out when the model is called."""
+    mid = str(message_id or "").strip()
+    if not mid:
+        return []
+    return [ReactionDelivery(message_id=mid, kind=EYE), TypingDelivery(message_id=mid)]
 
 
 def address_from(message: dict) -> Address:
@@ -550,6 +559,16 @@ class WhatsAppLine:
             log.warning("whatsapp media failed: %s", type(exc).__name__)
             return False
 
+    async def mark_seen(self, message_id: str) -> None:
+        """React with the eye, then show typing, before the model writes."""
+        log.info("zoen-face eye and typing")
+        for delivery in seen_deliveries(message_id):
+            try:
+                body = relay_body(self._reply_address(), delivery)
+                await self.transport.post(self.relay_url + "/whatsapp/send", body)
+            except Exception as exc:
+                log.warning("whatsapp seen failed: %s", type(exc).__name__)
+
     async def post_reaction(self, spec) -> bool:
         try:
             body = relay_body(self._reply_address(), ReactionDelivery(
@@ -698,6 +717,9 @@ if BasePlatformAdapter is not None:
                 _QUIET.clear_turn_copies()
                 _QUIET.LOOP = asyncio.get_running_loop()
                 _QUIET._stamp_whatsapp(target if isinstance(target, dict) else None)
+            message_id = str(target.get("message_id") or "") if isinstance(target, dict) else ""
+            if message_id:
+                await self._line.mark_seen(message_id)
             try:
                 return await super()._process_message_background(event, session_key)
             finally:

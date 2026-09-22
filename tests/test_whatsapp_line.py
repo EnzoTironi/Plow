@@ -119,6 +119,24 @@ def test_text_delivery_matches_relay_send():
     }
 
 
+def test_the_eye_and_typing_go_out_before_the_model():
+    import asyncio
+
+    posted = []
+
+    class Transport:
+        async def post(self, url, body):
+            posted.append(body)
+
+    adapter = line.WhatsAppLine("https://relay.example", Transport())
+    adapter.reply_target = {"to": "5537999999999", "message_id": "wamid.ABC"}
+    asyncio.run(adapter.mark_seen("wamid.ABC"))
+    assert posted == [
+        {"to": "5537999999999", "reaction": {"message_id": "wamid.ABC", "type": "👀"}},
+        {"to": "5537999999999", "typing": True, "message_id": "wamid.ABC"},
+    ]
+
+
 def test_reaction_delivery_matches_the_relay_object():
     address = line.Address(to="5537999999999")
     body = line.relay_body(address, line.ReactionDelivery(message_id="wamid.OLD", kind="love"))

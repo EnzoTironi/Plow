@@ -1,7 +1,7 @@
 # Models
 
-The talker, the opening, vision, fallback, and every `delegate_task`
-child use the booted `HERMES_MODEL`. Delegation reasons. The runtime
-pins that. The spawn has no model field. Do not name another slug.
+The talker, the opening, and vision use the booted model. Delegation
+runs on Luna. If Luna fails, the runtime switches that child to
+`z-ai/glm-5.3-flash`. The spawn has no model field. Do not name a slug.
 
 Leaves never sequence iMessage. Do not pass Opus, Kimi, or GLM.

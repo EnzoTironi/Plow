@@ -15,8 +15,7 @@ and [Send a message](https://docs.kapso.ai/api/meta/whatsapp/messages/send-a-mes
 
 ## What you call
 
-- One `zoen_imessage` call. Items, in order: `reaction`, `text`, `image`, `video`, `audio`, `contact`.
-- `reaction.kind` is `like` `love` `laugh` `emphasize` `question` `dislike`. Omit `message_id` to react to the message that opened the turn.
+- One `zoen_imessage` call. The eye and the typing indicator are already on their message. Do not add a reaction. Items, in order: `text`, `image`, `video`, `audio`, `contact`.
 - `text.reply_to` is the wamid being quoted. The same field quotes an image or a voice note.
 - `contact.who` is `zoen` or `enzo`. Another person is `name` and `phone`.
 - Progress at each step uses `purpose: "progress"`. The result uses `purpose: "answer"`.

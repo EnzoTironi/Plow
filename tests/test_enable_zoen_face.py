@@ -57,6 +57,39 @@ def test_live_dump_gains_zoen_face_and_keeps_plow_chat():
         assert "model" not in data
 
 
+def test_luna_falls_through_to_glm_flash():
+    live = LIVE + (
+        "delegation:\n"
+        "  provider: plow\n"
+        "  model: openai/gpt-5.6-luna\n"
+        "  reasoning_effort: high\n"
+    )
+    with tempfile.TemporaryDirectory() as folder:
+        path = _write(folder, "config.yaml", live)
+        assert enable.ensure(path) is True
+        data = enable.yaml.safe_load(path.read_text())
+        assert data["delegation"]["model"] == "openai/gpt-5.6-luna"
+        assert data["delegation"]["fallback_providers"] == [
+            {"provider": "plow", "model": "z-ai/glm-5.3-flash"}
+        ]
+        assert data["delegation"]["reasoning_effort"] == "high"
+        assert enable.ensure(path) is False
+
+
+def test_a_non_luna_route_keeps_its_fallback():
+    live = LIVE + (
+        "delegation:\n"
+        "  provider: plow\n"
+        "  model: z-ai/glm-5.2\n"
+    )
+    with tempfile.TemporaryDirectory() as folder:
+        path = _write(folder, "config.yaml", live)
+        enable.ensure(path)
+        data = enable.yaml.safe_load(path.read_text())
+        assert "fallback_providers" not in data["delegation"]
+        assert data["delegation"]["model"] == "z-ai/glm-5.2"
+
+
 def test_already_listed_stays_untouched():
     with tempfile.TemporaryDirectory() as folder:
         path = _write(folder, "config.yaml", VOICED)

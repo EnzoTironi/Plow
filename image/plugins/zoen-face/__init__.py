@@ -26,6 +26,7 @@ import face  # noqa: E402
 import listen  # noqa: E402
 from . import presence  # noqa: E402
 from . import connections  # noqa: E402
+from . import turn_speed  # noqa: E402
 from . import whatsapp  # noqa: E402
 from . import whatsapp_line  # noqa: E402
 
@@ -93,3 +94,4 @@ def register(ctx) -> None:
     ctx.register_tool(name="zoen_connections", toolset="zoen", schema=connections.SCHEMA,
                       handler=connections.handle, emoji="🔌")
     configure_adapters()
+    turn_speed.install()

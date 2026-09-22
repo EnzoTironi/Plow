@@ -142,9 +142,7 @@ def test_burst_one_status_and_reaction_on_last_message(tmp_path, monkeypatch):
 
     asyncio.run(run())
     assert adapter.typed == ["cht_owner"]
-    assert len(adapter.posts) == 2
-    assert ("cht_owner", "messages", {"body": "vou olhar aquele documento", "format": "none"}) in adapter.posts
-    assert ("cht_owner", "messages/msg_2/reactions", {"operation": "add", "type": "like"}) in adapter.posts
+    assert adapter.posts == [("cht_owner", "messages", {"body": "vou olhar aquele documento", "format": "none"})]
 
 
 def test_attachment_does_not_block_status_with_real_debounce(tmp_path, monkeypatch):
@@ -169,7 +167,7 @@ def test_reconnect_does_not_repeat_sent_receipt(tmp_path, monkeypatch):
     restarted = presence.Presence(adapter, receiving.module, presence.Receipts(tmp_path / "receipts.db"))
     restarted.post = receiving.post
     asyncio.run(send_one(restarted))
-    assert len(adapter.posts) == 2
+    assert len(adapter.posts) == 1
 
 
 async def send_one(receiving):
@@ -187,8 +185,8 @@ def test_ambiguous_send_is_not_retried_after_restart(tmp_path, monkeypatch):
     receiving.post = uncertain
     asyncio.run(send_one(receiving))
     asyncio.run(send_one(receiving))
-    assert len(adapter.posts) == 2
-    assert receiving.receipts.state("cht_owner", "msg_1") == {"status": "uncertain", "reaction": "uncertain"}
+    assert len(adapter.posts) == 1
+    assert receiving.receipts.state("cht_owner", "msg_1") == {"status": "uncertain", "reaction": "skipped"}
 
 
 def test_model_selects_reaction_without_status_for_a_closer(tmp_path, monkeypatch):
@@ -203,7 +201,7 @@ def test_model_selects_reaction_without_status_for_a_closer(tmp_path, monkeypatc
         await drain(receiving)
 
     asyncio.run(run())
-    assert adapter.posts == [("cht_owner", "messages/msg_2/reactions", {"operation": "add", "type": "love"})]
+    assert adapter.posts == []
 
 
 def test_revoked_membership_does_not_send(tmp_path, monkeypatch):
@@ -278,7 +276,28 @@ def test_reaction_is_chosen_by_model_not_keywords(tmp_path, monkeypatch):
         receiving.accept(message("msg_connect", "conecta meu Google"), "cht_owner")
         await drain(receiving)
     asyncio.run(run())
-    assert adapter.posts[1][2] == {"operation": "add", "type": "emphasize"}
+    assert adapter.posts == [("cht_owner", "messages", {"body": "vou conectar sua agenda", "format": "none"})]
+
+
+def test_the_eye_goes_out_when_the_model_is_called(tmp_path, monkeypatch):
+    receiving, adapter = receiver(tmp_path, monkeypatch)
+
+    async def run():
+        event = SimpleNamespace(
+            internal=False,
+            source=SimpleNamespace(chat_id="cht_owner"),
+            message_id="msg_9",
+        )
+        await receiving.notice_model(event)
+        await receiving.notice_model(event)
+
+    asyncio.run(run())
+    assert adapter.typed == ["cht_owner"]
+    assert adapter.posts == [(
+        "cht_owner",
+        "messages/msg_9/reactions",
+        {"operation": "add", "type": "custom", "custom_emoji": "👀"},
+    )]
 
 
 def test_commands_do_not_receive_an_ack(tmp_path, monkeypatch):
@@ -406,7 +425,7 @@ def test_each_effect_keeps_its_own_outcome(tmp_path, monkeypatch):
         return "sent" if endpoint == "messages" else "failed"
     receiving.post = mixed
     asyncio.run(send_one(receiving))
-    assert receiving.receipts.state("cht_owner", "msg_1") == {"status": "sent", "reaction": "failed"}
+    assert receiving.receipts.state("cht_owner", "msg_1") == {"status": "sent", "reaction": "skipped"}
 
 
 def test_expired_budget_never_posts_a_late_opening(tmp_path, monkeypatch):

@@ -225,18 +225,18 @@ _CARDS = {
 }
 IMESSAGE_DESCRIPTION = (
     "Send on this turn's channel. WhatsApp and iMessage both use this tool. "
-    "One call can hold a reaction and the bubbles, in order. "
+    "One call sends the bubbles, in order. "
     "purpose=progress is a short update and does not finish the request. "
     "purpose=answer is the result. Stop after it. "
-    "reaction: kind is like, love, laugh, emphasize, question, or dislike. "
-    "Omit message_id to react to the message that opened this turn. "
+    "The eye is already on the message that opened this turn, and typing is already on. "
+    "Do not send a reaction. A reaction is not the reply. "
     "text: body is the bubble. reply_to quotes one bubble. "
     "On WhatsApp, reply_to is that bubble's wamid. On iMessage, leave reply_to off. "
     "image: path is an absolute jpg, png, or webp. "
     "video: path is an absolute mp4. "
     "audio: path is an absolute file. voice true is a voice note. "
     "contact: who is zoen or enzo, or pass name and phone. "
-    "The terminal cannot text, react, or attach. This tool does. "
+    "The sandbox shell is root. terminal, execute_code, write_file, and patch do the work. They do not text, react, or attach. This tool does. "
     "After a successful call the words are already in the chat. The final reply is [NO_REPLY]."
 )
 
@@ -332,16 +332,20 @@ def configure_contract(module):
     module._ANSWER_LAST = (
         f"Owner bubbles only go through {IMESSAGE}. Leftover prose is not delivered. "
         "Never skip that tool; if you do, they hear nothing. "
-        "A reaction, text, image, video, audio, and contact card are items of that one call. "
+        "Text, image, video, audio, and a contact card are items of that one call. "
+        "The eye reaction and the typing indicator are already on their message. "
+        "Do not send a reaction. A reaction is not the reply. "
         "purpose=answer is the result; purpose=progress is a brief update that does "
-        "not complete the request. On an owner message, the first item is a reaction, "
-        "before any other tool or bubble. Then one short purpose=progress "
-        "bubble, then the rest. "
-        "At each later step of real work, send another short purpose=progress bubble before you move on. "
-        "A question you can answer without a tool does not get those updates. "
+        "not complete the request. "
+        "This thread stays free. A question you can answer in one bubble is answered here. "
+        "Work that needs search, a browser, files, or more than this reply is one delegate_task spawn. "
+        "The child does not see this chat. Put the whole assignment in the task. "
+        "Send one short purpose=progress bubble, then end the turn. "
+        "A later status question or progress check is one short bubble on this thread. "
+        "Do not take over the child's tools. "
+        "A revision is delegate_task action steer with the same subagent_id and the full assignment. "
         "Stop after the answer. Do not answer or quote your own bubbles. "
         "The last message is purpose=answer. "
-        "Skip the tapback only when this turn's note says it was already sent. "
         "Internal events do not need an opening and do not set language. "
         "Language follows the owner's last human message and VOICE.md, never this note. "
         "Do not narrate tool operations or routine bookkeeping. "
@@ -781,11 +785,6 @@ def guard_whatsapp_tool(tool_name, args, **_kwargs):
             "action": "block",
             "message": "This turn is on WhatsApp. Use zoen_imessage. plow_send_message texts their iMessage.",
         }
-    if name in {"terminal", "execute_code", "code_execution", "write_file", "patch"}:
-        return {
-            "action": "block",
-            "message": "This turn is on WhatsApp. One zoen_imessage call: reaction, text, image, video, audio, or contact. The terminal does not send. Do not retry.",
-        }
     return None
 
 
@@ -1097,6 +1096,16 @@ def _wrap_sequence(orig_seq, orig_attach, orig_voice):
         args = {**(args or {}), "items": items}
         if not items:
             return {"success": True, "completed": []}
+        if all(isinstance(item, dict) and item.get("type") == "reaction" for item in items):
+            return {
+                "success": False,
+                "completed": [],
+                "failure": {
+                    "index": 0,
+                    "status": "rejected",
+                    "error": "The eye is already on their message. Send the reply as text. Do not send a reaction.",
+                },
+            }
         target = _outbound_target(self, turn)
         channel = _channel_name(target)
         credits_only = credits_is_notice(_bubble_text(items))

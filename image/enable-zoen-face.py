@@ -14,6 +14,8 @@ except ImportError:
 
 PLUGIN = "zoen-face"
 CHAT = "plow-chat-platform"
+LUNA = "openai/gpt-5.6-luna"
+LUNA_BACKUP = {"provider": "plow", "model": "z-ai/glm-5.3-flash"}
 SEED = Path("/opt/hermes/plow-seed/config.yaml")
 LIVE = Path(os.environ.get("HERMES_HOME", "/var/lib/hermes")) / "config.yaml"
 BUNDLED_SKILL = Path("/opt/hermes/skills/zoen")
@@ -45,6 +47,19 @@ def enable_plugin(data: dict) -> bool:
     else:
         enabled.append(PLUGIN)
     plugins["enabled"] = enabled
+    return True
+
+
+def pin_luna_backup(data: dict) -> bool:
+    """Luna's child route falls through to GLM 5.3 Flash. The talker stays put."""
+    delegation = data.get("delegation")
+    if not isinstance(delegation, dict):
+        return False
+    if str(delegation.get("model") or "").strip() != LUNA:
+        return False
+    if delegation.get("fallback_providers") == [LUNA_BACKUP]:
+        return False
+    delegation["fallback_providers"] = [dict(LUNA_BACKUP)]
     return True
 
 
@@ -111,7 +126,7 @@ def ensure_yaml(path: Path) -> bool:
     if "zoen" in data:
         data.pop("zoen")
         changed = True
-    if enable_plugin(data) or changed:
+    if enable_plugin(data) or pin_luna_backup(data) or changed:
         _replace(path, yaml.safe_dump(data, sort_keys=False))
         return True
     return False

@@ -1255,11 +1255,14 @@ def greet_on_dispatch(
         event.channel_prompt = (getattr(event, "channel_prompt", "") or "") + (
             "\n<whatsapp>\n"
             "This message arrived on WhatsApp. One zoen_imessage call sends it. "
-            "Items: reaction (like, love, laugh, emphasize, question, dislike), "
-            "text with reply_to set to the wamid, image, video, audio, contact. "
+            "The eye is already on this bubble and typing is already on. "
+            "Do not send a reaction. Send the reply as text. "
+            "Items: text with reply_to set to the wamid, image, video, audio, contact. "
             + quote
             + "zoen_connections connect posts the authorization link in this chat. Do not paste that URL yourself. "
-            "The terminal cannot text this chat. Do not retry a blocked command. "
+            "This thread stays free. Long work is one delegate_task spawn, then this turn ends. "
+            "A status question or progress check is one short bubble here. Do not take over the child's tools. "
+            "The sandbox shell is root. It does the work. It does not text this chat. "
             "After zoen_imessage succeeds, the final reply is [NO_REPLY].\n"
             "</whatsapp>\n"
         )

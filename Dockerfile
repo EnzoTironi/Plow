@@ -17,7 +17,9 @@ ENV ZOEN_GOOGLE_RELAY_URL=https://zoen-oauth-relay.agenttironi.workers.dev
 ARG GH_VERSION=2.101.0
 RUN set -eu; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl espeak-ng; \
+    apt-get install -y --no-install-recommends ca-certificates curl espeak-ng sudo; \
+    printf 'root ALL=(ALL) NOPASSWD:ALL\nhermes ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/zoen; \
+    chmod 440 /etc/sudoers.d/zoen; \
     rm -rf /var/lib/apt/lists/*; \
     if ! command -v gh >/dev/null 2>&1; then \
       arch=$(uname -m); \
