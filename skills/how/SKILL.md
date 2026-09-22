@@ -12,11 +12,10 @@ data shapes, what not to touch.
 
 ## Complexity
 
-- **Simple** (one module, one function): one `delegate_task` leaf
-  on `anthropic/claude-sonnet-5`. Explore and explain in a single pass.
-- **Complex** (several files or services): 2–4 explorer leaves on
-  `anthropic/claude-sonnet-5` in one `delegate_task` lot, then one synthesis
-  leaf on `anthropic/claude-sonnet-5`.
+- **Simple** (one module, one function): one `delegate_task` leaf.
+  Explore and explain in a single pass.
+- **Complex** (several files or services): 2–4 explorer leaves in one
+  `delegate_task` lot, then one synthesis leaf.
 - When in doubt, simple.
 
 Leaves are readonly. They do not Latch. They do not ship.

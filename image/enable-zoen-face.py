@@ -21,6 +21,8 @@ LIVE = Path(os.environ.get("HERMES_HOME", "/var/lib/hermes")) / "config.yaml"
 BUNDLED_SKILL = Path("/opt/hermes/skills/zoen")
 BUNDLED_SCRIPTS = Path("/opt/hermes/skills/zoen/scripts")
 SONNET = "anthropic/claude-sonnet-5"
+LUNA = "openai/gpt-5.6-luna"
+ALLOWED_MODELS = {SONNET, LUNA}
 MODELS = {
     "model": {
         "default": SONNET,
@@ -34,6 +36,7 @@ MODELS = {
         "plow": {
             "models": {
                 SONNET: {},
+                LUNA: {},
             }
         }
     },
@@ -42,6 +45,11 @@ MODELS = {
             "provider": "plow",
             "model": SONNET,
         }
+    },
+    "delegation": {
+        "provider": "plow",
+        "model": LUNA,
+        "reasoning_effort": "high",
     },
 }
 YOLO = {
@@ -115,7 +123,7 @@ def apply_runtime(data: dict) -> bool:
     models = plow.get("models") if isinstance(plow, dict) else None
     if isinstance(models, dict):
         for slug in list(models):
-            if slug != SONNET:
+            if slug not in ALLOWED_MODELS:
                 del models[slug]
                 changed = True
     return changed

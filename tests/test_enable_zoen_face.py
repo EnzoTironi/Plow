@@ -85,9 +85,11 @@ def test_apply_runtime_pins_sonnet_and_drops_other_models():
     assert data["model"]["default"] == "anthropic/claude-sonnet-5"
     assert data["model"]["provider"] == "plow"
     models = data["providers"]["plow"]["models"]
-    assert list(models) == ["anthropic/claude-sonnet-5"]
+    assert list(models) == ["anthropic/claude-sonnet-5", "openai/gpt-5.6-luna"]
     assert data["fallback_model"]["model"] == "anthropic/claude-sonnet-5"
     assert data["auxiliary"]["vision"]["model"] == "anthropic/claude-sonnet-5"
+    assert data["delegation"]["model"] == "openai/gpt-5.6-luna"
+    assert data["delegation"]["reasoning_effort"] == "high"
     assert enable.apply_runtime(data) is False
 
 
@@ -107,7 +109,7 @@ def test_apply_runtime_drops_other_models_from_an_existing_catalog():
     }
     assert enable.apply_runtime(data) is True
     models = data["providers"]["plow"]["models"]
-    assert list(models) == ["anthropic/claude-sonnet-5"]
+    assert list(models) == ["anthropic/claude-sonnet-5", "openai/gpt-5.6-luna"]
     assert models["anthropic/claude-sonnet-5"]["prompt_caching"] is True
 
 

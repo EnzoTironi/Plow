@@ -18,10 +18,16 @@ model:
 fallback_model:
   provider: plow
   model: anthropic/claude-sonnet-5
+# The talker stays on Sonnet. Every delegate_task child is Luna and reasons.
+delegation:
+  provider: plow
+  model: openai/gpt-5.6-luna
+  reasoning_effort: high
 providers:
   plow:
     models:
       anthropic/claude-sonnet-5: {}
+      openai/gpt-5.6-luna: {}
 auxiliary:
   vision:
     provider: plow

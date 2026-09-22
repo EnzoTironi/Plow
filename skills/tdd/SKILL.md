@@ -7,7 +7,7 @@ description: Backstage for Zoen. Fail a cheap check first, then fill it in. Skip
 
 Zoen is the talker. Make the broken behavior executable before
 changing production code. Prefer no new test over a bad test.
-Fill-in and seams: `anthropic/claude-sonnet-5`.
+Fill-in and seams run as leaves.
 
 Do not force a test when it would need a broad harness, brittle
 mocks, slow end-to-end infra, production-only state, or large

@@ -187,8 +187,10 @@ similar speed, not a claim that Luna is always faster. The
 [OpenRouter model catalog](https://openrouter.ai/api/v1/models) listed Luna at
 $0.20/M input and $1.20/M output tokens, versus Sonnet at $2/M and $10/M, for the
 short-context pricing tier on 2026-09-19. These are catalog rates, not a guarantee
-of Plow billing. Sonnet is the only pinned model: main turn, reception, vision,
-and fallback. Only reception explicitly disables reasoning. Live Treg validation exposed
+of Plow billing. The talker is Sonnet: main turn, reception, vision, and
+fallback. Only reception disables reasoning. Every `delegate_task` child is
+Luna with reasoning on, pinned by `delegation` in `runtime/config.yaml`.
+Live Treg validation exposed
 temporary upstream Luna rate limits; a streamed Sonnet response through Plow was
 verified before the first fallback existed. This cannot bypass an outage of Plow itself,
 and the reception call uses the same Sonnet pin.

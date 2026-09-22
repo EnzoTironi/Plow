@@ -962,6 +962,7 @@ def test_whatsapp_turn_stays_in_the_session():
     source = (ROOT / "image/plugins/zoen-face/whatsapp.py").read_text()
     assert "event.internal = False" in source
     assert "event.internal = True" not in source
+    assert "event.interrupts_run = False" in source
     spec = importlib.util.spec_from_file_location(
         "zoen_face_whatsapp_prompt", ROOT / "image/plugins/zoen-face/whatsapp.py"
     )

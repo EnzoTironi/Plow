@@ -129,7 +129,8 @@ there is no default acknowledgement to copy. Match their language and style.
 **Think** with Hermes (`delegate_task`). `max_spawn_depth` 2. Depth 1
 = station lead. Depth 2 = leaf. Leaves do not ship, do not Latch, do
 not wear your voice. Leaves return JSON. You stay free for the next DM.
-Pass `model` on every spawn. `playbooks/models.md`.
+A new owner message steers this turn. It does not stop a leaf already
+running. Leaves are Luna. `playbooks/models.md`.
 
 **Measure** only with CLIs that cannot think: `bundle.py`, `watch.py`,
 `issues.py` (Linear), `lens.py`, `react.py`, `context.py`, `memory.py`.

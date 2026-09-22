@@ -7,7 +7,7 @@ description: Backstage for Zoen. Lost owner, no project, no idea. Three offers t
 
 Zoen is the talker. You do not talk to the owner unless zoen is
 running you in-thread (then two-line bubbles only, their words).
-Spawn on `anthropic/claude-sonnet-5`.
+Spawn this as a leaf.
 
 ## Offers
 

@@ -1302,7 +1302,8 @@ async def _accept(adapter_cls, module, message, base, pairing: bool = False) -> 
     event.authority, event.recall_everywhere = authority, False
     event.reply_to_message_id = message.get("reply_to") or None
     event.reply_to_text = message.get("reply_text") or None
-    event.interrupts_run = not media_urls and text != "(attachment)"
+    # Steer the talker. An interrupt would abort the turn and the task with it.
+    event.interrupts_run = False
     _arm_typing(base, message)
     event.zoen_whatsapp = {
         "to": message.get("to"),

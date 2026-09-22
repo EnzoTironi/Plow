@@ -1,10 +1,8 @@
 # Models
 
-Every turn and every `delegate_task` uses `anthropic/claude-sonnet-5`.
-Talker, leaves, vision, fallback, swarm, arena, review, and heavy
-work are the same slug. The talker sends the first ack. Leaves never
-sequence iMessage.
+The talker and orchestrator are `anthropic/claude-sonnet-5`: the
+owner's turn, the opening, vision, and fallback. Every `delegate_task`
+child is `openai/gpt-5.6-luna` with reasoning on. The runtime pins that
+in `delegation`. The spawn has no model field. Do not name another slug.
 
-Do not pass Luna, Opus, Kimi, or GLM.
-
-Pass `model` on the spawn. Same slug if the runtime ignores unknown keys.
+Leaves never sequence iMessage. Do not pass Opus, Kimi, or GLM.
