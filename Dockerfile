@@ -120,6 +120,7 @@ COPY image/s6-overlay/ /etc/s6-overlay/
 RUN chmod 0644 /opt/hermes/plugins/zoen-face/plugin.yaml /opt/hermes/plugins/zoen-face/__init__.py /opt/hermes/plugins/zoen-face/quiet.py /opt/hermes/enable-zoen-face.py \
  && chmod 0755 /opt/hermes/plow-init-then-face.sh \
  && chmod 0755 /etc/s6-overlay/s6-rc.d/zoen-floor-cron/run \
+ && chmod 0755 /etc/s6-overlay/s6-rc.d/zoen-pairing/run \
  && /opt/hermes/.venv/bin/python /opt/hermes/enable-zoen-face.py
 
 # Public page copy does not invalidate the tool-install layers.
@@ -129,3 +130,17 @@ ARG ZOEN_REVISION=unknown
 LABEL org.opencontainers.image.source="https://github.com/EnzoTironi/plow" \
       org.opencontainers.image.revision=$ZOEN_REVISION \
       org.opencontainers.image.title="Zoen"
+# The line volume keeps this stamp. A different image clears the "already sent" mark once.
+RUN ZOEN_REVISION="$ZOEN_REVISION" python3 - <<'PY'
+import hashlib, os, pathlib
+digest = hashlib.sha256()
+digest.update(os.environ.get("ZOEN_REVISION", "unknown").encode())
+roots = [pathlib.Path("/opt/hermes/plugins/zoen-face"), pathlib.Path("/opt/plow/zoen/face.py")]
+files = []
+for root in roots:
+    files.extend([root] if root.is_file() else sorted(path for path in root.rglob("*") if path.is_file()))
+for path in files:
+    digest.update(path.as_posix().encode())
+    digest.update(path.read_bytes())
+pathlib.Path("/etc/zoen-image-id").write_text(digest.hexdigest() + "\n")
+PY

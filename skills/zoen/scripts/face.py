@@ -76,7 +76,31 @@ _RETIRED_HELLO = (
 )
 
 
-def first_contact_prompt(whatsapp: bool = False) -> str:
+WHATSAPP_DOOR = "553798136141"
+
+
+def saved_pairing_code() -> str:
+    """The code this volume already claimed. Empty until WhatsApp pairing writes it."""
+    root = (os.environ.get("HERMES_HOME") or "").strip()
+    if not root:
+        return ""
+    try:
+        code = (Path(root) / "zoen" / "whatsapp.code").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    return code if re.fullmatch(r"\d{6}", code) else ""
+
+
+def whatsapp_choice(code: str, door: str = WHATSAPP_DOOR) -> str:
+    """Verbatim lines for the iMessage intro. The link opens WhatsApp with the code filled in."""
+    return (
+        "pode continuar conversando comigo por aqui\n\n"
+        "ou conversar comigo pelo whatsapp, enviando esse código\n\n"
+        f"https://wa.me/{door}?text={code}"
+    )
+
+
+def first_contact_prompt(whatsapp: bool = False, *, offer_whatsapp: bool | None = None) -> str:
     if whatsapp:
         return (
             "\n[Zoen first contact]\n"
@@ -95,6 +119,19 @@ def first_contact_prompt(whatsapp: bool = False) -> str:
             "name is already in the message or memory, else action=ask and "
             "ask only if ask=true. Write VOICE.md this turn."
         )
+    offer = not whatsapp if offer_whatsapp is None else offer_whatsapp
+    choice = ""
+    if offer:
+        code = saved_pairing_code()
+        if code:
+            lines = whatsapp_choice(code)
+            choice = (
+                "In this same reply, after the intro, they can keep talking "
+                "here or move to WhatsApp. Use these lines verbatim. Do not "
+                "invent another code or another link. This link is required "
+                "and is not the phone number the next rule forbids. If this "
+                f"exact link is already in the chat, do not send it again.\n{lines}\n"
+            )
     return (
         "\n[Zoen first contact]\n"
         "VOICE.md is missing. Answer them normally via zoen_imessage, in "
@@ -106,7 +143,9 @@ def first_contact_prompt(whatsapp: bool = False) -> str:
         "their apps — more than a thousand connections and MCPs — wherever "
         "they need. How you say it is yours. Not a menu. Do not copy an "
         "older intro from this chat. Never send a phone number or 'a gente "
-        "te ajuda'. Then `python3 /opt/plow/zoen/face.py cards`. Handle "
+        "te ajuda'. "
+        + choice
+        + "Then `python3 /opt/plow/zoen/face.py cards`. Handle "
         "their request. This session, learn what to call them: "
         "zoen_owner_profile action=save if the name is already in the "
         "message or memory, else action=ask and ask only if ask=true. "
@@ -1112,7 +1151,7 @@ def greet_on_dispatch(
     if getattr(event, "zoen_pairing_code", False):
         event.channel_prompt = (
             (getattr(event, "channel_prompt", "") or "")
-            + first_contact_prompt(whatsapp=False)
+            + first_contact_prompt(whatsapp=False, offer_whatsapp=False)
             + "\nTheir message is only the pairing code that linked WhatsApp. "
             "Do not repeat the code. "
         )

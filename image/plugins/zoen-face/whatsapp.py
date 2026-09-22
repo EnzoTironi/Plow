@@ -14,6 +14,7 @@ from urllib.parse import quote
 
 log = logging.getLogger("zoen-whatsapp")
 WHATSAPP_DOOR = "553798136141"
+_IMAGE_STAMP = "/etc/zoen-image-id"
 _QUIET = None
 _TASK = None
 _TOKEN = ""
@@ -241,16 +242,25 @@ def phone_from_contacts(rows) -> str:
 
 def owner_phones(rows) -> list[str]:
     """Every owner phone in the book. The line texts each of them the pairing code."""
+    return [handle for handle in owner_handles(rows) if _digits(handle)]
+
+
+def owner_handles(rows) -> list[str]:
+    """Owner phones, then owner iMessage emails. Either can receive the first text."""
     if not isinstance(rows, list):
         return []
-    found: list[str] = []
+    phones: list[str] = []
+    emails: list[str] = []
     for person in rows:
         if not isinstance(person, dict) or person.get("role") != "owner":
             continue
-        phone = _digits(person.get("provider_key"))
-        if phone and phone not in found:
-            found.append(phone)
-    return found
+        key = str(person.get("provider_key") or "").strip()
+        phone = _digits(key)
+        if phone and phone not in phones:
+            phones.append(phone)
+        elif _deliverable(key) and key.lower() not in emails:
+            emails.append(key)
+    return phones + emails
 
 
 def phones_in_chats(me) -> set[str]:
@@ -282,9 +292,10 @@ def owner_phone(adapter, module) -> str:
 
 
 def pairing_message(code: str, door: str = WHATSAPP_DOOR) -> str:
-    """iMessage the owner taps. The link opens WhatsApp with this VM's code filled in."""
+    """The WhatsApp choice, in Zoen's voice. The link opens WhatsApp with this VM's code filled in."""
     return (
-        f"pra eu te achar no whatsapp, envia este código: {code}\n\n"
+        "pode continuar conversando comigo por aqui\n\n"
+        "ou conversar comigo pelo whatsapp, enviando esse código\n\n"
         f"https://wa.me/{door}?text={code}"
     )
 
@@ -321,11 +332,38 @@ def _agent_uid(me) -> str:
     return uid if re.fullmatch(r"[A-Za-z0-9_-]{4,128}", uid) else ""
 
 
-def _read_install() -> str:
+def _install_lines() -> list[str]:
     try:
-        return open(_install_path(), encoding="utf-8").read().strip()
+        return [line.strip() for line in open(_install_path(), encoding="utf-8").read().splitlines()]
     except OSError:
-        return ""
+        return []
+
+
+def _read_install() -> str:
+    lines = _install_lines()
+    return lines[0] if lines else ""
+
+
+def _read_image() -> str:
+    lines = _install_lines()
+    return lines[1] if len(lines) > 1 else ""
+
+
+def _image_stamp() -> str:
+    """Identity of the image that is running. The volume remembers this, not a hand-bumped number."""
+    override = os.environ.get("ZOEN_IMAGE_ID", "").strip()
+    if re.fullmatch(r"[A-Za-z0-9._:-]{8,128}", override):
+        return override
+    try:
+        baked = open(_IMAGE_STAMP, encoding="utf-8").read().strip()
+    except OSError:
+        baked = ""
+    return baked if re.fullmatch(r"[a-f0-9]{64}", baked) else ""
+
+
+def _image_changed() -> bool:
+    stamp = _image_stamp()
+    return bool(stamp) and _read_image() != stamp
 
 
 def _write_install(uid: str) -> None:
@@ -333,7 +371,12 @@ def _write_install(uid: str) -> None:
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-        handle.write(uid + "\n")
+        handle.write(uid + "\n" + _image_stamp() + "\n")
+
+
+def _pairing_settled() -> bool:
+    """This image already texted the code on this volume."""
+    return not _image_changed() and bool(_sent_chats())
 
 
 def _clear_sent_claims() -> None:
@@ -386,18 +429,22 @@ def pairing_turn(messages, code: str) -> bool:
 
 
 def _release_previous_install(uid: str) -> None:
-    """One-click keeps the line volume. A different agent still has to text the code once."""
-    if not uid or _read_install() == uid:
+    """One-click keeps the line volume. A new agent, or a new image, texts the code once."""
+    if not uid:
+        return
+    same_agent = _read_install() == uid
+    if same_agent and not _image_changed():
         return
     _clear_sent_claims()
-    try:
-        os.remove(_token_path())
-    except OSError:
-        pass
-    try:
-        os.remove(_onboarded_path())
-    except OSError:
-        pass
+    if not same_agent:
+        try:
+            os.remove(_token_path())
+        except OSError:
+            pass
+        try:
+            os.remove(_onboarded_path())
+        except OSError:
+            pass
     _write_install(uid)
 
 
@@ -503,10 +550,19 @@ def _tel_key(phone: str) -> str:
     return "tel:" + phone
 
 
-async def _open_pairing(agent: str, line_uid: str, phone: str, code: str) -> None:
+def _handle_claim(handle: str) -> tuple[str, str, str]:
+    """Claim key, chat member, and idempotency stamp for a phone or an iMessage email."""
+    phone = _digits(handle)
+    if phone:
+        return _tel_key(phone), f"+{phone}", phone
+    email = str(handle or "").strip()
+    return "mail:" + email.lower(), email, email.lower()
+
+
+async def _open_pairing(agent: str, line_uid: str, handle: str, code: str) -> None:
     """Start the 1:1 by sending the code once. The owner does not have to text first."""
-    key = _tel_key(phone)
-    if not agent or not line_uid or not phone:
+    key, member, stamp = _handle_claim(handle)
+    if not agent or not line_uid or not member:
         return
     api = os.environ.get("PLOW_API_BASE", "").strip().rstrip("/")
     if not api or not _claim_chat(key):
@@ -518,9 +574,9 @@ async def _open_pairing(agent: str, line_uid: str, phone: str, code: str) -> Non
             agent,
             {
                 "line_uid": line_uid,
-                "members": [f"+{phone}"],
+                "members": [member],
                 "body": pairing_message(code),
-                "idempotency_key": f"zoen-wa-{code}-{phone}",
+                "idempotency_key": f"zoen-wa-{code}-{stamp}",
             },
         )
     except RuntimeError as exc:
@@ -530,6 +586,53 @@ async def _open_pairing(agent: str, line_uid: str, phone: str, code: str) -> Non
     uid = str((data or {}).get("uid") or "") if isinstance(data, dict) else ""
     if uid.startswith("cht_"):
         _claim_chat(uid)
+
+
+async def _mailbox_uid(agent: str, me: dict) -> str:
+    """The persona mailbox on this credential. It can send before any chat exists."""
+    line = me.get("line") if isinstance(me, dict) and isinstance(me.get("line"), dict) else {}
+    persona = str(line.get("display_name") or "")
+    try:
+        found = await _plow_json(agent, "/v1/lines")
+    except Exception:
+        return ""
+    rows = found.get("data") if isinstance(found, dict) else []
+    if not isinstance(rows, list):
+        return ""
+    for row in rows:
+        if not isinstance(row, dict) or row.get("provider_type") != "email":
+            continue
+        if persona and str(row.get("display_name") or "") != persona:
+            continue
+        uid = str(row.get("uid") or "")
+        if uid:
+            return uid
+    return ""
+
+
+async def _open_mailbox(agent: str, me: dict, handle: str, code: str) -> None:
+    """Mail the code from the persona address. Chat create cannot see a line with no thread yet."""
+    key, member, _stamp = _handle_claim(handle)
+    mailbox = await _mailbox_uid(agent, me)
+    api = os.environ.get("PLOW_API_BASE", "").strip().rstrip("/")
+    if not api or not mailbox or "@" not in member or not _claim_chat(key):
+        return
+    try:
+        await _request(
+            "POST",
+            f"{api}/v1/email-lines/{quote(mailbox, safe='')}/messages",
+            agent,
+            {
+                "to": [member],
+                "subject": "seu código do whatsapp",
+                "body": pairing_message(code),
+            },
+        )
+    except RuntimeError as exc:
+        if str(exc).startswith("whatsapp_http_"):
+            _release_chat(key)
+        raise
+    log.warning("whatsapp code mailed")
 
 
 async def _chat_history(agent: str, uid: str) -> list:
@@ -554,6 +657,15 @@ async def _push_pairing(agent: str, me: dict) -> None:
     line_uid = str(line.get("uid") or "")
     own = _digits(line.get("provider_key"))
     known = phones_in_chats(me)
+    for chat in me.get("chats") or []:
+        if not isinstance(chat, dict):
+            continue
+        for person in chat.get("participants") or []:
+            if not isinstance(person, dict) or person.get("type") != "member":
+                continue
+            email = str(person.get("provider_key") or "").strip().lower()
+            if "@" in email:
+                known.add(email)
     rows: list = []
     try:
         found = await _plow_json(agent, "/v1/contacts")
@@ -561,13 +673,22 @@ async def _push_pairing(agent: str, me: dict) -> None:
             rows = found
     except Exception:
         rows = []
-    for phone in owner_phones(rows):
-        if phone == own or phone in known:
+    for handle in owner_handles(rows):
+        stamp = _digits(handle) or handle.strip().lower()
+        if stamp == own or stamp in known:
             continue
         try:
-            await _open_pairing(agent, line_uid, phone, code)
-        except Exception:
-            log.warning("whatsapp code open failed")
+            await _open_pairing(agent, line_uid, handle, code)
+        except RuntimeError as exc:
+            if "line_not_found" not in str(exc) or "@" not in handle:
+                log.warning("whatsapp code open failed: %s", exc)
+                continue
+            try:
+                await _open_mailbox(agent, me, handle, code)
+            except Exception as mail_exc:
+                log.warning("whatsapp code mailbox failed: %s", mail_exc)
+        except Exception as exc:
+            log.warning("whatsapp code open failed: %s", exc)
 
 
 async def _offer_code(adapter, module, chat) -> None:
@@ -784,7 +905,6 @@ async def _register(adapter_cls, module, base) -> str:
             return ""
         raise
     if data.get("waiting"):
-        await _push_pairing(agent, me)
         return ""
     token = str(data.get("token") or "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{43,256}", token):
@@ -805,12 +925,26 @@ async def _adopt_install(agent: str) -> bool:
     uid = _agent_uid(found if isinstance(found, dict) else {})
     if not uid:
         return False
-    if _read_install() != uid:
+    previous = _read_install()
+    if previous != uid or _image_changed():
         _release_previous_install(uid)
-        _TOKEN = ""
+        if previous != uid:
+            _TOKEN = ""
     elif not _TOKEN:
         _TOKEN = _read_token()
     return True
+
+
+async def _ensure_pairing(agent: str) -> None:
+    """Text the code once for this image, even when WhatsApp is already bound."""
+    if not agent or _pairing_settled():
+        return
+    try:
+        found = await _plow_json(agent, "/v1/agents/me")
+    except Exception:
+        return
+    if isinstance(found, dict):
+        await _push_pairing(agent, found)
 
 
 async def _run(adapter_cls, module, base) -> None:
@@ -826,6 +960,7 @@ async def _run(adapter_cls, module, base) -> None:
                     _TOKEN = _read_token()
             if not _TOKEN:
                 _TOKEN = await _register(adapter_cls, module, base)
+            await _ensure_pairing(agent)
             if _TOKEN:
                 data = await _request("GET", base + "/whatsapp/inbox", _TOKEN)
                 code = ""
@@ -963,3 +1098,20 @@ async def _accept(adapter_cls, module, message, base, pairing: bool = False) -> 
     }
     await live._handoff_message(event)
     return bool(getattr(event, "_gateway_accepted", True))
+
+
+def boot_announce() -> int:
+    """Text the owner before plow-init has a home chat. That chat is what lets the boot finish."""
+    agent = os.environ.get("PLOW_AGENT_TOKEN", "").strip()
+    if not agent:
+        return 1
+    try:
+        asyncio.run(_ensure_pairing(agent))
+    except Exception:
+        log.warning("whatsapp boot announce failed")
+        return 1
+    return 0 if _pairing_settled() else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(boot_announce())

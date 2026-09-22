@@ -7,7 +7,7 @@ const HOLD_MS = 2 * 60 * 60 * 1000;
 const SETUP_COOLDOWN_MS = 15 * 60 * 1000;
 export const SETUP_URL = "https://auth.tryzoen.com/whatsapp/start";
 
-const SETUP_BODY = "pra gente começar a conversar, preciso de uma confirmação de dois fatores. o botão manda um sms pra confirmar o seu telefone. quando a linha existir, eu te mando um código no imessage. você envia esse código aqui. pode levar alguns minutinhos";
+const SETUP_BODY = "o botão manda um sms pra confirmar o seu telefone. o agente que responder esse sms é com quem você fala.\n\nmanda uma mensagem pra ele. aí eu te mando um código.\n\npode continuar conversando comigo por lá\n\nou voltar aqui no whatsapp e enviar esse código\n\npode levar alguns minutinhos";
 
 export function setupMessage(target, url = SETUP_URL) {
   const body = {

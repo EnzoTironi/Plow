@@ -217,10 +217,11 @@ test("the two-factor link is one clickable address that opens the setup SMS", as
   const html = await start.text();
   assert.match(html, /class="connection-page"/);
   assert.match(html, /class="brand"/);
-  assert.match(html, /Confirmação de dois fatores/);
-  assert.match(html, /Esse botão manda um SMS pra confirmar o seu telefone/);
-  assert.match(html, /Quando a linha existir, eu te mando um código no iMessage/);
-  assert.match(html, /Você envia esse código aqui no WhatsApp/);
+  assert.match(html, /Onde a gente continua/);
+  assert.match(html, /Esse botão manda um SMS e confirma o seu telefone/);
+  assert.match(html, /O agente que responder esse SMS é com quem você fala/);
+  assert.match(html, /Manda uma mensagem pra ele/);
+  assert.match(html, /Pode continuar conversando comigo por lá, ou voltar aqui no WhatsApp e enviar esse código/);
   assert.match(html, /Pode levar alguns minutinhos/);
   assert.match(html, /class="button" href="sms:\+16282463032\?&amp;body=Set%20this%20up%20for%20me%3A%20aiworthusing.com%2Fagent-index%2Fzoen"/);
 });
@@ -236,6 +237,10 @@ test("the setup button waits fifteen minutes before it is sent again", async () 
   const posts = await (await fetch(`${base}/__fixture/kapso/posts`)).json();
   const buttons = posts.filter((post) => post?.to === phone && post?.type === "interactive");
   assert.equal(buttons.length, 1);
+  assert.match(buttons[0].interactive.body.text, /o agente que responder esse sms é com quem você fala/);
+  assert.match(buttons[0].interactive.body.text, /manda uma mensagem pra ele/);
+  assert.match(buttons[0].interactive.body.text, /pode continuar conversando comigo por lá/);
+  assert.match(buttons[0].interactive.body.text, /ou voltar aqui no whatsapp e enviar esse código/);
   assert.match(buttons[0].interactive.body.text, /pode levar alguns minutinhos/);
 });
 

@@ -448,6 +448,29 @@ def test_dispatch_asks_the_model_to_onboard():
         assert face.HELLO["en"][0] not in prompt
 
 
+def test_imessage_intro_offers_whatsapp_with_the_saved_code():
+    previous = os.environ.get("HERMES_HOME")
+    event = Event("oi")
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        code_path = Path(home) / "zoen" / "whatsapp.code"
+        code_path.parent.mkdir(parents=True)
+        code_path.write_text("142857\n", encoding="utf-8")
+        try:
+            action = face.greet_on_dispatch(event, voiced=False, send=no_intro)
+        finally:
+            if previous is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous
+    assert action == {"action": "allow", "reason": "zoen onboarding"}
+    prompt = event.channel_prompt
+    assert "face.py cards" in prompt
+    assert "pode continuar conversando comigo por aqui" in prompt
+    assert "https://wa.me/553798136141?text=142857" in prompt
+    assert "do not send it again" in prompt
+
+
 def test_whatsapp_pairing_code_starts_the_imessage_onboarding():
     event = Event("142857")
     event.zoen_whatsapp = {"to": "5511999999999", "message_id": "wamid.code"}
@@ -459,6 +482,7 @@ def test_whatsapp_pairing_code_starts_the_imessage_onboarding():
     assert "Enzo made you" in prompt
     assert "Do not repeat the code" in prompt
     assert "Do not run face.py cards" not in prompt
+    assert "wa.me" not in prompt
 
 
 def test_whatsapp_first_contact_uses_the_same_idea_without_imessage_cards():
@@ -704,6 +728,7 @@ if __name__ == "__main__":
     test_account_token_reads_xdg_config_home_first()
     test_card_send_skips_if_zoen_vcf_already_went()
     test_dispatch_asks_the_model_to_onboard()
+    test_imessage_intro_offers_whatsapp_with_the_saved_code()
     test_whatsapp_pairing_code_starts_the_imessage_onboarding()
     test_whatsapp_first_contact_uses_the_same_idea_without_imessage_cards()
     test_dispatch_lets_the_model_run_after_first_run()
