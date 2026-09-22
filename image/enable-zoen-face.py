@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep Zoen's live Hermes config: zoen-face on, yolo, models, no mid-turn chatter."""
+"""List zoen-face under plugins.enabled. Model and approval stay on env."""
 from __future__ import annotations
 
 import os
@@ -15,64 +15,9 @@ except ImportError:
 PLUGIN = "zoen-face"
 CHAT = "plow-chat-platform"
 SEED = Path("/opt/hermes/plow-seed/config.yaml")
-OVERLAY = Path("/opt/hermes/plow-seed/zoen-config.yaml")
-REPO_OVERLAY = Path(__file__).resolve().parents[1] / "runtime/config.yaml"
 LIVE = Path(os.environ.get("HERMES_HOME", "/var/lib/hermes")) / "config.yaml"
 BUNDLED_SKILL = Path("/opt/hermes/skills/zoen")
 BUNDLED_SCRIPTS = Path("/opt/hermes/skills/zoen/scripts")
-LUNA = "openai/gpt-5.6-luna"
-ALLOWED_MODELS = {LUNA}
-MODELS = {
-    "model": {
-        "default": LUNA,
-        "provider": "plow",
-    },
-    "fallback_model": {
-        "provider": "plow",
-        "model": LUNA,
-    },
-    "providers": {
-        "plow": {
-            "models": {
-                LUNA: {},
-            }
-        }
-    },
-    "auxiliary": {
-        "vision": {
-            "provider": "plow",
-            "model": LUNA,
-        }
-    },
-    "delegation": {
-        "provider": "plow",
-        "model": LUNA,
-        "reasoning_effort": "high",
-    },
-}
-YOLO = {
-    "approvals": {
-        "mode": "off",
-        "cron_mode": "approve",
-        "single_query_mode": "approve",
-        "unattended_mode": "approve",
-    },
-    "security": {"tirith_enabled": False},
-    "busy_input_mode": "steer",
-    "busy_ack_enabled": False,
-    "display": {
-        "interim_assistant_messages": False,
-        "memory_notifications": "off",
-        "background_process_notifications": "off",
-        "platforms": {
-            "plow_chat": {
-                "tool_progress": "off",
-                "long_running_notifications": False,
-                "interim_assistant_messages": False,
-            }
-        },
-    },
-}
 MARKERS = (
     "    - plow-chat-platform\n",
     "  - plow-chat-platform\n",
@@ -82,49 +27,6 @@ MARKERS = (
 
 def _listed(text: str) -> bool:
     return f"- {PLUGIN}" in text or f"-{PLUGIN}" in text
-
-
-def _merge(dst: dict, src: dict) -> bool:
-    changed = False
-    for key, value in src.items():
-        if isinstance(value, dict):
-            nested = dst.get(key)
-            if not isinstance(nested, dict):
-                nested = {}
-                dst[key] = nested
-            changed = _merge(nested, value) or changed
-        elif dst.get(key) != value:
-            dst[key] = value
-            changed = True
-    return changed
-
-
-def load_overlay() -> dict:
-    if yaml is not None:
-        for path in (OVERLAY, REPO_OVERLAY):
-            try:
-                if not path.is_file():
-                    continue
-                data = yaml.safe_load(path.read_text())
-            except (OSError, yaml.YAMLError):
-                continue
-            if isinstance(data, dict) and data:
-                return data
-    return MODELS
-
-
-def apply_runtime(data: dict) -> bool:
-    changed = _merge(data, YOLO)
-    changed = _merge(data, load_overlay()) or changed
-    providers = data.get("providers")
-    plow = providers.get("plow") if isinstance(providers, dict) else None
-    models = plow.get("models") if isinstance(plow, dict) else None
-    if isinstance(models, dict):
-        for slug in list(models):
-            if slug not in ALLOWED_MODELS:
-                del models[slug]
-                changed = True
-    return changed
 
 
 def enable_plugin(data: dict) -> bool:
@@ -146,9 +48,36 @@ def enable_plugin(data: dict) -> bool:
     return True
 
 
+def _strip_zoen_text(raw: str) -> str | None:
+    lines = raw.splitlines(keepends=True)
+    out: list[str] = []
+    skipping = False
+    changed = False
+    for line in lines:
+        if not skipping and line.startswith("zoen:"):
+            skipping = True
+            changed = True
+            continue
+        if skipping:
+            if line.strip() and not line[0].isspace():
+                skipping = False
+            else:
+                continue
+        out.append(line)
+    if not changed:
+        return None
+    return "".join(out)
+
+
 def ensure_text(path: Path) -> bool:
     raw = path.read_text()
+    stripped = _strip_zoen_text(raw)
+    if stripped is not None:
+        raw = stripped
     if _listed(raw):
+        if stripped is not None:
+            _replace(path, raw)
+            return True
         return False
     for old in MARKERS:
         if old not in raw:
@@ -178,12 +107,14 @@ def ensure_yaml(path: Path) -> bool:
     data = yaml.safe_load(raw)
     if not isinstance(data, dict):
         return ensure_text(path)
-    changed = enable_plugin(data)
-    changed = apply_runtime(data) or changed
-    if not changed:
-        return False
-    _replace(path, yaml.safe_dump(data, sort_keys=False))
-    return True
+    changed = False
+    if "zoen" in data:
+        data.pop("zoen")
+        changed = True
+    if enable_plugin(data) or changed:
+        _replace(path, yaml.safe_dump(data, sort_keys=False))
+        return True
+    return False
 
 
 def ensure(path: Path, *, text_only: bool = False) -> bool:
@@ -232,9 +163,9 @@ def refresh_image_scripts(
     bundled: Path | None = None,
     face: Path | None = None,
 ) -> bool:
-    """Wipe leftover Zoen files on this line's volume and install the image skill.
+    """Replace a stale home skill and drop a copied plugin leftover.
 
-    Plow keeps HERMES_HOME across revoke/redeploy. That leftover is the old hello.
+    Voice, memory, sessions, and the WhatsApp install stay on the volume.
     """
     del face
     env_home = (os.environ.get("HERMES_HOME") or "").strip()
@@ -266,9 +197,6 @@ def refresh_image_scripts(
     if src.is_dir() and not _same_tree(src, dest):
         _install_skill(src, dest)
         dirty = True
-    if dirty:
-        _drop(root / "zoen" / "BOOTSTRAP.md")
-        _drop(root / "zoen" / "VOICE.md")
     return dirty
 
 

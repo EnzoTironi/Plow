@@ -30,7 +30,6 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from lang import detect_language  # noqa: E402
 from memory import remember  # noqa: E402
 from net import request  # noqa: E402
 
@@ -141,84 +140,10 @@ def greeting_due(event: Any, http: Http | None = None) -> bool:
     return earlier_owner_messages(event, http) >= 1
 
 
-_LANG_NAMES = {
-    "pt": "Portuguese",
-    "en": "English",
-    "es": "Spanish",
-    "fr": "French",
-    "de": "German",
-    "it": "Italian",
-    "nl": "Dutch",
-    "ja": "Japanese",
-    "zh": "Chinese",
-    "ar": "Arabic",
-}
-
-
-def _index_phrase(text: str) -> bool:
-    folded = normalized_line(text)
-    return "agent-index/" in folded or folded.startswith("set this up for me")
-
-
-def language_path(home: str | None = None) -> Path | None:
-    root = (home or os.environ.get("HERMES_HOME") or "").strip()
-    if not root:
-        return None
-    return Path(root) / "zoen" / "language"
-
-
-def saved_language(home: str | None = None) -> str:
-    path = language_path(home)
-    if path is None or not path.is_file():
-        return ""
-    token = path.read_text(encoding="utf-8").strip().split()
-    if not token or not token[0][:2].isalpha():
-        return ""
-    return token[0][:2].lower()
-
-
-def confident_language(text: str) -> str:
-    """lang.detect_language, kept only when the words themselves decide. A code does not."""
-    spoken = (text or "").strip()
-    if not spoken or _index_phrase(spoken) or re.fullmatch(r"\d{6}", spoken):
-        return ""
-    if sum(ch.isalpha() for ch in spoken) < 2:
-        return ""
-    plain = detect_language(spoken)
-    if plain != detect_language(spoken, prior="pt") or plain != detect_language(spoken, prior="en"):
-        return ""
-    return plain if plain in _LANG_NAMES else ""
-
-
-def remember_language(text: str, home: str | None = None) -> str:
-    """Keep the first confident language. The pairing code must not replace it."""
-    current = saved_language(home)
-    if current:
-        return current
-    lang = confident_language(text)
-    path = language_path(home)
-    if not lang or path is None:
-        return lang
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(lang + "\n", encoding="utf-8")
-    return lang
-
-
 def resolve_language(event: Any, http: Http | None = None) -> str:
-    """Language for the WhatsApp code reply: saved words, then earlier messages via lang.py."""
-    saved = saved_language() or (voice_language() or "")
-    if saved:
-        return saved
-    try:
-        history = chat_history(event, http)
-    except (SystemExit, OSError, TypeError, ValueError, KeyError):
-        history = None
-    for body in _inbound_bodies(history):
-        lang = confident_language(body)
-        if lang:
-            remember_language(body)
-            return lang
-    return ""
+    """Language already written in VOICE.md. Empty until that file exists."""
+    del event, http
+    return voice_language() or ""
 
 
 def saved_pairing_code() -> str:
@@ -235,15 +160,13 @@ def saved_pairing_code() -> str:
 
 def pairing_intro_prompt(language: str = "") -> str:
     """Context for the WhatsApp turn that is only the pairing code."""
-    named = _LANG_NAMES.get(language, "")
-    tongue = ""
-    if named:
-        tongue = (
-            f"Their language is {named} ({language}). "
-            "The pairing code is not a language signal. "
-            f"Write every bubble in {named}. "
-            f"Write VOICE.md with language: {language}. "
-        )
+    tongue = (
+        "Write in the language of their words. "
+        "The pairing code is not a language signal. "
+        "Write VOICE.md with the language you chose. "
+    )
+    if language:
+        tongue += f"VOICE.md already says language: {language}. Keep it. "
     return (
         "\n<first_contact>\n"
         "They just linked WhatsApp by sending the pairing code. "
@@ -255,8 +178,7 @@ def pairing_intro_prompt(language: str = "") -> str:
         "One short introduction in their language. Do not send contact cards. "
         "Do not run face.py cards. Do not send a phone number or 'a gente te ajuda'. "
         + tongue
-        + "This session, learn what to call them: zoen_owner_profile action=save "
-        "if the name is already in memory, else action=ask and ask only if ask=true. "
+        + "This session, learn what to call them with plow_name_contact. "
         "Write VOICE.md this turn if it is missing. If it already exists, still "
         "introduce yourself on WhatsApp.\n"
         "</first_contact>"
@@ -270,15 +192,13 @@ def first_contact_prompt(
     language: str = "",
 ) -> str:
     if whatsapp:
-        named = _LANG_NAMES.get(language, "")
-        tongue = ""
-        if named:
-            tongue = (
-                f"Their language is {named} ({language}). "
-                "The pairing code is not a language signal. "
-                f"Write every bubble in {named}. "
-                f"Write VOICE.md with language: {language}. "
-            )
+        tongue = (
+            "Write in the language of their words. "
+            "The pairing code is not a language signal. "
+            "Write VOICE.md with the language you chose. "
+        )
+        if language:
+            tongue += f"VOICE.md already says language: {language}. Keep it. "
         return (
             "\n<first_contact>\n"
             "VOICE.md is missing. They just linked WhatsApp. The iMessage "
@@ -293,9 +213,8 @@ def first_contact_prompt(
             + "Do not copy an older intro from this chat. Never send a phone "
             "number or 'a gente te ajuda'. If their message is only the "
             "pairing code, do not repeat it. Handle their request. This "
-            "session, learn what to call them: zoen_owner_profile action=save "
-            "if the name is already in the message or memory, else action=ask "
-            "and ask only if ask=true. Write VOICE.md this turn.\n"
+            "session, learn what to call them with plow_name_contact. "
+            "Write VOICE.md this turn.\n"
             "</first_contact>"
         )
     offer = not whatsapp if offer_whatsapp is None else offer_whatsapp
@@ -321,10 +240,8 @@ def first_contact_prompt(
         "Do not copy an older intro from this chat. Never send a phone "
         "number or 'a gente te ajuda'. "
         + choice
-        + "Handle their request. This session, learn what to call them: "
-        "zoen_owner_profile action=save if the name is already in the "
-        "message or memory, else action=ask and ask only if ask=true. "
-        "Write VOICE.md this turn.\n"
+        + "Handle their request. This session, learn what to call them with "
+        "plow_name_contact. Write VOICE.md this turn.\n"
         "</first_contact>"
     )
 CARD_AFTER = 2
@@ -633,31 +550,6 @@ def complete(
     if not result.get("ok"):
         return None
     return _completion_text(result.get("body"))
-
-
-def normalize_lang(token: str) -> str:
-    word = token.strip().lower().replace("-", " ").split()[0] if token else ""
-    if word.startswith("en"):
-        return "en"
-    if word.startswith("pt") or word in {"por", "portuguese"}:
-        return "pt"
-    if len(word) == 2 and word.isalpha():
-        return word
-    return "pt"
-
-
-def pick_language(
-    text: str,
-    *,
-    http: Http | None = None,
-    base: str = "",
-    headers: dict[str, str] | None = None,
-    prior: str | None = None,
-    home: str | None = None,
-) -> str:
-    spoken = (text or "").strip()
-    fallback = prior if prior is not None else voice_language(home)
-    return detect_language(spoken, fallback)
 
 
 def render_hello(
@@ -1114,17 +1006,6 @@ def voice_language(home: str | None = None) -> str | None:
     return None
 
 
-def stamp_voice(lang: str, home: str | None = None) -> str | None:
-    path = voice_path(home)
-    if path is None:
-        return None
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.is_file() and path.read_text(encoding="utf-8").strip():
-        return "exists"
-    path.write_text(f"language: {lang}\n", encoding="utf-8")
-    return "wrote"
-
-
 def send_text(
     base: str,
     headers: dict[str, str],
@@ -1363,6 +1244,25 @@ def greet_on_dispatch(
         return {"action": "skip", "reason": "plow setup"}
     if is_group(event):
         return group_on_dispatch(event, http=http)
+    if getattr(event, "zoen_whatsapp", None):
+        opening = str(getattr(event, "message_id", "") or "")
+        quote = (
+            f"The opening bubble wamid is {opening}. "
+            "Set text reply_to to that wamid when the answer belongs to this bubble.\n"
+            if opening.startswith("wamid.")
+            else ""
+        )
+        event.channel_prompt = (getattr(event, "channel_prompt", "") or "") + (
+            "\n<whatsapp>\n"
+            "This message arrived on WhatsApp. One zoen_imessage call sends it. "
+            "Items: reaction (like, love, laugh, emphasize, question, dislike), "
+            "text with reply_to set to the wamid, image, video, audio, contact. "
+            + quote
+            + "zoen_connections connect posts the authorization link in this chat. Do not paste that URL yourself. "
+            "The terminal cannot text this chat. Do not retry a blocked command. "
+            "After zoen_imessage succeeds, the final reply is [NO_REPLY].\n"
+            "</whatsapp>\n"
+        )
     if getattr(event, "zoen_pairing_code", False):
         language = resolve_language(event, http)
         event.channel_prompt = (
@@ -1372,14 +1272,12 @@ def greet_on_dispatch(
         return {"action": "allow", "reason": "zoen onboarding"}
     live = voice_exists() if voiced is None else voiced
     if not live and already_introduced(event, http):
-        stamp_voice("pt")
         return {"action": "allow"}
     if live:
         return {"action": "allow"}
     text = spoken_text(event) or str(getattr(event, "text", None) or "").strip()
     if not text or text.startswith("/"):
         return {"action": "allow"}
-    remember_language(text)
     if not greeting_due(event, http):
         return {"action": "skip", "reason": "prebuilt hello"}
     whatsapp = bool(getattr(event, "zoen_whatsapp", None))

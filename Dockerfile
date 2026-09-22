@@ -9,34 +9,17 @@ FROM public.ecr.aws/e1h7x4a2/plow-cloud-agents:base-ef0019372ff8bca593611b31ebd2
 ENV HERMES_YOLO_MODE=1
 ENV AGENT_ID=zoen
 ENV AGENT_NAME=Zoen
+ENV ZOEN_OAUTH_RELAY_URL=https://zoen-oauth-relay.agenttironi.workers.dev
+ENV ZOEN_GOOGLE_RELAY_URL=https://zoen-oauth-relay.agenttironi.workers.dev
 
-# Scanner + canvas CLIs (deterministic). Node 22 if the base is older.
-# gh is GitHub (PRs, comments, merge). Prove-as-user is skill prove.
-# Skills COPY after this so a playbook edit does not reinstall scanners.
-ARG NODE_VERSION=22.19.0
+# gh is GitHub. espeak-ng is outbound voice. ffmpeg is already on the base.
+# Language and review are the model's. A public page installs its tunnel on that turn.
 ARG GH_VERSION=2.101.0
 RUN set -eu; \
-    if command -v node >/dev/null 2>&1 \
-       && node -e 'process.exit(Number(process.versions.node.split(".")[0] < 22))'; then \
-      echo "node $(node -v)"; \
-    else \
-      arch=$(uname -m); \
-      case "$arch" in \
-        x86_64) na=x64 ;; \
-        aarch64) na=arm64 ;; \
-        *) echo "unsupported arch $arch" >&2; exit 1 ;; \
-      esac; \
-      curl -fsS --max-time 120 \
-        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${na}.tar.xz" \
-        | tar -xJ -C /usr/local --strip-components=1; \
-    fi; \
-    npm install -g @alibaba-group/open-code-review@^1 deepsec@^2 @coldtea/pr-lens-cli; \
-    command -v ocr >/dev/null; \
-    command -v deepsec >/dev/null; \
-    command -v pr-lens >/dev/null; \
-    if command -v gh >/dev/null 2>&1; then \
-      echo "gh $(gh --version | head -n 1)"; \
-    else \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ca-certificates curl espeak-ng; \
+    rm -rf /var/lib/apt/lists/*; \
+    if ! command -v gh >/dev/null 2>&1; then \
       arch=$(uname -m); \
       case "$arch" in \
         x86_64) ga=amd64 ;; \
@@ -49,67 +32,17 @@ RUN set -eu; \
       install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${ga}/bin/gh" /usr/local/bin/gh; \
       rm -rf "/tmp/gh_${GH_VERSION}_linux_${ga}"; \
     fi; \
-    command -v gh >/dev/null
-
-# Language id for the ack. Algorithm in-process; not an LLM.
-# fasttext-wheel has no cp313 wheel; source needs <cstdint> on newer gcc.
-RUN set -eu; \
-    export CXXFLAGS="${CXXFLAGS:-} -include cstdint"; \
-    if /usr/local/bin/uv pip install --python /opt/hermes/.venv/bin/python --no-cache fasttext-wheel; then \
-      curl -fsS --max-time 120 -o /opt/plow/lid.176.ftz \
-        https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz; \
-      /opt/hermes/.venv/bin/python -c "import fasttext, pathlib; assert pathlib.Path('/opt/plow/lid.176.ftz').is_file(); m=fasttext.load_model('/opt/plow/lid.176.ftz'); assert m.f.predict('olá tudo bem\n', 1, 0.0, 'strict')"; \
-    else \
-      echo "zoen: FastText wheel missing, heuristic language id"; \
-    fi
-
-# The native Hermes browser uses agent-browser. Provision its actual backend
-# before enabling the toolset; no download or interactive setup on first use.
-ARG AGENT_BROWSER_VERSION=0.26.0
-RUN apt-get update \
- && apt-get install -y --no-install-recommends chromium \
- && rm -rf /var/lib/apt/lists/* \
- && npm install -g agent-browser@${AGENT_BROWSER_VERSION}
-ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
-
-# Inbound STT and outbound TTS for iMessage voice memos. ffmpeg is on the
-# base image. Bake faster-whisper so the first memo does not lazy-install.
-ARG WHISPER_MODEL=small
-ENV ZOEN_WHISPER_MODEL=${WHISPER_MODEL} \
-    ZOEN_WHISPER_DIR=/opt/plow/whisper
-RUN set -eu; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends espeak-ng; \
-    rm -rf /var/lib/apt/lists/*; \
-    mkdir -p /opt/plow/whisper; \
-    /usr/local/bin/uv pip install --python /opt/hermes/.venv/bin/python --no-cache faster-whisper==1.2.1; \
-    /opt/hermes/.venv/bin/python -c "import os; from faster_whisper import WhisperModel; WhisperModel(os.environ['ZOEN_WHISPER_MODEL'], device='cpu', compute_type='int8', download_root=os.environ['ZOEN_WHISPER_DIR'])"; \
-    command -v espeak-ng >/dev/null; \
-    command -v ffmpeg >/dev/null
-
-# Quick tunnel for a page the owner should open. No account, no token.
-ARG CLOUDFLARED_VERSION=2026.9.1
-RUN set -eu; \
-    arch=$(uname -m); \
-    case "$arch" in \
-      x86_64) ca=amd64 ;; \
-      aarch64) ca=arm64 ;; \
-      *) echo "unsupported arch $arch" >&2; exit 1 ;; \
-    esac; \
-    curl -fsSL --max-time 120 -o /usr/local/bin/cloudflared \
-      "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${ca}"; \
-    chmod 0755 /usr/local/bin/cloudflared; \
-    cloudflared --version
+    command -v gh >/dev/null; \
+    command -v espeak-ng >/dev/null
 
 # plow-init writes $HOME/SOUL.md from this file plus persona.md on every boot.
-# Hermes injects that one file and truncates it past 20k characters. persona.md
-# stays empty so the identity is not sent twice and the middle is not cut.
+# Hermes injects that one file and truncates it past 20k characters.
+# Zoen voice lives in persona.md. SOUL.md keeps the operating rules.
 COPY runtime/SOUL.md /opt/hermes/plow-seed/SOUL.md
 COPY runtime/persona.md /opt/hermes/plow-seed/persona.md
 COPY runtime/bootstrap.md /opt/hermes/plow-seed/bootstrap.md
-COPY runtime/config.yaml /opt/hermes/plow-seed/zoen-config.yaml
 COPY LICENSE NOTICE docs/zoen-card.jpg /usr/share/doc/zoen/
-RUN chmod 0644 /opt/hermes/plow-seed/SOUL.md /opt/hermes/plow-seed/persona.md /opt/hermes/plow-seed/bootstrap.md /opt/hermes/plow-seed/zoen-config.yaml
+RUN chmod 0644 /opt/hermes/plow-seed/SOUL.md /opt/hermes/plow-seed/persona.md /opt/hermes/plow-seed/bootstrap.md
 
 # Bundled skills. The gateway reconciles this tree into $HERMES_HOME/skills
 # on boot: new/untouched copies update, owner edits stay.

@@ -4,6 +4,7 @@ import { page } from "./page.js";
 const TEXT_LIMIT = 4096;
 const QUEUE_LIMIT = 40;
 const HOLD_MS = 2 * 60 * 60 * 1000;
+const CODE_LOOKBACK_MS = 15 * 60 * 1000;
 const ECHO_MS = 3 * 60 * 1000;
 const SETUP_COOLDOWN_MS = 15 * 60 * 1000;
 export const SETUP_URL = "https://auth.tryzoen.com/whatsapp/start";
@@ -204,6 +205,30 @@ function withQuote(body, replyTo) {
   const id = String(replyTo || "").trim().slice(0, 256);
   if (id) body.context = { message_id: id };
   return body;
+}
+
+export function buttonBody(target, text, url, label) {
+  const href = String(url || "").trim();
+  if (!href.startsWith("https://") || href.length > 2000) return null;
+  const display = String(label || "Autorizar").trim().slice(0, 20) || "Autorizar";
+  const copy = String(text || "").trim().slice(0, 1024);
+  if (!copy) return null;
+  const payload = {
+    messaging_product: "whatsapp",
+    recipient_type: "individual",
+    type: "interactive",
+    interactive: {
+      type: "cta_url",
+      body: { text: copy },
+      action: {
+        name: "cta_url",
+        parameters: { display_text: display, url: href },
+      },
+    },
+  };
+  if (target.to) payload.to = target.to;
+  else payload.recipient = target.recipient;
+  return payload;
 }
 
 export function kapsoBody(target, text, replyTo = "") {
@@ -470,7 +495,26 @@ const MEDIA_MIME = {
   "audio/aac": "audio",
   "video/mp4": "video",
   "application/pdf": "document",
+  "text/vcard": "document",
+  "text/x-vcard": "document",
 };
+
+export function contactBody(target, contact) {
+  const name = String(contact?.name || "").trim().slice(0, 80);
+  const phone = String(contact?.phone || "").trim().slice(0, 24);
+  const wa = digits(phone);
+  if (!name || !wa) return null;
+  const shown = phone.startsWith("+") ? phone : `+${wa}`;
+  return {
+    messaging_product: "whatsapp",
+    type: "contacts",
+    contacts: [{
+      name: { formatted_name: name, first_name: name.split(" ")[0] },
+      phones: [{ phone: shown, type: "MOBILE", wa_id: wa }],
+    }],
+    ...targetFields(target),
+  };
+}
 
 function decodeMedia(spec) {
   const mime = String(spec?.mime || "").toLowerCase();
@@ -523,6 +567,10 @@ async function sendWhatsapp(request, env, inbox, headers) {
     payload = typingBody(body.message_id);
   } else if (body.reaction && typeof body.reaction === "object") {
     payload = reactionBody(target, body.reaction.message_id, body.reaction.emoji || body.reaction.type);
+  } else if (body.button && typeof body.button === "object") {
+    payload = buttonBody(target, body.text, body.button.url, body.button.label);
+  } else if (body.contact && typeof body.contact === "object") {
+    payload = contactBody(target, body.contact);
   } else if (body.media && typeof body.media === "object") {
     const file = decodeMedia(body.media);
     const mediaId = file ? await uploadMedia(env, file) : "";
@@ -604,9 +652,10 @@ function pairingCode(value) {
   return /^\d{6}$/.test(code) ? code : "";
 }
 
-function phoneThatSent(box, code) {
+function phoneThatSent(box, code, since) {
   for (const phone of Object.keys(box.queues || {})) {
-    if ((box.queues[phone] || []).some((item) => pairingCode(item.text) === code)) return phone;
+    if (box.bindings[phone]) continue;
+    if ((box.queues[phone] || []).some((item) => item.at >= since && pairingCode(item.text) === code)) return phone;
   }
   return "";
 }
@@ -705,8 +754,9 @@ export class WhatsAppInbox {
     } else if (code) {
       const existing = box.codes[code];
       if (existing && existing.agent !== agent) return response({ error: "code_taken" }, 409);
-      box.codes[code] = { agent, secretHash: String(body.secretHash || ""), at: Date.now() };
-      phone = box.heard[code] || phoneThatSent(box, code);
+      const issued = existing?.at || Date.now();
+      box.codes[code] = { agent, secretHash: String(body.secretHash || ""), at: issued };
+      phone = box.heard[code] || phoneThatSent(box, code, issued - CODE_LOOKBACK_MS);
       if (!phone) {
         await this.ctx.storage.put("box", box);
         return response({ waiting: true });
@@ -716,12 +766,25 @@ export class WhatsAppInbox {
     }
     const current = box.bindings[phone];
     const secretHash = String(body.secretHash || "");
-    if (current && current.agent !== agent) return response({ error: "already_bound" }, 409);
-    if (current?.secretHash && current.secretHash !== secretHash) return response({ error: "unauthorized" }, 403);
+    const moving = Boolean(current && current.agent !== agent);
+    // A pairing code from this phone chooses the agent. The older line loses the number.
+    if (moving && !code) return response({ error: "already_bound" }, 409);
+    if (moving) {
+      for (const key of Object.keys(box.heard)) {
+        if (key !== code && samePhone(box.heard[key], phone)) delete box.heard[key];
+      }
+      for (const key of Object.keys(box.codes)) {
+        if (key !== code && box.codes[key].agent === current.agent) delete box.codes[key];
+      }
+    }
+    if (!moving && current?.secretHash && current.secretHash !== secretHash) {
+      return response({ error: "unauthorized" }, 403);
+    }
+    const keptSecret = moving ? secretHash : (secretHash || current?.secretHash || "");
     box.bindings[phone] = {
       hash,
       agent,
-      ...(current?.secretHash || secretHash ? { secretHash: secretHash || current.secretHash } : {}),
+      ...(keptSecret ? { secretHash: keptSecret } : {}),
     };
     box.queues[phone] = box.queues[phone] || [];
     delete box.pending[phone];

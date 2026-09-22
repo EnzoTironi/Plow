@@ -1,7 +1,8 @@
 # Zoen runtime
 
-All interaction starts and returns to iMessage. The separate reference website is
-not a runtime dependency. The existing voice, humor, casing and rhythm are retained.
+iMessage stays the Plow line. WhatsApp is Zoen's own line on the same owner.
+The separate reference website is not a runtime dependency.
+The existing voice, humor, casing and rhythm are retained.
 
 ## Reception
 
@@ -15,8 +16,8 @@ task. It refreshes the recipient's membership during the burst's quiet window,
 restarting that read on each new message. Reads and POSTs each have a three-second
 timeout. During the same window, a short model call writes a contextual opening
 using the existing persona, the owner's voice preferences, the whole burst and
-the last three openings. `zoen.reception_model` selects that model (Sonnet by
-default, with reasoning disabled). The model selects both a contextual line and
+the last three openings. That call uses `HERMES_MODEL`. There is no second
+model overlay. The model selects both a contextual line and
 an appropriate tapback, using the previous six inbound messages for context.
 Generation is bounded to 3.2 seconds; POST timeouts use the remainder of the
 five-second budget measured from the last received message. Superseded drafts
@@ -53,13 +54,9 @@ phone must be verified separately through the provider/real conversation.
 
 ## Accounts, work and memory
 
-On first contact, `zoen_owner_profile` checks whether the owner already has a
-name. If not, it reserves one optional question about what to call them. A name
-already supplied in the conversation or memory skips the question. The chosen
-name is remembered and saved to the owner's Plow profile automatically, without
-a second confirmation. A fresh read must match before the tool reports success.
-A skipped question or failed save does not block the task or restart onboarding.
-The name state persists under `$HERMES_HOME/zoen/owner-profile.sqlite3`.
+On first contact the owner name is written only by `plow_name_contact`.
+A name already supplied in the conversation or memory skips the question.
+A failed save does not block the task or restart onboarding.
 
 Agent Index resolves the user's public name from Plow's owner profile; changing
 chat memory alone is insufficient. The agent page's `AGENT_NAME` is still Zoen,
@@ -67,7 +64,7 @@ and each installation keeps its existing `install_id`. Onboarding does not
 register another install or change token reporting. Native Plow contact naming
 and passive capture remain unchanged.
 
-`zoen_connections` requires a current private owner DM. Google now uses Zoen's
+`zoen_connections` requires the iMessage owner DM or the WhatsApp line on the bound phone. Google now uses Zoen's
 independent OAuth broker and the bundled Hermes API commands through
 `google_workspace.py`; it does not use Plow's Google connection or the owner's Mac.
 Its configured beta is External / In production, with Google's unverified-app
@@ -128,11 +125,6 @@ update the local memory/context copies under a file lock. This does not erase ch
 history, external documents or provider backups. Task/reminder changes are separate
 actions that the personal workflow must verify.
 
-The agent now includes Chromium and a pinned agent-browser, and enables the native
-Hermes browser. Browser sessions are on the agent's computer; Mac cookies are not
-inherited. Keep saved states private under HERMES_HOME and coordinate shared sessions.
-Installation follows the [agent-browser backend documentation](https://agent-browser.dev/installation).
-
 ## Validation
 
 From the repository:
@@ -143,9 +135,6 @@ docker build --platform linux/amd64 -t zoen:personal-agent .
 docker run --rm --user hermes --platform linux/amd64 --network none --read-only --tmpfs /tmp \
   -v "$PWD:/workspace:ro" --entrypoint /opt/hermes/.venv/bin/python \
   zoen:personal-agent -B /workspace/tests/integration_image.py
-docker run --rm --user hermes --platform linux/amd64 --network none \
-  -v "$PWD:/workspace:ro" --entrypoint /opt/hermes/.venv/bin/python \
-  zoen:personal-agent -B /workspace/tests/browser_image.py
 docker run --rm --user hermes --platform linux/amd64 --network none \
   -v "$PWD:/workspace:ro" --entrypoint /opt/hermes/.venv/bin/python \
   zoen:personal-agent -B /workspace/tests/tasks_image.py
@@ -159,8 +148,7 @@ Plow message grouping, recipient guard and handoff with a held
 attachment, duplicate socket event and a loopback Plow API fixture. It checks
 that acknowledgement precedes resolution and that the request is still handed off.
 Connection tool tests cover owner/group admission and the schema contract, not a
-real OAuth consent. The browser test navigates, snapshots and clicks a local fixture
-through native Hermes tools. No real messages or external-account writes are sent.
+real OAuth consent. No real messages or external-account writes are sent.
 The task test uses separate native CLI processes to recover two tasks, archive one
 without changing the other, and migrate the maintenance cron without duplication.
 The catalog test checks native plugin discovery and model-visible tools using the
@@ -189,7 +177,7 @@ $0.20/M input and $1.20/M output tokens, versus Sonnet at $2/M and $10/M, for th
 short-context pricing tier on 2026-09-19. These are catalog rates, not a guarantee
 of Plow billing. The talker is Sonnet: main turn, reception, vision, and
 fallback. Only reception disables reasoning. Every `delegate_task` child is
-Luna with reasoning on, pinned by `delegation` in `runtime/config.yaml`.
+Luna with reasoning on. The booted model is `HERMES_MODEL`.
 Live Treg validation exposed
 temporary upstream Luna rate limits; a streamed Sonnet response through Plow was
 verified before the first fallback existed. This cannot bypass an outage of Plow itself,

@@ -30,13 +30,18 @@ from credits import (  # noqa: E402
     looks_like as credits_looks_like,
     mark_told,
     notice as credits_notice,
+    owner_copy,
     recently_told,
 )
 
 log = logging.getLogger("zoen-face")
 WHATSAPP = contextvars.ContextVar("zoen_whatsapp_target", default=None)
 WHATSAPP_DELIVER = None
+LOOP = None
 WHATSAPP_MEDIA = None
+WHATSAPP_REACT = None
+WHATSAPP_CONTACT = None
+IMESSAGE_REACT = None
 _RETIRED_HELLO = (
     "a gente te ajuda",
     "we'll help.",
@@ -117,15 +122,23 @@ def _channel_name(target) -> str:
     return "whatsapp" if isinstance(target, dict) else "imessage"
 
 
-def _outbound_target(adapter):
-    """The turn's own inbound wins. A leaked WhatsApp context must not catch iMessage."""
+def _outbound_target(adapter, turn=None):
+    """The turn's own inbound wins. A leaked WhatsApp context must not catch iMessage.
+
+    Tool calls hop to the gateway loop without context vars. The turn dict
+    they already captured is what still names the WhatsApp chat.
+    """
     active = getattr(adapter, "_active_turn", None)
-    turn = active.get() if active is not None else None
-    if isinstance(turn, dict) and "zoen_whatsapp" in turn:
-        target = turn.get("zoen_whatsapp")
+    current_turn = active.get() if active is not None else None
+    if isinstance(current_turn, dict) and "zoen_whatsapp" in current_turn:
+        target = current_turn.get("zoen_whatsapp")
         return target if isinstance(target, dict) else None
     current = WHATSAPP.get()
-    return current if isinstance(current, dict) else None
+    if isinstance(current, dict):
+        return current
+    if isinstance(turn, dict) and isinstance(turn.get("zoen_whatsapp"), dict):
+        return turn["zoen_whatsapp"]
+    return None
 
 
 def note_inbound_channel(adapter, chat_uid, target) -> None:
@@ -142,10 +155,10 @@ def note_inbound_channel(adapter, chat_uid, target) -> None:
 async def _deliver_credits(text, args, kwargs, orig_send, adapter):
     target = _outbound_target(adapter)
     channel = _channel_name(target)
-    if recently_told(channel=channel):
+    body = owner_copy(text, channel=channel)
+    if not body:
         log.debug("zoen-face dropped duplicate credits leftover")
         return Dropped()
-    body = credits_notice(credits_language())
     log.info("zoen-face credits notice on %s", channel)
     if channel == "whatsapp":
         if WHATSAPP_DELIVER is None or not await WHATSAPP_DELIVER(body):
@@ -205,16 +218,26 @@ def _with_purpose(send_sequence):
 
 IMESSAGE = "zoen_imessage"
 _FACTORY_SEND = "plow_send_sequence"
+_REACTION_KINDS = ("like", "love", "laugh", "emphasize", "question", "dislike")
+_CARDS = {
+    "zoen": ("Zoen", "+553798136141"),
+    "enzo": ("Enzo", "+5531999941160"),
+}
 IMESSAGE_DESCRIPTION = (
-    "Text the owner. This is the ONLY way they see your words, on the channel they just used. "
-    "Every update, question, link, photo, voice memo, and final answer must use this tool. "
-    "Leftover prose is not delivered. If you skip this tool, they hear nothing. "
-    "purpose=progress is an opening or update that does not complete the request. "
-    "purpose=answer is the result. "
-    "On WhatsApp, set reply_to to the wamid of the bubble this item answers. "
-    "Use it when the text, picture, or voice note is about that bubble. "
-    "Leave it off when the item stands on its own. "
-    "Never tell them you already sent something or already said something."
+    "Send on this turn's channel. WhatsApp and iMessage both use this tool. "
+    "One call can hold a reaction and the bubbles, in order. "
+    "purpose=progress is a short update and does not finish the request. "
+    "purpose=answer is the result. Stop after it. "
+    "reaction: kind is like, love, laugh, emphasize, question, or dislike. "
+    "Omit message_id to react to the message that opened this turn. "
+    "text: body is the bubble. reply_to quotes one bubble. "
+    "On WhatsApp, reply_to is that bubble's wamid. On iMessage, leave reply_to off. "
+    "image: path is an absolute jpg, png, or webp. "
+    "video: path is an absolute mp4. "
+    "audio: path is an absolute file. voice true is a voice note. "
+    "contact: who is zoen or enzo, or pass name and phone. "
+    "The terminal cannot text, react, or attach. This tool does. "
+    "After a successful call the words are already in the chat. The final reply is [NO_REPLY]."
 )
 
 WHO = (
@@ -239,6 +262,54 @@ def claim_identity(module):
     module._zoen_identity = True
 
 
+def _item_option(const, required, properties):
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": required,
+        "properties": {"type": {"const": const}, **properties},
+    }
+
+
+def _publish_item_types(schema):
+    """The model picks a kind. It does not invent a terminal script."""
+    box = (((schema.get("parameters") or {}).get("properties") or {}).get("items") or {}).get("items") or {}
+    options = box.setdefault("oneOf", [])
+    have = {
+        ((option.get("properties") or {}).get("type") or {}).get("const")
+        for option in options
+        if isinstance(option, dict)
+    }
+    extra = [
+        _item_option("reaction", ["type", "kind"], {
+            "kind": {"type": "string", "enum": list(_REACTION_KINDS)},
+            "message_id": {"type": "string", "description": "Bubble to react to. Omit it for the message that opened this turn."},
+        }),
+        _item_option("image", ["type", "path"], {
+            "path": {"type": "string", "description": "Absolute path of a jpg, png, or webp."},
+            "reply_to": {"type": "string"},
+        }),
+        _item_option("video", ["type", "path"], {
+            "path": {"type": "string", "description": "Absolute path of an mp4."},
+            "reply_to": {"type": "string"},
+        }),
+        _item_option("audio", ["type", "path"], {
+            "path": {"type": "string", "description": "Absolute path of the audio file."},
+            "voice": {"type": "boolean", "description": "True sends a voice note."},
+            "reply_to": {"type": "string"},
+        }),
+        _item_option("contact", ["type"], {
+            "who": {"type": "string", "enum": ["zoen", "enzo"], "description": "A saved card."},
+            "name": {"type": "string"},
+            "phone": {"type": "string", "description": "Digits, with or without +."},
+        }),
+    ]
+    for option in extra:
+        const = option["properties"]["type"]["const"]
+        if const not in have:
+            options.append(option)
+
+
 def configure_contract(module):
     # Keep Plow's owner-DM handler. Rename the model-facing tool so leftover
     # prose is never mistaken for a delivered bubble.
@@ -255,15 +326,16 @@ def configure_contract(module):
         if props.get("type", {}).get("const") == "text":
             props["reply_to"] = {
                 "type": "string",
-                "description": "WhatsApp wamid of the bubble this item answers. Set it when the item is about that bubble. Leave it off when the item stands on its own, and on iMessage.",
+                "description": "WhatsApp wamid of the bubble this item quotes. Leave it off when the item stands alone, and on iMessage.",
             }
+    _publish_item_types(schema)
     module._ANSWER_LAST = (
         f"Owner bubbles only go through {IMESSAGE}. Leftover prose is not delivered. "
         "Never skip that tool; if you do, they hear nothing. "
-        "Every update, question, link, photo, voice memo, and final answer uses it. "
+        "A reaction, text, image, video, audio, and contact card are items of that one call. "
         "purpose=answer is the result; purpose=progress is a brief update that does "
-        "not complete the request. On an owner message, the first action is the tapback, "
-        "before any other tool, lookup, or bubble. Then one short purpose=progress "
+        "not complete the request. On an owner message, the first item is a reaction, "
+        "before any other tool or bubble. Then one short purpose=progress "
         "bubble, then the rest. "
         "At each later step of real work, send another short purpose=progress bubble before you move on. "
         "A question you can answer without a tool does not get those updates. "
@@ -288,12 +360,96 @@ def _tool_maps(registry):
     return maps
 
 
+def _plow_turn():
+    """The loaded plugin is hermes_plugins.plow_chat_platform. A fresh import is not."""
+    for name, module in sys.modules.items():
+        if "plow_chat" not in name:
+            continue
+        turn = getattr(module, "_ACTIVE_TURN", None)
+        if turn is not None:
+            return turn
+    return None
+
+
+def _arm_stamp():
+    """The tool thread does not inherit the turn. The stamp file is the turn."""
+    stamp = _read_whatsapp_stamp()
+    if not (stamp.get("to") or stamp.get("recipient")):
+        return None
+    _ACTIVE_TURN = _plow_turn()
+    if _ACTIVE_TURN is None:
+        return None
+    phone = stamp.get("to") or stamp.get("recipient")
+    token = _ACTIVE_TURN.set({
+        "chat_uid": str(stamp.get("line_id") or "whatsapp"),
+        "owner": True,
+        "dm": True,
+        "authority": True,
+        "recall_everywhere": False,
+        "no_reply_ok": False,
+        "speaker_handle": phone,
+        "owner_handle": phone,
+        "source_message_id": stamp.get("message_id"),
+        "zoen_whatsapp": stamp,
+    })
+
+    def reset() -> None:
+        _ACTIVE_TURN.reset(token)
+
+    return reset
+
+
+def _deliver_stamped(args):
+    """plow_chat refused the thread. The stamp is enough to send the bubble."""
+    stamp = _read_whatsapp_stamp()
+    items = (args or {}).get("items") if isinstance(args, dict) else None
+    if LOOP is None or not isinstance(items, list):
+        return None
+    try:
+        result = asyncio.run_coroutine_threadsafe(
+            _deliver_whatsapp(items, stamp), LOOP,
+        ).result(timeout=30)
+    except Exception:
+        return None
+    if not isinstance(result, dict):
+        return None
+    return json.dumps(result)
+
+
+def _bind_whatsapp_send(entry):
+    handler = getattr(entry, "handler", None)
+    if handler is None or getattr(handler, "_zoen_whatsapp_bound", False):
+        return entry
+
+    def wrapped(args, **kwargs):
+        stamp = _read_whatsapp_stamp()
+        if stamp.get("to") or stamp.get("recipient"):
+            delivered = _deliver_stamped(args)
+            if delivered is not None:
+                return delivered
+        reset = _arm_stamp()
+        try:
+            result = handler(args, **kwargs)
+        finally:
+            if reset is not None:
+                reset()
+        if isinstance(result, str) and "requires a connected active owner DM" in result:
+            delivered = _deliver_stamped(args)
+            if delivered is not None:
+                return delivered
+        return result
+
+    wrapped._zoen_whatsapp_bound = True
+    entry.handler = wrapped
+    return entry
+
+
 def _rename_entry(entry, schema):
     entry.name = IMESSAGE
     entry.schema = schema
     if getattr(entry, "description", None) is not None:
         entry.description = IMESSAGE_DESCRIPTION
-    return entry
+    return _bind_whatsapp_send(entry)
 
 
 def watch_registry():
@@ -315,7 +471,13 @@ def watch_registry():
             if isinstance(schema, dict):
                 schema["name"] = IMESSAGE
                 schema["description"] = IMESSAGE_DESCRIPTION
-        return original(name, *args, **kwargs)
+        result = original(name, *args, **kwargs)
+        if name == IMESSAGE:
+            for tools in _tool_maps(registry):
+                entry = tools.get(IMESSAGE)
+                if entry is not None:
+                    _bind_whatsapp_send(entry)
+        return result
 
     registry.register = register
     registry._zoen_imessage_wrap = True
@@ -361,7 +523,8 @@ def media_file(raw: str) -> Path | None:
         return None
     if not resolved.is_file():
         return None
-    for root in _MEDIA_ROOTS:
+    home = Path((os.environ.get("HERMES_HOME") or "").strip() or "/var/lib/hermes")
+    for root in (*_MEDIA_ROOTS, home):
         base = root.resolve() if root.exists() else root
         try:
             resolved.relative_to(base)
@@ -573,6 +736,59 @@ def _plain_items(items):
     return cleaned
 
 
+_SILENCE = {"[NO_REPLY]", "NO_REPLY", "[SILENT]", "SILENT", "NO REPLY"}
+
+
+def is_silence(text: str) -> bool:
+    """The model declined. That token is not a message."""
+    return " ".join(str(text or "").strip().upper().split()) in _SILENCE
+
+
+def _read_whatsapp_stamp() -> dict:
+    root = Path((os.environ.get("HERMES_HOME") or "").strip() or "/var/lib/hermes")
+    try:
+        data = json.loads((root / "zoen" / "whatsapp.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def whatsapp_turn_open() -> bool:
+    """True while the message being answered arrived on WhatsApp."""
+    current = WHATSAPP.get()
+    if isinstance(current, dict) and (current.get("to") or current.get("recipient")):
+        return True
+    try:
+        from . import whatsapp_line
+    except ImportError:
+        whatsapp_line = None
+    if whatsapp_line is not None and str(whatsapp_line.LINE.get() or "").startswith("whatsapp:"):
+        return True
+    stamp = _read_whatsapp_stamp()
+    return bool(stamp.get("to") or stamp.get("recipient"))
+
+
+def guard_whatsapp_tool(tool_name, args, **_kwargs):
+    """A WhatsApp turn that posts to Plow Chat lands in the owner's iMessage."""
+    if not whatsapp_turn_open():
+        return None
+    name = str(tool_name or "")
+    if name == "plow_send_message":
+        action = str((args or {}).get("action") or "send").strip().lower()
+        if action == "list":
+            return None
+        return {
+            "action": "block",
+            "message": "This turn is on WhatsApp. Use zoen_imessage. plow_send_message texts their iMessage.",
+        }
+    if name in {"terminal", "execute_code", "code_execution", "write_file", "patch"}:
+        return {
+            "action": "block",
+            "message": "This turn is on WhatsApp. One zoen_imessage call: reaction, text, image, video, audio, or contact. The terminal does not send. Do not retry.",
+        }
+    return None
+
+
 def _stamp_whatsapp(target) -> None:
     root = Path((os.environ.get("HERMES_HOME") or "").strip() or "/var/lib/hermes")
     path = root / "zoen" / "whatsapp.json"
@@ -585,6 +801,7 @@ def _stamp_whatsapp(target) -> None:
             "to": target.get("to") or "",
             "recipient": target.get("recipient") or "",
             "message_id": target.get("message_id") or "",
+            "line_id": target.get("line_id") or "",
         }), encoding="utf-8")
     except OSError:
         return
@@ -604,13 +821,28 @@ def _norm_line(text: str) -> str:
     return " ".join(str(text or "").split())
 
 
+_TURN_COPIES: list[str] = []
+
+
 def _remember_outbound(text: str) -> None:
     line = _norm_line(text)
+    if line:
+        _TURN_COPIES.append(line)
     if len(line) < 8:
         return
     now = time.monotonic()
     _RECENT_OUTBOUND.append((now, line))
     del _RECENT_OUTBOUND[:-40]
+
+
+def turn_copy(text: str) -> bool:
+    """The tool already placed this exact bubble. The gateway copy stays off the chat."""
+    line = _norm_line(text)
+    return bool(line) and line in _TURN_COPIES
+
+
+def clear_turn_copies() -> None:
+    _TURN_COPIES.clear()
 
 
 def outbound_echo(text: str) -> bool:
@@ -623,13 +855,10 @@ def outbound_echo(text: str) -> bool:
 
 
 def _quote_allowed(reply, target) -> str:
-    """Quote the human bubble this turn is about. A bubble we sent is not one of those."""
-    quote = _wamid(reply)
-    if not quote or not isinstance(target, dict):
+    """A wamid quotes that bubble. Anything else is sent without a quote."""
+    if not isinstance(target, dict):
         return ""
-    allowed = {_wamid(target.get("message_id")), _wamid(target.get("reply_to"))}
-    allowed.discard("")
-    return quote if quote in allowed else ""
+    return _wamid(reply)
 
 
 def _count_text(target) -> bool:
@@ -648,6 +877,126 @@ def _text_bubbles(body: str) -> list[str]:
     return [line.strip() for line in body.splitlines() if line.strip()]
 
 
+def _card_identity(item) -> tuple[str, str] | None:
+    who = str((item or {}).get("who") or "").strip().lower()
+    if who in _CARDS:
+        return _CARDS[who]
+    name = str((item or {}).get("name") or "").strip()[:80]
+    raw = str((item or {}).get("phone") or "").strip()
+    phone = "".join(ch for ch in raw if ch.isdigit())
+    if not name or not 8 <= len(phone) <= 15:
+        return None
+    shown = raw if raw.startswith("+") else f"+{phone}"
+    return name, shown[:24]
+
+
+def _write_card(name: str, phone: str) -> str:
+    root = Path((os.environ.get("HERMES_HOME") or "").strip() or "/var/lib/hermes") / "zoen" / "cards"
+    root.mkdir(parents=True, exist_ok=True)
+    slug = "".join(ch for ch in name.lower() if ch.isalnum()) or "card"
+    path = root / f"{slug}.vcf"
+    path.write_text(
+        "BEGIN:VCARD\r\nVERSION:3.0\r\n"
+        f"FN:{name}\r\nN:{name};;;;\r\n"
+        f"TEL;TYPE=CELL:{phone}\r\nEND:VCARD\r\n",
+        encoding="utf-8",
+    )
+    return str(path)
+
+
+def _as_imessage_item(item):
+    if not isinstance(item, dict):
+        return item
+    kind = item.get("type")
+    path = str(item.get("path") or "").strip()
+    if kind in {"image", "video"} and path.startswith("/"):
+        return {"type": "text", "body": f"MEDIA:{path}"}
+    if kind == "audio" and path.startswith("/"):
+        tag = "VOICE" if Path(path).suffix.lower() in _VOICE_TYPES and item.get("voice", True) is not False else "MEDIA"
+        return {"type": "text", "body": f"{tag}:{path}"}
+    if kind == "contact":
+        identity = _card_identity(item)
+        if identity is None:
+            return item
+        return {"type": "text", "body": f"MEDIA:{_write_card(*identity)}"}
+    return item
+
+
+def _split_imessage(items):
+    plain = []
+    reactions = []
+    for item in items:
+        if isinstance(item, dict) and item.get("type") == "reaction":
+            reactions.append(item)
+            continue
+        plain.append(_as_imessage_item(item))
+    return plain, reactions
+
+
+def _post_reaction(chat: str, message: str, kind: str) -> bool:
+    base = (os.environ.get("PLOW_API_BASE") or "").strip().rstrip("/")
+    token = (os.environ.get("PLOW_AGENT_TOKEN") or "").strip()
+    if not base or not token:
+        return False
+    sent = _json(
+        "POST",
+        f"{base}/v1/chats/{quote(chat)}/messages/{quote(message)}/reactions",
+        {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        {"operation": "add", "type": kind},
+    )
+    return bool(sent.get("ok"))
+
+
+def _deliver_imessage_reactions(turn, items) -> bool:
+    chat = str((turn or {}).get("chat_uid") or "")
+    for item in items:
+        kind = str(item.get("kind") or "").strip().lower()
+        message = str(item.get("message_id") or (turn or {}).get("source_message_id") or "").strip()
+        if kind not in _REACTION_KINDS or not chat.startswith("cht_") or not message.startswith("msg_"):
+            return False
+        if IMESSAGE_REACT is not None:
+            if not IMESSAGE_REACT(chat, message, kind):
+                return False
+            continue
+        if not _post_reaction(chat, message, kind):
+            return False
+    return True
+
+
+async def _send_whatsapp_reaction(item, target) -> bool:
+    kind = str(item.get("kind") or "").strip().lower()
+    message = _wamid(item.get("message_id") or item.get("reply_to") or (target or {}).get("message_id"))
+    if kind not in _REACTION_KINDS or not message or WHATSAPP_REACT is None:
+        return False
+    return bool(await WHATSAPP_REACT({"message_id": message, "type": kind}))
+
+
+async def _send_whatsapp_file(item, target) -> bool:
+    path = str(item.get("path") or "").strip()
+    if not path.startswith("/") or WHATSAPP_MEDIA is None:
+        return False
+    spec = {
+        "path": path,
+        "voice": item.get("type") == "audio" and item.get("voice", True) is not False,
+    }
+    reply = _quote_allowed(item.get("reply_to"), target)
+    if reply:
+        spec["reply_to"] = reply
+    return bool(await WHATSAPP_MEDIA(spec))
+
+
+async def _send_whatsapp_contact(item) -> bool:
+    identity = _card_identity(item)
+    if identity is None or WHATSAPP_CONTACT is None:
+        return False
+    name, phone = identity
+    return bool(await WHATSAPP_CONTACT({"name": name, "phone": phone}))
+
+
 async def _deliver_whatsapp(items, target=None):
     """One line, one bubble, on the chat they just wrote in."""
     if not isinstance(target, dict):
@@ -660,6 +1009,21 @@ async def _deliver_whatsapp(items, target=None):
         kind = item.get("type")
         if kind == "pause":
             await asyncio.sleep(min(float(item.get("seconds") or 0), 15))
+            continue
+        if kind == "reaction":
+            if not await _send_whatsapp_reaction(item, target):
+                return _whatsapp_failure(index, "whatsapp reaction failed")
+            completed.append({"index": index, "type": "reaction"})
+            continue
+        if kind in {"image", "video", "audio"}:
+            if not await _send_whatsapp_file(item, target):
+                return _whatsapp_failure(index, "whatsapp media failed")
+            completed.append({"index": index, "type": kind})
+            continue
+        if kind == "contact":
+            if not await _send_whatsapp_contact(item):
+                return _whatsapp_failure(index, "whatsapp contact failed")
+            completed.append({"index": index, "type": "contact"})
             continue
         if kind != "text":
             return _whatsapp_failure(index, "whatsapp item invalid")
@@ -684,12 +1048,23 @@ async def _deliver_whatsapp(items, target=None):
                 await asyncio.sleep(_BUBBLE_PACE[pace % 2])
                 pace += 1
             text = line[:4096]
+            if is_silence(text) or outbound_echo(text):
+                completed.append({"index": index, "type": "text"})
+                continue
             _remember_outbound(text)
             payload = {"text": text, "reply_to": reply} if reply else text
             if not await WHATSAPP_DELIVER(payload):
                 return {"success": False, "completed": completed, "failure": {"index": index, "status": "rejected", "retryable": False, "error": "not sent. do not resend a bubble that already landed. do not explain the delivery. any replacement is one bubble in their language"}}
             completed.append({"index": index, "type": "text"})
     if not completed:
+        texts = [
+            line
+            for item in items
+            if isinstance(item, dict) and item.get("type") == "text"
+            for line in _text_bubbles(str(item.get("body") or ""))
+        ]
+        if texts and all(is_silence(line) for line in texts):
+            return {"success": True, "completed": []}
         return _whatsapp_failure(0, "whatsapp text missing")
     return {"success": True, "completed": completed}
 
@@ -722,14 +1097,20 @@ def _wrap_sequence(orig_seq, orig_attach, orig_voice):
         args = {**(args or {}), "items": items}
         if not items:
             return {"success": True, "completed": []}
-        channel = _channel_name(_outbound_target(self))
+        target = _outbound_target(self, turn)
+        channel = _channel_name(target)
         credits_only = credits_is_notice(_bubble_text(items))
         if credits_only and recently_told(channel=channel):
             return {"success": True, "completed": []}
-        delivered = await _deliver_whatsapp(items, _outbound_target(self))
+        delivered = await _deliver_whatsapp(items, target)
         if delivered is not None:
             return _remember_credits(delivered, channel, credits_only)
-        items = _plain_items(items)
+        plain, reactions = _split_imessage(items)
+        if reactions and not _deliver_imessage_reactions(turn, reactions):
+            return {"success": False, "completed": [], "failure": {"index": 0, "status": "rejected", "error": "reaction failed"}}
+        if not plain:
+            return {"success": True, "completed": [{"index": index, "type": "reaction"} for index in range(len(reactions))]}
+        items = _plain_items(plain)
         args = {**args, "items": items}
         chunks = expand_items(items)
         if not any(kind in {"file", "voice"} for kind, _ in chunks):
@@ -835,8 +1216,20 @@ def silence(adapter_cls) -> None:
     log.info("zoen-face: leftover send dropped; owner bubbles use %s", IMESSAGE)
 
 
-def _adapters():
+def _adapter_cls(mod):
+    try:
+        return getattr(mod, "PlowChatAdapter", None)
+    except Exception:
+        return None
+
+
+_ADAPTERS: tuple | None = None
+_ADAPTER_KEYS: tuple | None = None
+
+
+def _scan_adapters():
     seen: set[int] = set()
+    found = []
     for name in _KNOWN:
         mod = sys.modules.get(name)
         if mod is None:
@@ -844,16 +1237,26 @@ def _adapters():
                 mod = importlib.import_module(name)
             except ImportError:
                 continue
-        cls = getattr(mod, "PlowChatAdapter", None)
+        cls = _adapter_cls(mod)
         if isinstance(cls, type) and id(cls) not in seen:
             seen.add(id(cls))
-            yield cls
+            found.append(cls)
     for mod in list(sys.modules.values()):
-        cls = getattr(mod, "PlowChatAdapter", None)
+        cls = _adapter_cls(mod)
         if isinstance(cls, type) and callable(getattr(cls, "send", None)):
             if callable(getattr(cls, "send_sequence", None)) and id(cls) not in seen:
                 seen.add(id(cls))
-                yield cls
+                found.append(cls)
+    return found
+
+
+def _adapters():
+    global _ADAPTERS, _ADAPTER_KEYS
+    keys = tuple(sys.modules)
+    if keys != _ADAPTER_KEYS or _ADAPTERS is None:
+        _ADAPTERS = tuple(_scan_adapters())
+        _ADAPTER_KEYS = tuple(sys.modules)
+    yield from _ADAPTERS
 
 
 def silence_plow_adapter() -> None:

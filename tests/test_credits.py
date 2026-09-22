@@ -38,6 +38,20 @@ def test_looks_like_the_plow_402_blob():
     )
 
 
+def test_owner_copy_speaks_once_until_the_next_message():
+    blob = (
+        'Billing or credits exhausted: HTTP 402: {"detail":"You\'re out of Plow credits. '
+        'Top up ($5 minimum) to keep going: https://app.plow.co/dashboard"}'
+    )
+    with tempfile.TemporaryDirectory() as d:
+        assert credits.owner_copy(blob, d, "whatsapp") == credits.notice("pt")
+        credits.mark_told(credits.notice("pt"), d, "whatsapp")
+        assert credits.owner_copy(blob, d, "whatsapp") == ""
+        assert credits.owner_copy("oi", d, "whatsapp") is None
+        credits.clear_told(d, "whatsapp")
+        assert credits.owner_copy(blob, d, "whatsapp") == credits.notice("pt")
+
+
 def test_recently_told_is_scoped_to_home():
     with tempfile.TemporaryDirectory() as d:
         assert not credits.recently_told(d)
@@ -60,5 +74,6 @@ def test_recently_told_is_scoped_to_home():
 if __name__ == "__main__":
     test_notice_is_two_lines_without_a_trailing_period()
     test_looks_like_the_plow_402_blob()
+    test_owner_copy_speaks_once_until_the_next_message()
     test_recently_told_is_scoped_to_home()
     print("ok")

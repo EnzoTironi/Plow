@@ -258,8 +258,7 @@ validated only for the providers recorded below.
 
 ## Operator setup (no Plow infrastructure changes)
 
-The shipped image uses the public relay URL in `runtime/config.yaml` under
-`zoen.oauth_relay_url`. Users only ask Zoen to connect a service and authorize on the
+The shipped image sets `ZOEN_OAUTH_RELAY_URL` to the public relay. Users only ask Zoen to connect a service and authorize on the
 provider's page. They do not need Cloudflare accounts or new Plow configuration.
 
 To operate a separate relay, deploy from your own Cloudflare account:
@@ -272,8 +271,8 @@ npx wrangler login
 npm run deploy
 ```
 
-Use a distinct Worker name when sharing an account. Update `zoen.oauth_relay_url`
-in the image, or set `ZOEN_OAUTH_RELAY_URL` in an operator-controlled runtime. Do not
+Use a distinct Worker name when sharing an account. Set `ZOEN_OAUTH_RELAY_URL`
+on the image or in an operator-controlled runtime. Do not
 put Cloudflare credentials in the agent image or share them with users. Preserve
 the `agent-home` volume when updating the local agent; do not use `down -v`.
 

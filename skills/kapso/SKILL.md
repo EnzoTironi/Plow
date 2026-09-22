@@ -15,11 +15,12 @@ and [Send a message](https://docs.kapso.ai/api/meta/whatsapp/messages/send-a-mes
 
 ## What you call
 
-- Tapback: `python3 /opt/plow/zoen/react.py TYPE --message <wamid>`.
-  TYPE is `like` `love` `laugh` `emphasize` `question` `dislike`.
-- Text, photos, voice, and quotes: `zoen_imessage`.
-  `reply_to` is the wamid being quoted.
+- One `zoen_imessage` call. Items, in order: `reaction`, `text`, `image`, `video`, `audio`, `contact`.
+- `reaction.kind` is `like` `love` `laugh` `emphasize` `question` `dislike`. Omit `message_id` to react to the message that opened the turn.
+- `text.reply_to` is the wamid being quoted. The same field quotes an image or a voice note.
+- `contact.who` is `zoen` or `enzo`. Another person is `name` and `phone`.
 - Progress at each step uses `purpose: "progress"`. The result uses `purpose: "answer"`.
+- Do not run `react.py` and do not post to the relay from the terminal.
 
 ## Reaction
 

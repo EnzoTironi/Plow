@@ -17,6 +17,7 @@ def request(
 ) -> dict:
     raw: bytes | None = None
     hdrs = dict(headers or {})
+    hdrs.setdefault("User-Agent", "Zoen")
     if body is not None:
         raw = json.dumps(body).encode()
         hdrs.setdefault("Content-Type", "application/json")

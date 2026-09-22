@@ -53,76 +53,15 @@ def test_live_dump_gains_zoen_face_and_keeps_plow_chat():
     assert "_config_version: 44" in text
     if enable.yaml is not None:
         data = enable.yaml.safe_load(text)
-        assert data["approvals"]["mode"] == "off"
-        assert data["security"]["tirith_enabled"] is False
-        assert data["display"]["interim_assistant_messages"] is False
-        assert data["display"]["platforms"]["plow_chat"]["long_running_notifications"] is False
-        assert data["model"]["default"] == "openai/gpt-5.6-luna"
-        assert list(data["providers"]["plow"]["models"]) == ["openai/gpt-5.6-luna"]
+        assert "approvals" not in data
+        assert "model" not in data
 
 
-def test_apply_runtime_turns_yolo_on_and_quiets_plow_chat():
-    data = {"plugins": {"enabled": ["plow-chat-platform"]}}
-    assert enable.apply_runtime(data) is True
-    assert data["approvals"]["mode"] == "off"
-    assert data["approvals"]["cron_mode"] == "approve"
-    assert data["security"]["tirith_enabled"] is False
-    assert data["display"]["interim_assistant_messages"] is False
-    assert data["display"]["platforms"]["plow_chat"]["long_running_notifications"] is False
-    assert data["busy_input_mode"] == "steer"
-    assert data["busy_ack_enabled"] is False
-    assert enable.apply_runtime(data) is False
-
-
-def test_apply_runtime_pins_luna_and_drops_other_models():
-    data = {
-        "model": {"default": "z-ai/glm-5.2", "provider": "plow"},
-        "providers": {
-            "plow": {"models": {"z-ai/glm-5.2": {"prompt_caching": True}}}
-        },
-    }
-    assert enable.apply_runtime(data) is True
-    assert data["model"]["default"] == "openai/gpt-5.6-luna"
-    assert data["model"]["provider"] == "plow"
-    models = data["providers"]["plow"]["models"]
-    assert list(models) == ["openai/gpt-5.6-luna"]
-    assert data["fallback_model"]["model"] == "openai/gpt-5.6-luna"
-    assert data["auxiliary"]["vision"]["model"] == "openai/gpt-5.6-luna"
-    assert data["delegation"]["model"] == "openai/gpt-5.6-luna"
-    assert data["delegation"]["reasoning_effort"] == "high"
-    assert enable.apply_runtime(data) is False
-
-
-def test_apply_runtime_drops_other_models_from_an_existing_catalog():
-    data = {
-        "providers": {
-            "plow": {
-                "models": {
-                    "anthropic/claude-sonnet-5": {"prompt_caching": True},
-                    "anthropic/claude-opus-5": {},
-                    "moonshotai/kimi-k3": {},
-                    "z-ai/glm-5.3-flash": {},
-                    "openai/gpt-5.6-luna": {},
-                }
-            }
-        }
-    }
-    assert enable.apply_runtime(data) is True
-    models = data["providers"]["plow"]["models"]
-    assert list(models) == ["openai/gpt-5.6-luna"]
-
-
-def test_already_listed_still_gains_yolo():
-    if enable.yaml is None:
-        return
+def test_already_listed_stays_untouched():
     with tempfile.TemporaryDirectory() as folder:
         path = _write(folder, "config.yaml", VOICED)
-        assert enable.ensure(path) is True
-        text = path.read_text()
-        data = enable.yaml.safe_load(text)
-        assert data["approvals"]["mode"] == "off"
-        assert data["busy_input_mode"] == "steer"
-        assert "- zoen-face" in text
+        assert enable.ensure(path) is False
+        assert path.read_text() == VOICED
 
 
 def test_seed_text_keeps_indent_and_neighbors():
@@ -138,7 +77,7 @@ def test_seed_text_keeps_indent_and_neighbors():
         )
 
 
-def test_refresh_replaces_stale_home_face_and_reopens_first_contact():
+def test_refresh_replaces_stale_skill_and_keeps_voice():
     with tempfile.TemporaryDirectory() as folder:
         bundled = Path(folder) / "bundled"
         bundled.mkdir()
@@ -151,21 +90,30 @@ def test_refresh_replaces_stale_home_face_and_reopens_first_contact():
         voice.parent.mkdir(parents=True)
         voice.write_text("language: pt\n")
         (voice.parent / "BOOTSTRAP.md").write_text("old ritual\n")
+        (voice.parent / "MEMORY.md").write_text("keeps the person\n")
         assert enable.refresh_image_scripts(
             str(home), bundled=bundled, face=bundled / "face.py"
         ) is True
         assert (scripts / "face.py").read_text() == "HELLO = ('new',)\n"
-        assert not voice.exists()
-        assert not (home / "zoen" / "BOOTSTRAP.md").exists()
-        assert enable.refresh_image_scripts(
-            str(home), bundled=bundled, face=bundled / "face.py"
-        ) is False
-        voice.parent.mkdir(parents=True, exist_ok=True)
-        voice.write_text("language: pt\n")
-        assert enable.refresh_image_scripts(
-            str(home), bundled=bundled, face=bundled / "face.py"
-        ) is False
         assert voice.read_text() == "language: pt\n"
+        assert (home / "zoen" / "BOOTSTRAP.md").read_text() == "old ritual\n"
+        assert (home / "zoen" / "MEMORY.md").read_text() == "keeps the person\n"
+
+
+def test_ensure_drops_the_zoen_config_block_and_keeps_plow():
+    dirty = LIVE + (
+        "zoen:\n"
+        "  reception_model: openai/gpt\n"
+        "  oauth_relay_url: https://relay.example\n"
+    )
+    with tempfile.TemporaryDirectory() as folder:
+        path = _write(folder, "config.yaml", dirty)
+        assert enable.ensure(path) is True
+        text = path.read_text()
+    assert "zoen:" not in text
+    assert "reception_model" not in text
+    assert "mcp_servers:" in text
+    assert "- zoen-face" in text
 
 
 def test_refresh_removes_stale_layout_and_bak():
@@ -224,9 +172,7 @@ def test_refresh_pins_workspace_leftover_face():
         home = Path(folder) / "home"
         workspace = home / "workspace" / "Plow" / "skills" / "zoen" / "scripts"
         workspace.mkdir(parents=True)
-        (workspace / "face.py").write_text(
-            'HELLO = (f"a gente te ajuda. {ENZO_TEL_DISPLAY}",)\n'
-        )
+        (workspace / "face.py").write_text("HELLO = ('old door',)\n")
         assert enable.refresh_image_scripts(
             str(home), bundled=bundled, face=bundled / "face.py"
         ) is True
@@ -235,12 +181,10 @@ def test_refresh_pins_workspace_leftover_face():
 
 if __name__ == "__main__":
     test_live_dump_gains_zoen_face_and_keeps_plow_chat()
-    test_apply_runtime_turns_yolo_on_and_quiets_plow_chat()
-    test_apply_runtime_pins_luna_and_drops_other_models()
-    test_apply_runtime_drops_other_models_from_an_existing_catalog()
-    test_already_listed_still_gains_yolo()
+    test_already_listed_stays_untouched()
     test_seed_text_keeps_indent_and_neighbors()
-    test_refresh_replaces_stale_home_face_and_reopens_first_contact()
+    test_refresh_replaces_stale_skill_and_keeps_voice()
+    test_ensure_drops_the_zoen_config_block_and_keeps_plow()
     test_refresh_keeps_voice_when_official_face_is_already_there()
     test_refresh_removes_stale_layout_and_bak()
     test_refresh_pins_workspace_leftover_face()

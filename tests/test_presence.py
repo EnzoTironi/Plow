@@ -428,6 +428,45 @@ def test_legacy_receipts_remain_sealed_against_replay(tmp_path):
     assert not receipts.claim("chat", [{"uid": "message"}])
 
 
+def test_owner_message_lets_the_credits_notice_speak_again(tmp_path, monkeypatch):
+    import credits
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    credits.mark_told(credits.notice("pt"), str(tmp_path))
+
+    class Box:
+        def __init__(self):
+            self._seen = set()
+            self.chat_uids = set()
+            self._chats = {}
+
+        async def _on_message(self, message, chat):
+            self._seen.add((chat, message["uid"]))
+
+        async def _handoff_message(self, event):
+            return None
+
+    presence.install(Box, SimpleNamespace(_owner_dm=lambda chat: False))
+    box = Box()
+
+    async def guest():
+        await box._on_message(
+            {"uid": "msg_guest", "body": "oi", "sender": {"type": "member", "role": "guest"}},
+            "cht_owner",
+        )
+
+    async def owner():
+        await box._on_message(
+            {"uid": "msg_owner", "body": "oi", "sender": {"type": "member", "role": "owner"}},
+            "cht_owner",
+        )
+
+    asyncio.run(guest())
+    assert credits.recently_told(str(tmp_path))
+    asyncio.run(owner())
+    assert credits.recently_told(str(tmp_path)) is False
+
+
 class _Patch:
     def __init__(self):
         self._env = []

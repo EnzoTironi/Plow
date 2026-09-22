@@ -3,9 +3,9 @@
 
     python3 /opt/plow/zoen/listen.py /absolute/path.m4a
 
-Prints the words. Empty stdout and exit 2 means the file could not be heard.
-The plow wrap calls `with_transcripts` so the turn text already has the words
-when faster-whisper is installed; this CLI is the fallback the model runs.
+Prints the words when a transcriber library is installed. Empty stdout and
+exit 2 means this image has no transcriber. The model uses the transcript
+the line already attached.
 """
 from __future__ import annotations
 

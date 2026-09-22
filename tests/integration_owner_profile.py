@@ -7,7 +7,11 @@ from aiohttp import web
 
 async def verify_owner_profile(adapter, plow, plugin):
     from tools.registry import registry
-    assert registry.get_schema("zoen_owner_profile")
+    try:
+        leftover = registry.get_schema("zoen_owner_profile")
+    except Exception:
+        leftover = None
+    assert not leftover
     profile = {"display_name": None, "photo_url": "https://fixture.invalid/photo.jpg"}
     contacts = [{"provider_key": "test", "display_name": None, "relationship": None, "role": "owner"},
                 {"provider_key": "friend@example.test", "display_name": None, "relationship": None, "role": "member"}]
@@ -54,7 +58,6 @@ async def verify_owner_profile(adapter, plow, plugin):
             "speaker_handle": "test", "owner_handle": "test", "recall_text": "Ana"}
     token = plow._ACTIVE_TURN.set(turn)
     try:
-        await check_onboarding(plugin.owner_profile.handle, writes)
         # The inherited provenance matrix still admits owner and friend names;
         # onboarding must not replace or narrow Plow's existing contact system.
         facts = [{"handle": "test", "display_name": "Nana"},

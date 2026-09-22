@@ -5,6 +5,8 @@ import logging
 import uuid
 
 from .connection_catalog import catalog_result, server_config
+from .connections import admits
+from . import whatsapp_line
 
 log = logging.getLogger(__name__)
 _jobs = {}
@@ -40,9 +42,25 @@ def connect_public(name, config):
 
 
 async def notify(adapter, module, chat_uid, name, details):
-    """Resume through Plow's normal message queue, preserving its send guards."""
+    """Resume on the same line. iMessage uses Plow's queue. WhatsApp uses the line send."""
+    line_id = str(chat_uid or "")
+    if line_id.startswith("whatsapp:"):
+        if not await admits(adapter, module, line_id, line_id):
+            raise PermissionError("bound_line_no_longer_authorized")
+        live = whatsapp_line.live_line()
+        if live is None:
+            raise PermissionError("bound_line_no_longer_authorized")
+        cards = whatsapp_line.authorization_cards(name, details)
+        if cards:
+            for index, card in enumerate(cards):
+                if index:
+                    await asyncio.sleep(0.4)
+                await live.send_card(line_id, card["text"], card["url"], card["label"])
+            return
+        await live.send(line_id, f"{name}\n{details}")
+        return
     await asyncio.wait_for(adapter._refresh_current_chat(chat_uid), 5)
-    if not module._owner_dm(adapter._chats.get(chat_uid, {})) or adapter._send_guard(chat_uid) is not None:
+    if not await admits(adapter, module, chat_uid):
         raise PermissionError("owner_dm_no_longer_authorized")
     chat = await adapter.get_chat_info(chat_uid)
     authority, recall = module._authority(chat, True, human=False)

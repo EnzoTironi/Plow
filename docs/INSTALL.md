@@ -38,7 +38,7 @@ Sobe o mesmo `:v1` do Text this agent. Same `:v1` 1-click deploys.
 Sair: `./bin/plow-agents lines` e `./bin/plow-agents revoke ln_…`
 
 Docker local, com Docker aberto: `./install.sh --local`.
-`docker compose down` guarda a memória. `down -v` apaga tudo.
+Isso guarda memória, sessões e o WhatsApp. `./install.sh --local --fresh` apaga o home.
 
 Para testar as mudanças deste checkout e preparar uma atualização, veja
 [runtime e validação](RUNTIME.md). O instalador público usa a imagem publicada;

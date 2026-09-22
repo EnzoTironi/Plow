@@ -120,11 +120,11 @@ or screenshots. Configure these through Cloudflare's secrets interface:
   64 lowercase hexadecimal characters.
 
 `GOOGLE_REDIRECT_URI` is checked into the Worker configuration
-(`https://auth.tryzoen.com/callback`). The runtime's `zoen.google_relay_url`
-defaults to `https://zoen-oauth-relay.agenttironi.workers.dev` and points to the
-same Worker, independently of the browser callback host and of
-`zoen.oauth_relay_url` used by native MCP. A private operator override is available
-as `ZOEN_GOOGLE_RELAY_URL`. Cloud instances need only outbound HTTPS and their
+(`https://auth.tryzoen.com/callback`). The image sets `ZOEN_GOOGLE_RELAY_URL`
+to `https://zoen-oauth-relay.agenttironi.workers.dev`. That URL points to the
+same Worker, independently of the browser callback host. Native MCP uses
+`ZOEN_OAUTH_RELAY_URL`. An operator can override `ZOEN_GOOGLE_RELAY_URL`.
+Cloud instances need only outbound HTTPS and their
 existing persistent volume.
 
 The tryzoen companion app's Better Auth callback

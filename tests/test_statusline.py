@@ -1,6 +1,7 @@
 """Real HTTP boundary, with a local model fixture and no external calls."""
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -40,12 +41,18 @@ def test_contextual_opening_or_no_text(tmp_path, code, content, recent, expected
         await runner.setup()
         site = web.TCPSite(runner, "127.0.0.1", 0)
         await site.start()
+        previous = os.environ.get("HERMES_MODEL")
+        os.environ["HERMES_MODEL"] = "openai/gpt-5.6-luna"
         try:
             async with ClientSession(base_url=f"http://127.0.0.1:{runner.addresses[0][1]}") as http:
                 result = await statusline.draft([{"body": "quero um passeio tranquilo"}], http=http, home=tmp_path,
                     recent=recent)
             assert result == expected
         finally:
+            if previous is None:
+                os.environ.pop("HERMES_MODEL", None)
+            else:
+                os.environ["HERMES_MODEL"] = previous
             await runner.cleanup()
 
     asyncio.run(run())

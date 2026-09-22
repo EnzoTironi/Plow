@@ -19,6 +19,7 @@ from pathlib import Path
 import aiohttp
 
 import face
+from credits import clear_told
 from statusline import draft
 
 log = logging.getLogger("zoen-presence")
@@ -262,6 +263,9 @@ def install(adapter_cls, module, prepare_dispatch=None):
 
     @functools.wraps(original)
     async def on_message(self, message, chat):
+        sender = message.get("sender") or {}
+        if sender.get("type") == "member" and sender.get("role") == "owner":
+            clear_told(channel="imessage")
         seen = (chat, message["uid"]) in self._seen
         await original(self, message, chat)
         accepted = (chat, message["uid"]) in self._seen

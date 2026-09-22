@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
 
@@ -25,8 +26,8 @@ import face  # noqa: E402
 import listen  # noqa: E402
 from . import presence  # noqa: E402
 from . import connections  # noqa: E402
-from . import owner_profile  # noqa: E402
 from . import whatsapp  # noqa: E402
+from . import whatsapp_line  # noqa: E402
 
 
 def _reset_home_skill() -> None:
@@ -47,15 +48,30 @@ def configure_adapters():
         if module is None:
             continue
         listen.install(module)
-        whatsapp.bind(quiet)
-        whatsapp.install(adapter, module)
         if hasattr(adapter, "_on_message"):
             quiet.configure_contract(module)
             quiet.claim_identity(module)
             presence.install(adapter, module, face.greet_on_dispatch)
 
 
+async def _relay_token() -> str:
+    """The relay session token. Empty while the bind is still waiting."""
+    agent = os.environ.get("PLOW_AGENT_TOKEN", "").strip()
+    if not whatsapp._TOKEN:
+        await whatsapp._adopt_install(agent)
+    if not whatsapp._TOKEN:
+        base = os.environ.get("ZOEN_OAUTH_RELAY_URL", "").strip().rstrip("/")
+        whatsapp._TOKEN = await whatsapp._register(base) or ""
+    return whatsapp._TOKEN or ""
+
+
+def _whatsapp_factory(cfg):
+    return whatsapp_line.hermes_adapter(cfg, authorize=_relay_token)
+
+
 def register(ctx) -> None:
+    whatsapp_line.bind_outbound(quiet)
+    whatsapp_line.register_line(ctx, factory=_whatsapp_factory)
     quiet.install_http_filter()
     try:
         _reset_home_skill()
@@ -73,8 +89,7 @@ def register(ctx) -> None:
         return prepared if prepared is not None else face.greet_on_dispatch(event, **kwargs)
 
     ctx.register_hook("pre_gateway_dispatch", on_dispatch)
+    ctx.register_hook("pre_tool_call", quiet.guard_whatsapp_tool)
     ctx.register_tool(name="zoen_connections", toolset="zoen", schema=connections.SCHEMA,
                       handler=connections.handle, emoji="🔌")
-    ctx.register_tool(name="zoen_owner_profile", toolset="zoen", schema=owner_profile.SCHEMA,
-                      handler=owner_profile.handle, emoji="👋")
     configure_adapters()

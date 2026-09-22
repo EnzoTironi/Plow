@@ -11,11 +11,13 @@ RUNNER="${ZOEN_RUNNER:-https://github.com/plow-pbc/plow-agents.git}"
 IMAGE="${ZOEN_IMAGE:-ghcr.io/enzotironi/zoen/all-in-one:v1}"
 
 LOCAL=0
+FRESH=0
 for arg in "$@"; do
   case "$arg" in
     --local) LOCAL=1 ;;
+    --fresh) FRESH=1 ;;
     *)
-      echo "uso: $0 [--local]" >&2
+      echo "uso: $0 [--local] [--fresh]" >&2
       exit 1
       ;;
   esac
@@ -128,6 +130,12 @@ if [ "$LOCAL" = 1 ]; then
   fi
   python3 "$ROOT/skills/zoen/scripts/face.py" rename || true
   echo "ligando…"
+  if [ "$FRESH" = 1 ]; then
+    echo "apagando o home local. memória, sessões e WhatsApp desta máquina saem."
+    docker compose down -v
+  else
+    docker compose down
+  fi
   if ! docker compose up --build -d; then
     docker logout public.ecr.aws >/dev/null 2>&1 || true
     docker compose up --build -d

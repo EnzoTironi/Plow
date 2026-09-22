@@ -9,6 +9,7 @@ import time
 
 from google_account import Account, GoogleError, relay_url, request, validate_tokens, verify_identity
 from . import mcp_connections
+from .connections import admits
 from .oauth_relay import RelayClient, RelayError
 
 
@@ -64,8 +65,7 @@ class GoogleJob:
         identity = await asyncio.to_thread(verify_identity, tokens["access_token"])
         if baseline and baseline.get("account", {}).get("id") != identity["id"] and not self.replace_account:
             raise GoogleError("google_account_switch_requires_owner_request")
-        await asyncio.wait_for(self.adapter._refresh_current_chat(self.chat), 5)
-        if not self.module._owner_dm(self.adapter._chats.get(self.chat, {})) or self.adapter._send_guard(self.chat) is not None:
+        if not await admits(self.adapter, self.module, self.chat):
             raise GoogleError("google_owner_chat_no_longer_authorized")
         self.account.commit({**tokens, "relay_url": self.relay.base, "account": identity,
                              "auth_mode": result.get("auth_mode")}, baseline)
@@ -159,8 +159,7 @@ async def dispatch(adapter, module, turn, args):
 
 
 async def connection_setup(args):
-    from hermes_cli.config import load_config
-    relay = os.environ.get("ZOEN_GOOGLE_RELAY_URL") or load_config().get("zoen", {}).get("google_relay_url")
+    relay = os.environ.get("ZOEN_GOOGLE_RELAY_URL", "").strip()
     if not relay:
         return {"ok": False, "error": "google_operator_setup_required"}
     config = await asyncio.wait_for(asyncio.to_thread(request, "GET", relay_url(relay) + "/google/config"), 8)

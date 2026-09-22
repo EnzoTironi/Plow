@@ -128,12 +128,19 @@ def test_contract_renames_send_and_forbids_leftover():
         PLOW_SEND_SEQUENCE_SCHEMA={
             "name": "plow_send_sequence",
             "description": "old",
-            "parameters": {"properties": {}},
+            "parameters": {"properties": {"items": {"items": {"oneOf": [
+                {"properties": {"type": {"const": "text"}}},
+            ]}}}},
         }
     )
     quiet.configure_contract(module)
+    kinds = {
+        option["properties"]["type"]["const"]
+        for option in module.PLOW_SEND_SEQUENCE_SCHEMA["parameters"]["properties"]["items"]["items"]["oneOf"]
+    }
     assert module.PLOW_SEND_SEQUENCE_SCHEMA["name"] == "zoen_imessage"
-    assert "ONLY way they see your words" in module.PLOW_SEND_SEQUENCE_SCHEMA["description"]
+    assert "WhatsApp and iMessage both use this tool" in module.PLOW_SEND_SEQUENCE_SCHEMA["description"]
+    assert {"reaction", "image", "video", "audio", "contact"} <= kinds
     assert "zoen_imessage" in module._ANSWER_LAST
     assert "not delivered" in module._ANSWER_LAST
     assert "Never skip" in module._ANSWER_LAST
@@ -263,36 +270,38 @@ def test_whatsapp_owner_phone_is_the_handle_digits():
 
 
 def test_whatsapp_poll_starts_when_the_line_connects():
-    spec_wa = importlib.util.spec_from_file_location(
-        "zoen_face_whatsapp_boot", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    spec_line = importlib.util.spec_from_file_location(
+        "whatsapp_line_boot", ROOT / "image/plugins/zoen-face/whatsapp_line.py"
     )
-    whatsapp = importlib.util.module_from_spec(spec_wa)
-    spec_wa.loader.exec_module(whatsapp)
+    line = importlib.util.module_from_spec(spec_line)
+    sys.modules["whatsapp_line_boot"] = line
+    spec_line.loader.exec_module(line)
 
-    class Adapter:
-        def __init__(self):
-            self.ready = False
+    class Plow:
+        async def _on_message(self, message, chat):
+            return None
 
-        async def connect(self):
-            self.ready = True
-            return True
+    original = Plow._on_message
+    started = asyncio.Event()
 
-    previous = os.environ.get("ZOEN_OAUTH_RELAY_URL")
-    os.environ["ZOEN_OAUTH_RELAY_URL"] = "http://127.0.0.1:9"
-    try:
-        whatsapp.bind(SimpleNamespace())
-        whatsapp.install(Adapter, SimpleNamespace())
-        box = Adapter()
-        assert whatsapp._TASK is None
-        asyncio.run(box.connect())
-        assert box.ready is True
-        assert whatsapp._TASK is not None
-        whatsapp._TASK.cancel()
-    finally:
-        if previous is None:
-            os.environ.pop("ZOEN_OAUTH_RELAY_URL", None)
-        else:
-            os.environ["ZOEN_OAUTH_RELAY_URL"] = previous
+    class Transport:
+        async def get(self, url):
+            started.set()
+            await asyncio.Event().wait()
+
+        async def post(self, url, body):
+            return {}
+
+    adapter = line.WhatsAppLine("https://relay.example", Transport())
+
+    async def run():
+        assert await adapter.connect() is True
+        await asyncio.wait_for(started.wait(), 1)
+        assert adapter._task is not None
+        await adapter.disconnect()
+
+    asyncio.run(run())
+    assert Plow._on_message is original
 
 
 def test_whatsapp_credits_follow_the_inbound_and_imessage_stays_on_imessage():
@@ -399,23 +408,6 @@ def test_pairing_code_reaches_every_phone_chat():
             code = whatsapp._pairing_code()
             asyncio.run(whatsapp._announce_chats("agt_test", ["cht_home", "cht_android"], code))
             asyncio.run(whatsapp._announce_chats("agt_test", ["cht_home", "cht_android"], code))
-            adapter = SimpleNamespace(
-                _chats={"cht_new": {"owner": True}},
-                _send_guard=lambda uid: None,
-            )
-            module = SimpleNamespace(
-                _owner_dm=lambda chat: chat.get("owner", False),
-                _owner_handle=lambda chat: "+55 31 98888-7777",
-            )
-            saved = whatsapp._TOKEN
-            whatsapp._TOKEN = ""
-            asyncio.run(whatsapp._offer_code(adapter, module, "cht_new"))
-            asyncio.run(whatsapp._offer_code(adapter, module, "cht_new"))
-            guarded = SimpleNamespace(_chats={}, _send_guard=lambda uid: "group")
-            asyncio.run(whatsapp._offer_code(guarded, module, "cht_group"))
-            whatsapp._TOKEN = "already-bound"
-            asyncio.run(whatsapp._offer_code(adapter, module, "cht_later"))
-            whatsapp._TOKEN = saved
         finally:
             if previous_home is None:
                 os.environ.pop("HERMES_HOME", None)
@@ -435,24 +427,9 @@ def test_pairing_code_reaches_every_phone_chat():
     assert [row[1] for row in posted] == (
         ["https://plow.example/v1/chats/cht_home/messages"] * len(bubbles)
         + ["https://plow.example/v1/chats/cht_android/messages"] * len(bubbles)
-        + ["https://plow.example/v1/chats/cht_new/messages"] * len(bubbles)
     )
     assert all(row[2]["format"] == "none" for row in posted)
     assert all("\n" not in row[2]["body"] for row in posted)
-
-
-def test_pairing_code_alone_opens_whatsapp_and_a_real_text_owns_the_turn():
-    spec_wa = importlib.util.spec_from_file_location(
-        "zoen_face_whatsapp_pairing_turn", ROOT / "image/plugins/zoen-face/whatsapp.py"
-    )
-    pairing = importlib.util.module_from_spec(spec_wa)
-    spec_wa.loader.exec_module(pairing)
-    code = "142857"
-    assert pairing.pairing_turn([{"text": code}], code)
-    assert pairing.pairing_turn([{"text": f"  {code}  "}], code)
-    assert not pairing.pairing_turn([{"text": "oi"}, {"text": code}], code)
-    assert not pairing.pairing_turn([{"text": code, "media_id": "mid"}], code)
-    assert not pairing.pairing_turn([{"text": code}], "")
 
 
 def test_activation_code_uses_the_onboarding_chat_a_normal_reply_uses():
@@ -1085,7 +1062,87 @@ def test_whatsapp_omitted_reply_does_not_quote():
         quiet.WHATSAPP.reset(token)
         quiet.WHATSAPP_DELIVER = None
     assert result["success"] is True
-    assert sent == ["oi", "sobre aquilo"]
+    assert sent == ["oi", {"text": "sobre aquilo", "reply_to": "wamid.explicit"}]
+
+
+def test_whatsapp_one_call_reacts_quotes_and_sends_a_card():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    sent, media, reacted, cards = [], [], [], []
+
+    async def deliver(payload):
+        sent.append(payload)
+        return True
+
+    async def send_media(spec):
+        media.append(spec)
+        return True
+
+    async def react(spec):
+        reacted.append(spec)
+        return True
+
+    async def contact(spec):
+        cards.append(spec)
+        return True
+
+    quiet.WHATSAPP_DELIVER = deliver
+    quiet.WHATSAPP_MEDIA = send_media
+    quiet.WHATSAPP_REACT = react
+    quiet.WHATSAPP_CONTACT = contact
+    token = quiet.WHATSAPP.set({"to": "5511999999999", "message_id": "wamid.1"})
+    try:
+        result = asyncio.run(box.send_sequence({"items": [
+            {"type": "reaction", "kind": "like"},
+            {"type": "text", "body": "oi", "reply_to": "wamid.1"},
+            {"type": "image", "path": "/tmp/shot.png", "reply_to": "wamid.1"},
+            {"type": "audio", "path": "/tmp/note.ogg", "voice": True},
+            {"type": "contact", "who": "zoen"},
+        ]}, {"chat_uid": "cht_x"}))
+    finally:
+        quiet.WHATSAPP.reset(token)
+        quiet.WHATSAPP_DELIVER = None
+        quiet.WHATSAPP_MEDIA = None
+        quiet.WHATSAPP_REACT = None
+        quiet.WHATSAPP_CONTACT = None
+    assert result["success"] is True
+    assert reacted == [{"message_id": "wamid.1", "type": "like"}]
+    assert sent == [{"text": "oi", "reply_to": "wamid.1"}]
+    assert media[0] == {"path": "/tmp/shot.png", "voice": False, "reply_to": "wamid.1"}
+    assert media[1]["path"] == "/tmp/note.ogg" and media[1]["voice"] is True
+    assert cards == [{"name": "Zoen", "phone": "+553798136141"}]
+    assert box.posted == []
+
+
+def test_imessage_reaction_and_image_use_the_same_tool():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    reactions = []
+
+    def react(chat, message, kind):
+        reactions.append((chat, message, kind))
+        return True
+
+    quiet.IMESSAGE_REACT = react
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        png = Path(home) / "shot.png"
+        png.write_bytes(b"\x89PNG\r\n\x1a\n")
+        try:
+            result = asyncio.run(box.send_sequence({"items": [
+                {"type": "reaction", "kind": "like"},
+                {"type": "image", "path": str(png)},
+                {"type": "text", "body": "olha"},
+            ]}, {"chat_uid": "cht_x", "source_message_id": "msg_1"}))
+        finally:
+            os.environ.pop("HERMES_HOME", None)
+            quiet.IMESSAGE_REACT = None
+    assert result["success"] is True
+    assert reactions == [("cht_x", "msg_1", "like")]
+    assert ("file", str(png.resolve())) in box.posted
+    assert ("sequence", {"items": [{"type": "text", "body": "olha"}]}) in box.posted
 
 
 def test_whatsapp_stops_after_four_text_bubbles():
@@ -1143,49 +1200,6 @@ def test_whatsapp_quotes_the_bubble_they_pointed_at():
     assert sent == [{"text": "era essa", "reply_to": "wamid.old"}, "e o resto"]
 
 
-def test_whatsapp_uncertain_send_is_not_repeated():
-    spec = importlib.util.spec_from_file_location(
-        "zoen_face_whatsapp_once", ROOT / "image/plugins/zoen-face/whatsapp.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    module._RECENT.clear()
-    module._TOKEN = "a" * 43
-    calls = []
-
-    async def flaky(method, url, token, body=None):
-        calls.append(body["text"])
-        if len(calls) == 1:
-            raise module._Uncertain()
-        raise AssertionError("retried an uncertain bubble")
-
-    module._request = flaky
-    assert asyncio.run(module._send("https://relay.example", {"text": "oi", "to": "5511999999999"})) is True
-    assert asyncio.run(module._send("https://relay.example", {"text": "oi", "to": "5511999999999"})) is True
-    assert calls == ["oi"]
-
-
-def test_whatsapp_idle_poll_backs_off():
-    spec = importlib.util.spec_from_file_location(
-        "zoen_face_whatsapp_poll", ROOT / "image/plugins/zoen-face/whatsapp.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    assert module.poll_pause(0) == 1
-    assert module.poll_pause(1) == 2
-    assert module.poll_pause(2) == 5
-    assert module.poll_pause(3) == 15
-    assert module.poll_pause(4) == 30
-    assert module.poll_pause(9) == 30
-
-
-def test_whatsapp_reaction_is_the_agents_tapback_not_a_second_model():
-    source = (ROOT / "image/plugins/zoen-face/whatsapp.py").read_text()
-    assert "_react(" not in source
-    assert "reaction.emoji" in source
-    assert "skill kapso" in source
-
-
 def test_imessage_quote_field_does_not_reach_plow():
     Adapter = _adapter()
     quiet.silence(Adapter)
@@ -1196,49 +1210,6 @@ def test_imessage_quote_field_does_not_reach_plow():
     ))
     assert result["success"] is True
     assert box.posted == [("sequence", {"items": [{"type": "text", "body": "oi"}]})]
-
-
-def test_whatsapp_turn_stays_in_the_session():
-    source = (ROOT / "image/plugins/zoen-face/whatsapp.py").read_text()
-    assert "event.internal = False" in source
-    assert "event.internal = True" not in source
-    assert "event.interrupts_run = False" in source
-    spec = importlib.util.spec_from_file_location(
-        "zoen_face_whatsapp_prompt", ROOT / "image/plugins/zoen-face/whatsapp.py"
-    )
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    prompt = module._prompt("wamid.1")
-    assert "first action is the tapback" in prompt
-    assert "history" in prompt
-    assert "<request id=\"wamid.1\">" in prompt
-    assert "</request>" in prompt
-    assert "<history>" in prompt
-    assert "</history>" in prompt
-    assert "<memory>" in prompt
-    assert "<reply_to inbound=\"wamid.1\">" in prompt
-    assert "</reply_to>" in prompt
-    assert "<delivery>" in prompt
-    assert "Never tell them you already sent something" in prompt
-    assert "two or three concrete jobs" not in prompt
-    assert "Answer from that history" not in prompt
-    assert "reaction.emoji" in prompt
-    assert "context.message_id" in prompt
-    assert "This inbound is wamid.1" in prompt
-    assert "Set reply_to to the wamid of the bubble this item answers" in prompt
-    assert "Leave reply_to off" in prompt
-    quoted = module._prompt("wamid.new", quoted_id="wamid.old", quoted_text="o de cima")
-    assert "They replied to wamid.old" in quoted
-    assert "That bubble said: o de cima" in quoted
-    assert "This inbound is wamid.new" in quoted
-    assert "skill kapso" in prompt
-    first = module._prompt("wamid.1", first=True)
-    assert "first-contact" in first
-    assert "Do not greet again" not in first
-    paired = module._prompt("wamid.code", pairing=True)
-    assert "introduce yourself" in paired
-    assert "Do not ask what the code is" in paired
-    assert "not question" in paired
 
 
 def test_whatsapp_reply_stays_off_imessage():
@@ -1289,6 +1260,252 @@ def test_imessage_turn_stays_on_imessage_when_whatsapp_context_leaked():
     assert result["success"] is True
     assert sent == []
     assert box.posted == [("sequence", {"items": [{"type": "text", "body": "no imessage"}]})]
+
+
+def test_a_whatsapp_bubble_already_sent_is_not_sent_again():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    sent = []
+
+    async def deliver(payload):
+        sent.append(payload)
+        return True
+
+    quiet.WHATSAPP_DELIVER = deliver
+    token = quiet.WHATSAPP.set({"to": "5537999999999", "message_id": "wamid.1"})
+    body = "o que tá rolando? me fala o que pesa mais"
+    try:
+        first = asyncio.run(box.send_sequence(
+            {"items": [{"type": "text", "body": body, "reply_to": "wamid.1"}]},
+            {"chat_uid": "cht_x"},
+        ))
+        second = asyncio.run(box.send_sequence(
+            {"items": [{"type": "text", "body": body}]},
+            {"chat_uid": "cht_x"},
+        ))
+    finally:
+        quiet.WHATSAPP.reset(token)
+        quiet.WHATSAPP_DELIVER = None
+        quiet._RECENT_OUTBOUND.clear()
+    assert first["success"] is True and second["success"] is True
+    assert sent == [{"text": body, "reply_to": "wamid.1"}]
+
+
+def test_whatsapp_tool_thread_reads_the_loaded_plow_turn():
+    import types
+
+    home = tempfile.mkdtemp()
+    previous = os.environ.get("HERMES_HOME")
+    os.environ["HERMES_HOME"] = home
+    module_name = "hermes_plugins.plow_chat._transport"
+    previous_module = sys.modules.get(module_name)
+    turn = contextvars.ContextVar("plow_chat_active_turn", default=None)
+    module = types.ModuleType(module_name)
+    module._ACTIVE_TURN = turn
+    sys.modules[module_name] = module
+    Path(home, "zoen").mkdir()
+    Path(home, "zoen", "whatsapp.json").write_text(json.dumps({
+        "to": "5537999999999",
+        "message_id": "wamid.1",
+        "line_id": "whatsapp:5537999999999",
+    }), encoding="utf-8")
+    seen = {}
+
+    def handler(_args, **_kwargs):
+        seen["turn"] = turn.get()
+        return "ok"
+
+    entry = SimpleNamespace(handler=handler)
+    try:
+        quiet._bind_whatsapp_send(entry)
+        assert entry.handler({}) == "ok"
+    finally:
+        if previous is None:
+            os.environ.pop("HERMES_HOME", None)
+        else:
+            os.environ["HERMES_HOME"] = previous
+        if previous_module is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous_module
+    assert seen["turn"]["owner"] is True
+    assert seen["turn"]["dm"] is True
+    assert seen["turn"]["zoen_whatsapp"]["to"] == "5537999999999"
+    assert turn.get() is None
+
+
+def test_a_refused_owner_dm_still_sends_the_whatsapp_bubble():
+    import threading
+    import types
+
+    home = tempfile.mkdtemp()
+    previous = os.environ.get("HERMES_HOME")
+    os.environ["HERMES_HOME"] = home
+    module_name = "hermes_plugins.plow_chat._transport"
+    previous_module = sys.modules.get(module_name)
+    module = types.ModuleType(module_name)
+    module._ACTIVE_TURN = contextvars.ContextVar("plow_chat_active_turn", default=None)
+    sys.modules[module_name] = module
+    Path(home, "zoen").mkdir()
+    Path(home, "zoen", "whatsapp.json").write_text(json.dumps({
+        "to": "5537999999999",
+        "message_id": "wamid.1",
+        "line_id": "whatsapp:5537999999999",
+    }), encoding="utf-8")
+    sent = []
+
+    async def deliver(payload):
+        sent.append(payload)
+        return True
+
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    quiet.WHATSAPP_DELIVER = deliver
+    quiet.LOOP = loop
+
+    def handler(_args, **_kwargs):
+        return json.dumps({
+            "success": False,
+            "completed": [],
+            "failure": {"index": 0, "status": "rejected", "error": "requires a connected active owner DM"},
+        })
+
+    entry = SimpleNamespace(handler=handler)
+    body = "oi, pode falar por aqui"
+    try:
+        quiet._bind_whatsapp_send(entry)
+        raw = entry.handler({"items": [{"type": "text", "body": body}]})
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=2)
+        loop.close()
+        quiet.WHATSAPP_DELIVER = None
+        quiet.LOOP = None
+        quiet._RECENT_OUTBOUND.clear()
+        if previous is None:
+            os.environ.pop("HERMES_HOME", None)
+        else:
+            os.environ["HERMES_HOME"] = previous
+        if previous_module is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous_module
+    assert json.loads(raw)["success"] is True
+    assert sent == [body]
+    quiet._TURN_COPIES.clear()
+
+
+def test_whatsapp_sends_when_the_plugin_module_is_plow_chat_platform():
+    import threading
+    import types
+
+    home = tempfile.mkdtemp()
+    previous = os.environ.get("HERMES_HOME")
+    os.environ["HERMES_HOME"] = home
+    module_name = "hermes_plugins.plow_chat_platform._transport"
+    previous_module = sys.modules.get(module_name)
+    module = types.ModuleType(module_name)
+    module._ACTIVE_TURN = contextvars.ContextVar("plow_chat_active_turn", default=None)
+    sys.modules[module_name] = module
+    Path(home, "zoen").mkdir()
+    Path(home, "zoen", "whatsapp.json").write_text(json.dumps({
+        "to": "5537999999999",
+        "message_id": "wamid.1",
+        "line_id": "whatsapp:5537999999999",
+    }), encoding="utf-8")
+    sent = []
+
+    async def deliver(payload):
+        sent.append(payload)
+        return True
+
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    quiet.WHATSAPP_DELIVER = deliver
+    quiet.LOOP = loop
+
+    def handler(_args, **_kwargs):
+        raise AssertionError("whatsapp delivery does not wait on plow")
+
+    entry = SimpleNamespace(handler=handler)
+    try:
+        quiet._bind_whatsapp_send(entry)
+        raw = entry.handler({"items": [{"type": "text", "body": "recebi", "reply_to": "wamid.1"}]})
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=2)
+        loop.close()
+        quiet.WHATSAPP_DELIVER = None
+        quiet.LOOP = None
+        quiet._RECENT_OUTBOUND.clear()
+        quiet._TURN_COPIES.clear()
+        if previous is None:
+            os.environ.pop("HERMES_HOME", None)
+        else:
+            os.environ["HERMES_HOME"] = previous
+        if previous_module is None:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = previous_module
+    assert json.loads(raw)["success"] is True
+    assert sent == [{"text": "recebi", "reply_to": "wamid.1"}]
+
+
+def test_whatsapp_turn_dict_reaches_the_loop_without_the_contextvar():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    sent = []
+
+    async def deliver(payload):
+        sent.append(payload)
+        return True
+
+    quiet.WHATSAPP_DELIVER = deliver
+    try:
+        result = asyncio.run(box.send_sequence(
+            {"items": [{"type": "text", "body": "oi"}]},
+            {"chat_uid": "whatsapp:5537999999999", "zoen_whatsapp": {
+                "to": "5537999999999",
+                "message_id": "wamid.1",
+                "line_id": "whatsapp:5537999999999",
+            }},
+        ))
+    finally:
+        quiet.WHATSAPP_DELIVER = None
+    assert result["success"] is True
+    assert sent == ["oi"]
+    assert box.posted == []
+
+
+def test_whatsapp_turn_refuses_an_imessage_post():
+    posted = {
+        "command": "python3 -c \"import urllib.request; urllib.request.urlopen('https://api.plow.co/v1/chats/cht_x/messages')\"",
+    }
+    token = quiet.WHATSAPP.set({"to": "5537999999999", "message_id": "wamid.1"})
+    try:
+        blocked = quiet.guard_whatsapp_tool("terminal", posted)
+        slipped = quiet.guard_whatsapp_tool("terminal", {"command": "curl $PLOW_API_BASE/v1/chats/cht_x/messages"})
+        relay = quiet.guard_whatsapp_tool("terminal", {"command": "python3 -c \"open('/var/lib/hermes/zoen/whatsapp.token'); post('/whatsapp/send')\""})
+        allowed = quiet.guard_whatsapp_tool("terminal", {"command": "ls /tmp"})
+        wrote = quiet.guard_whatsapp_tool("write_file", {"path": "/var/lib/hermes/zoen/send_wa.py", "content": "print(1)"})
+        listed = quiet.guard_whatsapp_tool("plow_send_message", {"action": "list"})
+        sent = quiet.guard_whatsapp_tool("plow_send_message", {"to": "cht_x", "body": "oi"})
+    finally:
+        quiet.WHATSAPP.reset(token)
+    assert blocked["action"] == "block"
+    assert slipped["action"] == "block"
+    assert relay["action"] == "block"
+    assert allowed["action"] == "block"
+    assert wrote["action"] == "block"
+    assert listed is None
+    assert sent["action"] == "block"
+    assert quiet.guard_whatsapp_tool("terminal", posted) is None
+    assert quiet.is_silence("[NO_REPLY]") is True
+    assert quiet.is_silence("oi") is False
 
 
 def test_send_sequence_still_runs():
@@ -1483,19 +1700,23 @@ def test_claim_identity_skips_modules_without_the_seam():
 def test_seed_soul_is_zoen_not_a_plow_assistant():
     soul = (ROOT / "runtime" / "SOUL.md").read_text()
     persona = (ROOT / "runtime" / "persona.md").read_text()
-    assert soul.lstrip().startswith("# Zoen")
-    assert persona.strip() == ""
-    assert "You are **Zoen**" in soul
-    assert "https://tryzoen.com" in soul
-    assert "add you to an iMessage group" in soul
+    assert persona.lstrip().startswith("# Zoen")
+    assert "You are **Zoen**" in persona
+    assert "https://tryzoen.com" in persona
+    assert "add you to an iMessage group" in persona
+    assert "You are **Zoen**" not in soul
+    assert len(soul.encode()) + len(persona.encode()) < 20000
     assert "You are a Plow assistant" not in soul
-    assert "mention /help" in soul.lower()
+    assert "mention /help" in persona.lower()
     assert "zoen_connections" in soul
     assert "zoen_imessage" in soul
     assert "Anything you make for them is shown in this chat" in soul
     assert "catalog" in soul
     assert "<person>" in soul
     assert "two or three concrete jobs" not in soul
+    assert "action steer" in soul
+    assert "does not stop a leaf" not in (ROOT / "skills/zoen/SKILL.md").read_text()
+    assert "delegate_task action steer" in (ROOT / "skills/zoen/scripts/context.py").read_text()
 
 
 def test_persona_route_index_names_playbooks_and_skills():
@@ -1574,7 +1795,6 @@ if __name__ == "__main__":
     test_agent_secret_is_stable_for_the_volume()
     test_pairing_code_stays_on_the_volume_and_opens_whatsapp()
     test_pairing_code_reaches_every_phone_chat()
-    test_pairing_code_alone_opens_whatsapp_and_a_real_text_owns_the_turn()
     test_activation_code_uses_the_onboarding_chat_a_normal_reply_uses()
     test_onboarding_sends_every_bubble_without_waiting_out_the_card_reserve()
     test_onboarding_resumes_after_a_bubble_fails()
@@ -1590,11 +1810,7 @@ if __name__ == "__main__":
     test_whatsapp_line_break_is_its_own_bubble()
     test_whatsapp_omitted_reply_does_not_quote()
     test_whatsapp_quotes_the_bubble_they_pointed_at()
-    test_whatsapp_uncertain_send_is_not_repeated()
-    test_whatsapp_idle_poll_backs_off()
-    test_whatsapp_reaction_is_the_agents_tapback_not_a_second_model()
     test_imessage_quote_field_does_not_reach_plow()
-    test_whatsapp_turn_stays_in_the_session()
     test_whatsapp_reply_stays_off_imessage()
     test_imessage_turn_stays_on_imessage_when_whatsapp_context_leaked()
     test_send_sequence_still_runs()

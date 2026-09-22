@@ -84,6 +84,15 @@ def is_notice(text: Any) -> bool:
     return blob in {" ".join(body.lower().split()) for body in NOTICE.values()}
 
 
+def owner_copy(text: Any, home: str | None = None, channel: str = "imessage") -> str | None:
+    """The ready notice, empty when this channel was already told, or None."""
+    if not is_notice(text):
+        return None
+    if recently_told(home, channel):
+        return ""
+    return notice(language(home))
+
+
 def result_is_credits(result: dict[str, Any] | None) -> bool:
     if not result or result.get("ok"):
         return False

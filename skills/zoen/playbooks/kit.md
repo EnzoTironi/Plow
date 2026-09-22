@@ -10,8 +10,9 @@ ask them to do computer work you can do on the Mac.
 
 ## Already in this image
 
-`gh`, node, `cloudflared`, and the scanners live here. Use them. Do not install
-the same tool on the Mac for sport.
+`gh` and `espeak-ng` live here. Use them. Do not install the same tool on the Mac
+for sport. A public page installs `cloudflared` on that turn. Review and language
+are the model's.
 
 ## Need their session
 

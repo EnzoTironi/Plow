@@ -454,20 +454,21 @@ def test_dispatch_asks_the_model_to_onboard():
         assert "Enzo made you" in prompt
         assert "@tryZoen" in prompt
         assert "thousand" in prompt
-        assert "zoen_owner_profile" in prompt
+        assert "plow_name_contact" in prompt
         assert "a gente te ajuda" in prompt
         assert face.HELLO["pt"][0] not in prompt
         assert face.HELLO["en"][0] not in prompt
 
 
 def test_first_imessage_opener_keeps_the_prebuilt_bubbles_and_the_language():
+    plow = FakePlow()
     previous = os.environ.get("HERMES_HOME")
     event = Event("oi")
     with tempfile.TemporaryDirectory() as home:
         os.environ["HERMES_HOME"] = home
         try:
-            action = face.greet_on_dispatch(event, voiced=False, send=no_intro)
-            saved = (Path(home) / "zoen" / "language").read_text(encoding="utf-8").strip()
+            action = face.greet_on_dispatch(event, voiced=False, send=no_intro, http=plow.http)
+            saved = Path(home) / "zoen" / "language"
         finally:
             if previous is None:
                 os.environ.pop("HERMES_HOME", None)
@@ -475,24 +476,16 @@ def test_first_imessage_opener_keeps_the_prebuilt_bubbles_and_the_language():
                 os.environ["HERMES_HOME"] = previous
     assert action == {"action": "skip", "reason": "prebuilt hello"}
     assert "first contact" not in getattr(event, "channel_prompt", "")
-    assert saved == "pt"
+    assert not saved.exists()
 
 
 def test_alo_keeps_the_prebuilt_hello():
-    previous = os.environ.get("HERMES_HOME")
-    try:
-        for text in ("alo", "alô"):
-            event = Event(text)
-            with tempfile.TemporaryDirectory() as home:
-                os.environ["HERMES_HOME"] = home
-                action = face.greet_on_dispatch(event, voiced=False, send=no_intro)
-            assert action == {"action": "skip", "reason": "prebuilt hello"}
-            assert "first contact" not in getattr(event, "channel_prompt", "")
-    finally:
-        if previous is None:
-            os.environ.pop("HERMES_HOME", None)
-        else:
-            os.environ["HERMES_HOME"] = previous
+    plow = FakePlow()
+    for text in ("alo", "alô"):
+        event = Event(text)
+        action = face.greet_on_dispatch(event, voiced=False, send=no_intro, http=plow.http)
+        assert action == {"action": "skip", "reason": "prebuilt hello"}
+        assert "first contact" not in getattr(event, "channel_prompt", "")
 
 
 def test_second_imessage_message_greets_with_the_saved_code():
@@ -529,7 +522,8 @@ def test_whatsapp_code_introduces_zoen_in_the_saved_language():
         action = face.greet_on_dispatch(event, voiced=True, send=no_intro, http=plow.http)
     assert action == {"action": "allow", "reason": "zoen onboarding"}
     prompt = event.channel_prompt
-    assert "Portuguese (pt)" in prompt
+    assert "Write in the language of their words" in prompt
+    assert "Portuguese" not in prompt
     assert "Introduce yourself" in prompt
     assert "who you are" in prompt
     assert "what you can do" in prompt
@@ -549,7 +543,8 @@ def test_whatsapp_code_introduces_zoen_in_english():
     with tempfile.TemporaryDirectory() as home, face_env(home=home):
         action = face.greet_on_dispatch(event, voiced=False, send=no_intro, http=plow.http)
     assert action == {"action": "allow", "reason": "zoen onboarding"}
-    assert "English (en)" in event.channel_prompt
+    assert "Write in the language of their words" in event.channel_prompt
+    assert "English" not in event.channel_prompt
     assert "Introduce yourself" in event.channel_prompt
     assert "Do not ask what the code is" in event.channel_prompt
 
@@ -567,8 +562,9 @@ def test_whatsapp_first_contact_uses_the_same_idea_without_imessage_cards():
     prompt = event.channel_prompt
     assert "Enzo made you" in prompt
     assert "thousand" in prompt
-    assert "zoen_owner_profile" in prompt
-    assert "Portuguese (pt)" in prompt
+    assert "plow_name_contact" in prompt
+    assert "Write in the language of their words" in prompt
+    assert "Portuguese" not in prompt
     assert "Do not run face.py cards" in prompt
     assert "python3 /opt/plow/zoen/face.py cards" not in prompt
 
@@ -602,7 +598,7 @@ def test_dispatch_does_not_reopen_first_contact_when_chat_already_has_hello():
         )
         assert action == {"action": "allow"}
         assert "first contact" not in getattr(event, "channel_prompt", "")
-        assert (Path(home) / "zoen" / "VOICE.md").is_file()
+        assert not (Path(home) / "zoen" / "VOICE.md").exists()
 
 
 def test_dispatch_swallows_plow_setup_without_intro():

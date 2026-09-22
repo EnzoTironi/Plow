@@ -11,7 +11,7 @@ npx wrangler login
 npm run deploy
 ```
 
-Set `zoen.oauth_relay_url` in `runtime/config.yaml` to the deployed base URL, then
+Set `ZOEN_OAUTH_RELAY_URL` to the deployed base URL, then
 build the agent. The provider's redirect URI is always `<base>/callback`. Existing
 Plow instances need an image update, with their persistent home kept intact.
 

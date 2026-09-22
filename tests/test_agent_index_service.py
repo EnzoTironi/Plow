@@ -15,7 +15,16 @@ def test_wiring():
     assert (ROOT / "image/s6-overlay/s6-rc.d/user/contents.d/zoen-floor-cron").exists()
     dockerfile = (ROOT / "Dockerfile").read_text()
     assert "vendor/client.pin" not in dockerfile
-    assert "lid.176.ftz" in dockerfile
+    assert "lid.176.ftz" not in dockerfile
+    assert "fasttext" not in dockerfile
+    assert "chromium" not in dockerfile
+    assert "faster-whisper" not in dockerfile
+    assert "cloudflared" not in dockerfile
+    assert "npm install" not in dockerfile
+    assert "gh" in dockerfile
+    assert "ZOEN_OAUTH_RELAY_URL=" in dockerfile
+    assert "zoen-config.yaml" not in dockerfile
+    assert "sitecustomize" not in dockerfile
     assert "COPY skills/zoen/scripts/" in dockerfile
     assert "ENV AGENT_ID=zoen" in dockerfile
     assert "ENV AGENT_NAME=Zoen" in dockerfile

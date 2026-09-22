@@ -1,7 +1,8 @@
 # Index
 
 Read this before choosing a workflow, someone else's app, or outside data.
-Then open the named playbook. Connect only the catalog name the task needs.
+Then open the one named playbook. `skill_view` the one leaf that playbook names.
+Connect only the catalog name the task needs.
 Confirm the name with `zoen_connections` action `catalog` before `connect`.
 A name here is a candidate. Saved credentials are not a verified account.
 
