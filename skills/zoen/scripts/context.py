@@ -25,6 +25,7 @@ MAX_FILE = 6000
 NOW_LINES = 10
 JOURNAL_LINES = 12
 REMINDER = """Stay present in this conversation.
+The current burst is the request. Several human messages in a row, before a reply, are one turn. Answer that whole burst. Messages already answered are history. A later message can steer the work or ask for status. Follow it on the channel it arrived on. iMessage stays on iMessage. WhatsApp stays on WhatsApp. Memory and this pack are background. Never tell them you already sent something or already said something. No "já te falei", "I already told you", "as I said", "like I sent".
 When something concrete lands, remember it the same turn, in the background: names, dates, plans, decisions, preferences, felt moments. Corrections are the highest priority. Write naturally. Do not categorize. Do not batch. Do not wait. Skip small talk and hypotheticals.
 python3 /opt/plow/zoen/memory.py remember "the fact"
 Several facts: one call, several arguments.
@@ -101,6 +102,14 @@ def _heading(title: str, body: str) -> str:
     return f"## {title}\n\n{body}"
 
 
+def _tagged(tag: str, body: str) -> str:
+    """One labeled block. The close tag is escaped inside the body."""
+    if not body.strip():
+        return ""
+    close = f"</{tag}>"
+    return f"<{tag}>\n{_escape(body.strip(), close)}\n{close}"
+
+
 def mac_connected() -> bool:
     return bool((os.environ.get("PLOW_MCP_URL") or "").strip())
 
@@ -129,9 +138,9 @@ def pack(home: str | None = None, seed: str | Path | None | bool = None) -> str:
         now = "\n".join(now.splitlines()[:NOW_LINES]).strip()
 
     info_parts = [
-        _heading("Voice Profile", voice),
-        _heading("Essentials", memory),
-        _heading("Recent", journal),
+        _tagged("voice", _heading("Voice Profile", voice)),
+        _tagged("memory", _heading("Essentials", memory)),
+        _tagged("journal", _heading("Recent", journal)),
     ]
     info_body = "\n\n".join(part for part in info_parts if part)
     blocks: list[str] = []

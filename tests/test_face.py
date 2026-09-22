@@ -517,7 +517,7 @@ def test_second_imessage_message_greets_with_the_saved_code():
     assert "wa.me" not in prompt
 
 
-def test_whatsapp_code_replies_in_the_language_already_identified():
+def test_whatsapp_code_introduces_zoen_in_the_saved_language():
     plow = FakePlow(history=said(
         "142857",
         {"direction": "inbound", "body": "Oi, tudo bem? faz o CLI pra mim"},
@@ -526,20 +526,19 @@ def test_whatsapp_code_replies_in_the_language_already_identified():
     event.zoen_whatsapp = {"to": "5511999999999", "message_id": "wamid.code"}
     event.zoen_pairing_code = True
     with tempfile.TemporaryDirectory() as home, face_env(home=home):
-        action = face.greet_on_dispatch(event, voiced=False, send=no_intro, http=plow.http)
-        saved = (Path(home) / "zoen" / "language").read_text(encoding="utf-8").strip()
+        action = face.greet_on_dispatch(event, voiced=True, send=no_intro, http=plow.http)
     assert action == {"action": "allow", "reason": "zoen onboarding"}
     prompt = event.channel_prompt
     assert "Portuguese (pt)" in prompt
-    assert "language: pt" in prompt
+    assert "Introduce yourself" in prompt
+    assert "who you are" in prompt
+    assert "what you can do" in prompt
+    assert "Do not ask what the code is" in prompt
     assert "Do not repeat the code" in prompt
     assert "Do not run face.py cards" in prompt
-    assert "python3 /opt/plow/zoen/face.py cards" not in prompt
-    assert "wa.me" not in prompt
-    assert saved == "pt"
 
 
-def test_whatsapp_code_replies_in_english_when_that_is_the_language():
+def test_whatsapp_code_introduces_zoen_in_english():
     plow = FakePlow(history=said(
         "142857",
         {"direction": "inbound", "body": "hey, what's going on with the login"},
@@ -551,7 +550,8 @@ def test_whatsapp_code_replies_in_english_when_that_is_the_language():
         action = face.greet_on_dispatch(event, voiced=False, send=no_intro, http=plow.http)
     assert action == {"action": "allow", "reason": "zoen onboarding"}
     assert "English (en)" in event.channel_prompt
-    assert "language: en" in event.channel_prompt
+    assert "Introduce yourself" in event.channel_prompt
+    assert "Do not ask what the code is" in event.channel_prompt
 
 
 def test_whatsapp_first_contact_uses_the_same_idea_without_imessage_cards():
@@ -807,8 +807,8 @@ if __name__ == "__main__":
     test_first_imessage_opener_keeps_the_prebuilt_bubbles_and_the_language()
     test_alo_keeps_the_prebuilt_hello()
     test_second_imessage_message_greets_with_the_saved_code()
-    test_whatsapp_code_replies_in_the_language_already_identified()
-    test_whatsapp_code_replies_in_english_when_that_is_the_language()
+    test_whatsapp_code_introduces_zoen_in_the_saved_language()
+    test_whatsapp_code_introduces_zoen_in_english()
     test_whatsapp_first_contact_uses_the_same_idea_without_imessage_cards()
     test_dispatch_lets_the_model_run_after_first_run()
     test_dispatch_does_not_reopen_first_contact_when_chat_already_has_hello()

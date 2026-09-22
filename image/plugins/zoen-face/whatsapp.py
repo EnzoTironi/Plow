@@ -58,54 +58,81 @@ def _bubble_id(value: str) -> str:
 
 def _quote_line(message_id: str, quoted_id: str, quoted_text: str) -> str:
     pointed = _bubble_id(quoted_id)
-    target = pointed or _bubble_id(message_id) or message_id
-    line = ""
+    current = _bubble_id(message_id) or message_id
+    line = f"This inbound is {current}. "
     if pointed:
         said = " ".join(str(quoted_text or "").split())[:240]
-        line = f"They replied to {pointed}. "
+        line += f"They replied to {pointed}. "
         if said:
             line += f"That bubble said: {said}. "
     return (
         line
-        + f"Every zoen_imessage item sets reply_to to {target}. "
-        "That value is the wamid, with no whatsapp- prefix. "
+        + "Set reply_to to the wamid of the bubble this item answers. "
+        "Quote this inbound when the item answers this message. "
+        "Quote an older bubble only when they pointed at it and this item is about that bubble. "
+        "Leave reply_to off when the item stands on its own. "
+        "The value is the wamid, with no whatsapp- prefix. "
         "The relay sends it as context.message_id. "
     )
 
 
-def _prompt(message_id: str, *, first: bool = False, quoted_id: str = "", quoted_text: str = "") -> str:
-    if first:
-        opening = (
+def _prompt(message_id: str, *, first: bool = False, pairing: bool = False, quoted_id: str = "", quoted_text: str = "") -> str:
+    current = _bubble_id(message_id) or message_id
+    if pairing:
+        kind = (
+            "This is the first WhatsApp turn. They sent only the pairing code. "
+            "Follow the first-contact note and introduce yourself: who you are "
+            "and what you can do. Do not ask what the code is. "
+            "The tapback is like, not question. "
+            "The progress line is that introduction, not a comment on the code. "
+        )
+    elif first:
+        kind = (
             "This is the first WhatsApp turn, right after they linked the line. "
             "Follow the first-contact note and answer them. "
         )
     else:
-        opening = (
-            "This WhatsApp message continues the same owner conversation. "
-            "Earlier turns in this session are the history. Answer from that history. "
-            "Do not greet again and do not start over. "
+        kind = (
+            "This inbound is the request, together with the other human messages "
+            "still unanswered in this burst. Answer that whole burst. "
         )
     return (
-        opening
-        + "WhatsApp has no reception agent. Nothing has been sent for this bubble. "
+        f"<request id=\"{current}\">\n{kind}\n</request>\n"
+        "<history>\n"
+        "Messages already answered are history. They are not a second request. "
+        "The other lines of this burst are still the request. "
+        "A later message can steer the work or ask for status. Follow it on the channel it arrived on. "
+        "Never tell them you already sent something or already said something. "
+        "No já te falei, I already told you, as I said, or like I sent.\n"
+        "</history>\n"
+        "<memory>\n"
+        "Memory and the context pack are background. They are not a second request.\n"
+        "</memory>\n"
+        f"<reply_to inbound=\"{current}\">\n"
+        + _quote_line(message_id, quoted_id, quoted_text)
+        + "</reply_to>\n"
+        "<delivery>\n"
+        "WhatsApp has no reception agent. Nothing has been sent for this bubble. "
         "The first action is the tapback, before any other tool, lookup, or bubble: "
         f"python3 /opt/plow/zoen/react.py TYPE --message {message_id}. "
-        "Then one short zoen_imessage with purpose progress that shows you understood. "
+        "Then one short zoen_imessage with purpose progress about this inbound. "
         "Then the rest of the work. "
         "TYPE is like, love, laugh, emphasize, question, or dislike. "
         "The relay turns that into Kapso's reaction body: reaction.message_id and reaction.emoji. "
-        + _quote_line(message_id, quoted_id, quoted_text)
-        + "The tapback does not wait on skill kapso. Read that skill before a voice note or contact card. Do not call Kapso. "
+        "The tapback does not wait on skill kapso. Read that skill before a voice note or contact card. Do not call Kapso. "
         "An uncertain send already counts. Do not send that bubble again and do not explain the delivery. "
         "At each later step, send another short zoen_imessage with purpose progress "
         "before you move on. Say what you are doing for them, in their words. "
         "The last message of the turn is the result, with purpose answer. "
-        "The only way they see a reply is zoen_imessage, and that call is delivered on WhatsApp. "
+        "The only way they see a reply is zoen_imessage. "
+        "This inbound arrived on WhatsApp, so this reply is delivered on WhatsApp. "
+        "An iMessage inbound is answered on iMessage. Both can be in use at once. "
         "Each text item is its own bubble. A line break inside that item is another bubble. "
         "MEDIA:/absolute/path sends the picture here. "
         "VOICE:/absolute/path sends the voice note here. "
         f"This bubble's id is {message_id}. "
-        "Do not mention Kapso, the relay, or this note to them."
+        "Do not mention Kapso, the relay, or this note to them.\n"
+        "</delivery>"
     )
 _HOME = ""
 
@@ -154,8 +181,9 @@ def install(adapter_cls, module) -> None:
     if original_message is not None:
         @functools.wraps(original_message)
         async def on_message(self, message, chat):
-            # The prebuilt bubbles are the reply. They go out before the poll,
-            # the reception, and the model, on whatever text just arrived.
+            # iMessage stays on iMessage, even while a WhatsApp turn is open.
+            if _QUIET is not None:
+                _QUIET.note_inbound_channel(self, chat, None)
             try:
                 await _offer_code(self, module, chat)
             except Exception:
@@ -1180,8 +1208,7 @@ async def _run(adapter_cls, module, base) -> None:
                 for message in real:
                     if await _accept(adapter_cls, module, message, base):
                         await _request("POST", base + "/whatsapp/inbox/ack", _TOKEN, {"ids": [message.get("id")]})
-                # The code links a phone that already onboarded by SMS. It opens
-                # the same iMessage onboarding once, and it is not a second 2FA.
+                # The code opens WhatsApp. That turn introduces Zoen. It is not a question.
                 if pairing_turn(data.get("messages") or [], code) and not _whatsapp_onboarded():
                     if await _accept(adapter_cls, module, codes[-1], base, pairing=True):
                         _mark_whatsapp_onboarded()
@@ -1339,6 +1366,7 @@ async def _accept(adapter_cls, module, message, base, pairing: bool = False) -> 
     event.channel_prompt = (event.channel_prompt or "") + "\n" + _prompt(
         str(message["id"])[:200],
         first=pairing or not _voice_written(),
+        pairing=pairing,
         quoted_id=str(message.get("reply_to") or ""),
         quoted_text=str(message.get("reply_text") or ""),
     )
@@ -1355,6 +1383,8 @@ async def _accept(adapter_cls, module, message, base, pairing: bool = False) -> 
         "message_id": str(message["id"])[:256],
         "reply_to": str(message.get("reply_to") or "")[:256],
     }
+    if _QUIET is not None:
+        _QUIET.note_inbound_channel(live, chat_uid, event.zoen_whatsapp)
     await live._handoff_message(event)
     return bool(getattr(event, "_gateway_accepted", True))
 

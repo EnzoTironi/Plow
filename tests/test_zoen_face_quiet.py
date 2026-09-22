@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run: python3 tests/test_zoen_face_quiet.py"""
 import asyncio
+import contextvars
 import importlib.util
 import json
 import os
@@ -1028,10 +1029,10 @@ def test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp():
         quiet.WHATSAPP_DELIVER = None
         quiet.WHATSAPP_MEDIA = None
     assert result["success"] is True
-    assert sent == [{"text": "oi", "reply_to": "wamid.1"}, {"text": "segunda", "reply_to": "wamid.1"}]
+    assert sent == [{"text": "oi", "reply_to": "wamid.1"}, "segunda"]
     assert media == [
-        {"path": "/tmp/shot.png", "voice": False, "reply_to": "wamid.1"},
-        {"path": "/tmp/note.m4a", "voice": True, "reply_to": "wamid.1"},
+        {"path": "/tmp/shot.png", "voice": False},
+        {"path": "/tmp/note.m4a", "voice": True},
     ]
     assert box.posted == []
 
@@ -1063,7 +1064,7 @@ def test_whatsapp_line_break_is_its_own_bubble():
     assert box.posted == []
 
 
-def test_whatsapp_quotes_the_open_bubble_when_the_model_omits_it():
+def test_whatsapp_omitted_reply_does_not_quote():
     Adapter = _adapter()
     quiet.silence(Adapter)
     box = Adapter()
@@ -1085,7 +1086,7 @@ def test_whatsapp_quotes_the_open_bubble_when_the_model_omits_it():
         quiet.WHATSAPP_DELIVER = None
     assert result["success"] is True
     assert sent == [
-        {"text": "oi", "reply_to": "wamid.9"},
+        "oi",
         {"text": "sobre aquilo", "reply_to": "wamid.explicit"},
     ]
 
@@ -1106,13 +1107,14 @@ def test_whatsapp_quotes_the_bubble_they_pointed_at():
     })
     try:
         result = asyncio.run(box.send_sequence({"items": [
-            {"type": "text", "body": "era essa"},
+            {"type": "text", "body": "era essa", "reply_to": "wamid.old"},
+            {"type": "text", "body": "e o resto"},
         ]}, {"chat_uid": "cht_x"}))
     finally:
         quiet.WHATSAPP.reset(token)
         quiet.WHATSAPP_DELIVER = None
     assert result["success"] is True
-    assert sent == [{"text": "era essa", "reply_to": "wamid.old"}]
+    assert sent == [{"text": "era essa", "reply_to": "wamid.old"}, "e o resto"]
 
 
 def test_whatsapp_uncertain_send_is_not_repeated():
@@ -1183,17 +1185,33 @@ def test_whatsapp_turn_stays_in_the_session():
     prompt = module._prompt("wamid.1")
     assert "first action is the tapback" in prompt
     assert "history" in prompt
+    assert "<request id=\"wamid.1\">" in prompt
+    assert "</request>" in prompt
+    assert "<history>" in prompt
+    assert "</history>" in prompt
+    assert "<memory>" in prompt
+    assert "<reply_to inbound=\"wamid.1\">" in prompt
+    assert "</reply_to>" in prompt
+    assert "<delivery>" in prompt
+    assert "Never tell them you already sent something" in prompt
+    assert "Answer from that history" not in prompt
     assert "reaction.emoji" in prompt
     assert "context.message_id" in prompt
-    assert "reply_to to wamid.1" in prompt
+    assert "This inbound is wamid.1" in prompt
+    assert "Set reply_to to the wamid of the bubble this item answers" in prompt
+    assert "Leave reply_to off" in prompt
     quoted = module._prompt("wamid.new", quoted_id="wamid.old", quoted_text="o de cima")
     assert "They replied to wamid.old" in quoted
     assert "That bubble said: o de cima" in quoted
-    assert "reply_to to wamid.old" in quoted
+    assert "This inbound is wamid.new" in quoted
     assert "skill kapso" in prompt
     first = module._prompt("wamid.1", first=True)
     assert "first-contact" in first
     assert "Do not greet again" not in first
+    paired = module._prompt("wamid.code", pairing=True)
+    assert "introduce yourself" in paired
+    assert "Do not ask what the code is" in paired
+    assert "not question" in paired
 
 
 def test_whatsapp_reply_stays_off_imessage():
@@ -1216,6 +1234,34 @@ def test_whatsapp_reply_stays_off_imessage():
     assert result["success"] is True
     assert sent == ["oi"]
     assert box.posted == []
+
+
+def test_imessage_turn_stays_on_imessage_when_whatsapp_context_leaked():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    box._active_turn = contextvars.ContextVar("test_turn", default=None)
+    turn_token = box._active_turn.set({"chat_uid": "cht_x", "zoen_whatsapp": None})
+    sent = []
+
+    async def deliver(text):
+        sent.append(text)
+        return True
+
+    quiet.WHATSAPP_DELIVER = deliver
+    token = quiet.WHATSAPP.set({"to": "5511999999999", "message_id": "wamid.old"})
+    try:
+        result = asyncio.run(box.send_sequence(
+            {"items": [{"type": "text", "body": "no imessage"}]},
+            {"chat_uid": "cht_x"},
+        ))
+    finally:
+        quiet.WHATSAPP.reset(token)
+        box._active_turn.reset(turn_token)
+        quiet.WHATSAPP_DELIVER = None
+    assert result["success"] is True
+    assert sent == []
+    assert box.posted == [("sequence", {"items": [{"type": "text", "body": "no imessage"}]})]
 
 
 def test_send_sequence_still_runs():
@@ -1514,7 +1560,7 @@ if __name__ == "__main__":
     test_same_agent_texts_the_code_once_when_the_image_changes()
     test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp()
     test_whatsapp_line_break_is_its_own_bubble()
-    test_whatsapp_quotes_the_open_bubble_when_the_model_omits_it()
+    test_whatsapp_omitted_reply_does_not_quote()
     test_whatsapp_quotes_the_bubble_they_pointed_at()
     test_whatsapp_uncertain_send_is_not_repeated()
     test_whatsapp_idle_poll_backs_off()
@@ -1522,6 +1568,7 @@ if __name__ == "__main__":
     test_imessage_quote_field_does_not_reach_plow()
     test_whatsapp_turn_stays_in_the_session()
     test_whatsapp_reply_stays_off_imessage()
+    test_imessage_turn_stays_on_imessage_when_whatsapp_context_leaked()
     test_send_sequence_still_runs()
     test_native_final_media_and_typing_are_preserved_status_chatter_is_dropped()
     test_media_sequence_uploads_file_instead_of_the_path()

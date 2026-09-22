@@ -134,9 +134,7 @@ def earlier_owner_messages(event: Any, http: Http | None = None) -> int:
 
 
 def greeting_due(event: Any, http: Http | None = None) -> bool:
-    """Greet on a real first request, on the second message, or when the WhatsApp code arrives."""
-    if getattr(event, "zoen_pairing_code", False):
-        return True
+    """Greet on a real first request or on the second message. The pairing code is not a turn."""
     text = spoken_text(event) or str(getattr(event, "text", None) or "")
     if real_request(text):
         return True
@@ -235,6 +233,36 @@ def saved_pairing_code() -> str:
     return code if re.fullmatch(r"\d{6}", code) else ""
 
 
+def pairing_intro_prompt(language: str = "") -> str:
+    """Context for the WhatsApp turn that is only the pairing code."""
+    named = _LANG_NAMES.get(language, "")
+    tongue = ""
+    if named:
+        tongue = (
+            f"Their language is {named} ({language}). "
+            "The pairing code is not a language signal. "
+            f"Write every bubble in {named}. "
+            f"Write VOICE.md with language: {language}. "
+        )
+    return (
+        "\n<first_contact>\n"
+        "They just linked WhatsApp by sending the pairing code. "
+        "That code is not a question and not a request. "
+        "Do not ask what the code is. Do not repeat the code. "
+        "They have not met you on WhatsApp. Introduce yourself: who you are "
+        "and what you can do. You are Zoen, their personal agent. Enzo made you. "
+        "You can connect their apps, more than a thousand, wherever they need. "
+        "One short introduction in their language. Do not send contact cards. "
+        "Do not run face.py cards. Do not send a phone number or 'a gente te ajuda'. "
+        + tongue
+        + "This session, learn what to call them: zoen_owner_profile action=save "
+        "if the name is already in memory, else action=ask and ask only if ask=true. "
+        "Write VOICE.md this turn if it is missing. If it already exists, still "
+        "introduce yourself on WhatsApp.\n"
+        "</first_contact>"
+    )
+
+
 def first_contact_prompt(
     whatsapp: bool = False,
     *,
@@ -252,7 +280,7 @@ def first_contact_prompt(
                 f"Write VOICE.md with language: {language}. "
             )
         return (
-            "\n[Zoen first contact]\n"
+            "\n<first_contact>\n"
             "VOICE.md is missing. They just linked WhatsApp. The iMessage "
             "onboarding already finished within 10 seconds, including both "
             "contact cards, that Enzo made you, and that you can connect "
@@ -267,7 +295,8 @@ def first_contact_prompt(
             "pairing code, do not repeat it. Handle their request. This "
             "session, learn what to call them: zoen_owner_profile action=save "
             "if the name is already in the message or memory, else action=ask "
-            "and ask only if ask=true. Write VOICE.md this turn."
+            "and ask only if ask=true. Write VOICE.md this turn.\n"
+            "</first_contact>"
         )
     offer = not whatsapp if offer_whatsapp is None else offer_whatsapp
     choice = ""
@@ -282,7 +311,7 @@ def first_contact_prompt(
                 "another code or another link.\n"
             )
     return (
-        "\n[Zoen first contact]\n"
+        "\n<first_contact>\n"
         "VOICE.md is missing. The onboarding burst already went out on "
         "iMessage within 10 seconds: who you are, staying here or WhatsApp, "
         "both contact cards, that Enzo made you, and that you can connect "
@@ -295,7 +324,8 @@ def first_contact_prompt(
         + "Handle their request. This session, learn what to call them: "
         "zoen_owner_profile action=save if the name is already in the "
         "message or memory, else action=ask and ask only if ask=true. "
-        "Write VOICE.md this turn."
+        "Write VOICE.md this turn.\n"
+        "</first_contact>"
     )
 CARD_AFTER = 2
 DIRECTED = (
@@ -1333,6 +1363,13 @@ def greet_on_dispatch(
         return {"action": "skip", "reason": "plow setup"}
     if is_group(event):
         return group_on_dispatch(event, http=http)
+    if getattr(event, "zoen_pairing_code", False):
+        language = resolve_language(event, http)
+        event.channel_prompt = (
+            (getattr(event, "channel_prompt", "") or "")
+            + pairing_intro_prompt(language)
+        )
+        return {"action": "allow", "reason": "zoen onboarding"}
     live = voice_exists() if voiced is None else voiced
     if not live and already_introduced(event, http):
         stamp_voice("pt")
@@ -1342,20 +1379,14 @@ def greet_on_dispatch(
     text = spoken_text(event) or str(getattr(event, "text", None) or "").strip()
     if not text or text.startswith("/"):
         return {"action": "allow"}
-    if not getattr(event, "zoen_pairing_code", False):
-        remember_language(text)
+    remember_language(text)
     if not greeting_due(event, http):
         return {"action": "skip", "reason": "prebuilt hello"}
-    whatsapp = bool(getattr(event, "zoen_whatsapp", None) or getattr(event, "zoen_pairing_code", False))
+    whatsapp = bool(getattr(event, "zoen_whatsapp", None))
     language = resolve_language(event, http) if whatsapp else ""
     note = first_contact_prompt(
         whatsapp=whatsapp, offer_whatsapp=not whatsapp, language=language,
     )
-    if getattr(event, "zoen_pairing_code", False):
-        note += (
-            "\nTheir message is only the pairing code that linked WhatsApp. "
-            "Do not repeat the code. "
-        )
     event.channel_prompt = (getattr(event, "channel_prompt", "") or "") + note
     return {"action": "allow", "reason": "zoen onboarding"}
 

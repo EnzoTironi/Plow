@@ -51,7 +51,7 @@ A reply quotes one bubble. The id sits in `context.message_id`, beside `type`, n
 }
 ```
 
-Every WhatsApp bubble sets `reply_to` to the wamid in the turn note. If they quoted an older bubble, use that id. The relay places it in `context.message_id`. The same field quotes a photo or a voice note. A missing `reply_to` still quotes that bubble.
+Set `reply_to` to the wamid of the bubble this item answers. Use it when the text, picture, or voice note is about that bubble, including an older one. Leave it off when the item stands on its own. The relay places a set id in `context.message_id`. The same field quotes a photo or a voice note.
 
 ## Typing
 

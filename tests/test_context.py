@@ -81,7 +81,12 @@ def test_pack_layers_voice_memory_journal_then_now():
         packed = context.pack(d, seed=SEED)
         assert packed.startswith("<info>")
         assert "</info>" in packed
-        assert "Voice Profile" in packed
+        assert "<voice>" in packed
+        assert "</voice>" in packed
+        assert "<memory>" in packed
+        assert "</memory>" in packed
+        assert "<journal>" in packed
+        assert "</journal>" in packed
         assert "language: pt" in packed
         assert "Essentials" in packed
         assert "name: Enzo" in packed

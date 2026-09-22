@@ -247,11 +247,11 @@ class Presence:
             return
         event.zoen_reception = state or {"status": "pending", "reaction": "pending"}
         event.channel_prompt = (event.channel_prompt or "") + (
-            "\n[Zoen reception]\nReception owns this burst's opening and tapback. "
+            "\n<reception>\nReception owns this burst's opening and tapback. "
             "Continue the actual work immediately; do not repeat the opening or reaction. "
             "An acknowledgement is not completion. Owner bubbles only go through "
             "zoen_imessage; leftover prose is not delivered. Never skip that tool. "
-            "Reception outcomes: " + json.dumps(event.zoen_reception))
+            "Reception outcomes: " + json.dumps(event.zoen_reception) + "\n</reception>")
 
 
 def install(adapter_cls, module, prepare_dispatch=None):

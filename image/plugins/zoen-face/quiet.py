@@ -116,8 +116,30 @@ def _channel_name(target) -> str:
     return "whatsapp" if isinstance(target, dict) else "imessage"
 
 
+def _outbound_target(adapter):
+    """The turn's own inbound wins. A leaked WhatsApp context must not catch iMessage."""
+    active = getattr(adapter, "_active_turn", None)
+    turn = active.get() if active is not None else None
+    if isinstance(turn, dict) and "zoen_whatsapp" in turn:
+        target = turn.get("zoen_whatsapp")
+        return target if isinstance(target, dict) else None
+    current = WHATSAPP.get()
+    return current if isinstance(current, dict) else None
+
+
+def note_inbound_channel(adapter, chat_uid, target) -> None:
+    """A new message on this chat answers on that message's channel."""
+    stamped = target if isinstance(target, dict) else None
+    live = getattr(adapter, "_live_turns", None)
+    if not isinstance(live, dict):
+        return
+    for item in live.values():
+        if isinstance(item, dict) and item.get("chat_uid") == chat_uid:
+            item["zoen_whatsapp"] = stamped
+
+
 async def _deliver_credits(text, args, kwargs, orig_send, adapter):
-    target = WHATSAPP.get()
+    target = _outbound_target(adapter)
     channel = _channel_name(target)
     if recently_told(channel=channel):
         log.debug("zoen-face dropped duplicate credits leftover")
@@ -188,8 +210,10 @@ IMESSAGE_DESCRIPTION = (
     "Leftover prose is not delivered. If you skip this tool, they hear nothing. "
     "purpose=progress is an opening or update that does not complete the request. "
     "purpose=answer is the result. "
-    "On WhatsApp, every item sets reply_to to the wamid in the turn note. "
-    "If they quoted an older bubble, that id is the one. MEDIA: and VOICE: send the file there and carry the same reply_to."
+    "On WhatsApp, set reply_to to the wamid of the bubble this item answers. "
+    "Use it when the text, picture, or voice note is about that bubble. "
+    "Leave it off when the item stands on its own. "
+    "Never tell them you already sent something or already said something."
 )
 
 WHO = (
@@ -230,7 +254,7 @@ def configure_contract(module):
         if props.get("type", {}).get("const") == "text":
             props["reply_to"] = {
                 "type": "string",
-                "description": "WhatsApp message id to quote. Leave it off on iMessage.",
+                "description": "WhatsApp wamid of the bubble this item answers. Set it when the item is about that bubble. Leave it off when the item stands on its own, and on iMessage.",
             }
     module._ANSWER_LAST = (
         f"Owner bubbles only go through {IMESSAGE}. Leftover prose is not delivered. "
@@ -536,14 +560,6 @@ def _wamid(value) -> str:
     return raw if raw.startswith("wamid.") and len(raw) <= 512 else ""
 
 
-def _quote_target() -> str:
-    """The bubble this answer belongs to. Their quote wins. Else the message they just sent."""
-    target = WHATSAPP.get()
-    if not isinstance(target, dict):
-        return ""
-    return _wamid(target.get("reply_to")) or _wamid(target.get("message_id"))
-
-
 def _plain_items(items):
     """iMessage rejects a quote field. WhatsApp is the only channel that uses it."""
     cleaned = []
@@ -583,9 +599,9 @@ def _text_bubbles(body: str) -> list[str]:
     return [line.strip() for line in body.splitlines() if line.strip()]
 
 
-async def _deliver_whatsapp(items):
+async def _deliver_whatsapp(items, target=None):
     """One line, one bubble, on the chat they just wrote in."""
-    if WHATSAPP.get() is None:
+    if not isinstance(target, dict):
         return None
     completed = []
     pace = 0
@@ -598,13 +614,14 @@ async def _deliver_whatsapp(items):
             continue
         if kind != "text":
             return _whatsapp_failure(index, "whatsapp item invalid")
-        reply = _wamid(item.get("reply_to")) or _quote_target()
+        reply = _wamid(item.get("reply_to"))
         tagged = tagged_paths(item)
         if tagged:
             for tag, path in tagged:
-                if WHATSAPP_MEDIA is None or not await WHATSAPP_MEDIA({
-                    "path": path, "voice": tag == "VOICE", "reply_to": reply,
-                }):
+                spec = {"path": path, "voice": tag == "VOICE"}
+                if reply:
+                    spec["reply_to"] = reply
+                if WHATSAPP_MEDIA is None or not await WHATSAPP_MEDIA(spec):
                     return {"success": False, "completed": completed, "failure": {"index": index, "status": "rejected", "error": "whatsapp media failed"}}
                 completed.append({"index": index, "type": "voice" if tag == "VOICE" else "file"})
             continue
@@ -653,11 +670,11 @@ def _wrap_sequence(orig_seq, orig_attach, orig_voice):
         args = {**(args or {}), "items": items}
         if not items:
             return {"success": True, "completed": []}
-        channel = _channel_name(WHATSAPP.get())
+        channel = _channel_name(_outbound_target(self))
         credits_only = credits_is_notice(_bubble_text(items))
         if credits_only and recently_told(channel=channel):
             return {"success": True, "completed": []}
-        delivered = await _deliver_whatsapp(items)
+        delivered = await _deliver_whatsapp(items, _outbound_target(self))
         if delivered is not None:
             return _remember_credits(delivered, channel, credits_only)
         items = _plain_items(items)
@@ -699,6 +716,24 @@ def _wrap_sequence(orig_seq, orig_attach, orig_voice):
     return send_sequence
 
 
+def _stamp_turn_channel(orig_start):
+    """Each turn keeps the channel of the message that opened it."""
+    async def on_processing_start(self, event):
+        result = await orig_start(self, event)
+        target = getattr(event, "zoen_whatsapp", None)
+        stamped = target if isinstance(target, dict) else None
+        active = getattr(self, "_active_turn", None)
+        turn = active.get() if active is not None else None
+        if isinstance(turn, dict):
+            turn["zoen_whatsapp"] = stamped
+        WHATSAPP.set(stamped)
+        return result
+
+    on_processing_start.__name__ = "on_processing_start"
+    on_processing_start.__qualname__ = "on_processing_start"
+    return on_processing_start
+
+
 def _bind_turn_channel(orig_process):
     """The inbound event names the channel. The background turn inherits it."""
     async def process(self, event, session_key):
@@ -730,6 +765,9 @@ def silence(adapter_cls) -> None:
     orig_process = getattr(adapter_cls, "_process_message_background", None)
     if orig_process is not None:
         adapter_cls._process_message_background = _bind_turn_channel(orig_process)
+    orig_start = getattr(adapter_cls, "on_processing_start", None)
+    if orig_start is not None:
+        adapter_cls.on_processing_start = _stamp_turn_channel(orig_start)
     orig_final = getattr(adapter_cls, "_send_retry_is_final", None)
     if orig_final is not None:
         def send_retry_is_final(self, result):
