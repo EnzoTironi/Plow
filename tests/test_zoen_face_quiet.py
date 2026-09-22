@@ -697,7 +697,7 @@ def test_pairing_code_is_sent_without_the_owner_texting_first():
     assert replacement in posted[1][2]["body"]
 
 
-def test_pairing_code_opens_the_owner_email_when_nobody_texted():
+def test_owner_email_is_not_a_pairing_destination():
     spec_wa = importlib.util.spec_from_file_location(
         "zoen_face_whatsapp_email", ROOT / "image/plugins/zoen-face/whatsapp.py"
     )
@@ -709,67 +709,11 @@ def test_pairing_code_opens_the_owner_email_when_nobody_texted():
 
     async def fake_request(method, url, token, payload=None, extra=None):
         posted.append((method, url, payload))
-        return {"uid": "cht_mail_opened", "created": True}
+        return {}
 
     async def fake_plow(_agent, path):
         assert path == "/v1/contacts"
         return [{"role": "owner", "provider_key": "enzotironi.dev@gmail.com"}]
-
-    whatsapp._request = fake_request
-    whatsapp._plow_json = fake_plow
-    me = {"agent": {"uid": "d" * 32}, "line": {"uid": "ln_p2", "provider_key": "+16503156335"}, "chats": []}
-    with tempfile.TemporaryDirectory() as home:
-        os.environ["HERMES_HOME"] = home
-        os.environ["PLOW_API_BASE"] = "https://plow.example"
-        try:
-            asyncio.run(whatsapp._push_pairing("agt_test", me))
-            code = whatsapp._pairing_code()
-            asyncio.run(whatsapp._push_pairing("agt_test", me))
-        finally:
-            if previous_home is None:
-                os.environ.pop("HERMES_HOME", None)
-            else:
-                os.environ["HERMES_HOME"] = previous_home
-            if previous_api is None:
-                os.environ.pop("PLOW_API_BASE", None)
-            else:
-                os.environ["PLOW_API_BASE"] = previous_api
-    sends = [row for row in posted if row[0] == "POST"]
-    assert len(sends) == 1
-    opened = sends[0][2]
-    assert opened["line_uid"] == "ln_p2"
-    assert opened["members"] == ["enzotironi.dev@gmail.com"]
-    assert code in opened["body"]
-    assert opened["idempotency_key"] == f"zoen-wa-{code}-enzotironi.dev@gmail.com"
-
-
-def test_pairing_code_uses_the_mailbox_when_the_phone_line_has_no_thread():
-    spec_wa = importlib.util.spec_from_file_location(
-        "zoen_face_whatsapp_mailbox", ROOT / "image/plugins/zoen-face/whatsapp.py"
-    )
-    whatsapp = importlib.util.module_from_spec(spec_wa)
-    spec_wa.loader.exec_module(whatsapp)
-    previous_home = os.environ.get("HERMES_HOME")
-    previous_api = os.environ.get("PLOW_API_BASE")
-    posted = []
-
-    async def fake_request(method, url, token, payload=None, extra=None):
-        posted.append((method, url, payload))
-        if url.endswith("/v1/chats"):
-            raise RuntimeError(
-                "whatsapp_http_404_{'code': 'line_not_found', 'message': \"line 'ln_p2' not found.\"}"
-            )
-        return {"id": "mail_sent"}
-
-    async def fake_plow(_agent, path):
-        if path == "/v1/contacts":
-            return [{"role": "owner", "provider_key": "enzotironi.dev@gmail.com"}]
-        if path == "/v1/lines":
-            return {"data": [
-                {"uid": "ln_p2", "provider_type": "imessage", "display_name": "Aspen"},
-                {"uid": "ln_e_box", "provider_type": "email", "display_name": "Aspen"},
-            ]}
-        raise AssertionError(path)
 
     whatsapp._request = fake_request
     whatsapp._plow_json = fake_plow
@@ -783,8 +727,6 @@ def test_pairing_code_uses_the_mailbox_when_the_phone_line_has_no_thread():
         os.environ["PLOW_API_BASE"] = "https://plow.example"
         try:
             asyncio.run(whatsapp._push_pairing("agt_test", me))
-            code = whatsapp._pairing_code()
-            asyncio.run(whatsapp._push_pairing("agt_test", me))
         finally:
             if previous_home is None:
                 os.environ.pop("HERMES_HOME", None)
@@ -794,11 +736,149 @@ def test_pairing_code_uses_the_mailbox_when_the_phone_line_has_no_thread():
                 os.environ.pop("PLOW_API_BASE", None)
             else:
                 os.environ["PLOW_API_BASE"] = previous_api
-    mailed = [row for row in posted if row[1].endswith("/messages")]
-    assert len(mailed) == 1
-    assert mailed[0][1] == "https://plow.example/v1/email-lines/ln_e_box/messages"
-    assert mailed[0][2]["to"] == ["enzotironi.dev@gmail.com"]
-    assert code in mailed[0][2]["body"]
+    assert posted == []
+    assert not hasattr(whatsapp, "_open_mailbox")
+
+
+def _home_chat(uid: str = "cht_home") -> dict:
+    return {
+        "agent": {"uid": "c" * 32},
+        "line": {"uid": "ln_p1", "provider_key": "+16503466610"},
+        "chats": [{
+            "uid": uid,
+            "status": "active",
+            "participants": [
+                {"type": "agent", "relationship": "self"},
+                {"type": "member", "role": "owner", "provider_type": "imessage", "provider_key": "+55 31 98888-7777"},
+            ],
+        }],
+    }
+
+
+def test_hi_is_answered_with_every_bubble_and_nothing_is_opened():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_hi", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    previous_home = os.environ.get("HERMES_HOME")
+    previous_api = os.environ.get("PLOW_API_BASE")
+    previous_token = os.environ.get("PLOW_AGENT_TOKEN")
+    posted = []
+    fetched = []
+
+    async def fake_request(method, url, token, payload=None, extra=None):
+        posted.append((method, url, payload))
+        return {}
+
+    async def fake_plow(_agent, path):
+        fetched.append(path)
+        assert path == "/v1/agents/me"
+        return _home_chat()
+
+    whatsapp._request = fake_request
+    whatsapp._plow_json = fake_plow
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        os.environ["PLOW_API_BASE"] = "https://plow.example"
+        os.environ["PLOW_AGENT_TOKEN"] = "agt_test"
+        try:
+            assert asyncio.run(whatsapp._ensure_pairing("agt_test")) is True
+            code = whatsapp._pairing_code()
+            assert whatsapp.boot_announce() == 0
+        finally:
+            if previous_home is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous_home
+            if previous_api is None:
+                os.environ.pop("PLOW_API_BASE", None)
+            else:
+                os.environ["PLOW_API_BASE"] = previous_api
+            if previous_token is None:
+                os.environ.pop("PLOW_AGENT_TOKEN", None)
+            else:
+                os.environ["PLOW_AGENT_TOKEN"] = previous_token
+    bubbles = whatsapp.pairing_bubbles(code)
+    assert [row[2]["body"] for row in posted] == bubbles
+    assert fetched == ["/v1/agents/me"]
+    assert all("/v1/chats/" in row[1] and row[1].endswith("/messages") for row in posted)
+    assert "https://wa.me/553798136141?text=" + code in [row[2]["body"] for row in posted]
+
+
+def test_no_chat_yet_does_not_email_or_open_one():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_wait", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    previous_home = os.environ.get("HERMES_HOME")
+    previous_api = os.environ.get("PLOW_API_BASE")
+    posted = []
+
+    async def fake_request(method, url, token, payload=None, extra=None):
+        posted.append((method, url, payload))
+        return {}
+
+    async def fake_plow(_agent, path):
+        assert path == "/v1/agents/me"
+        return {"agent": {"uid": "c" * 32}, "line": {"uid": "ln_p1"}, "chats": []}
+
+    whatsapp._request = fake_request
+    whatsapp._plow_json = fake_plow
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        os.environ["PLOW_API_BASE"] = "https://plow.example"
+        try:
+            assert asyncio.run(whatsapp._ensure_pairing("agt_test")) is False
+        finally:
+            if previous_home is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous_home
+            if previous_api is None:
+                os.environ.pop("PLOW_API_BASE", None)
+            else:
+                os.environ["PLOW_API_BASE"] = previous_api
+    assert posted == []
+
+
+def test_a_mailed_claim_does_not_skip_the_hi_reply():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_mail_claim", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    previous_home = os.environ.get("HERMES_HOME")
+    previous_api = os.environ.get("PLOW_API_BASE")
+    posted = []
+
+    async def fake_request(method, url, token, payload=None, extra=None):
+        posted.append(payload["body"])
+        return {}
+
+    async def fake_plow(_agent, path):
+        return _home_chat("cht_after_mail")
+
+    whatsapp._request = fake_request
+    whatsapp._plow_json = fake_plow
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        os.environ["PLOW_API_BASE"] = "https://plow.example"
+        try:
+            whatsapp._claim_chat("mail:owner@example.com")
+            assert asyncio.run(whatsapp._ensure_pairing("agt_test")) is True
+            code = whatsapp._pairing_code()
+        finally:
+            if previous_home is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous_home
+            if previous_api is None:
+                os.environ.pop("PLOW_API_BASE", None)
+            else:
+                os.environ["PLOW_API_BASE"] = previous_api
+    assert posted == whatsapp.pairing_bubbles(code)
 
 
 def test_reused_line_volume_sends_the_code_once_for_the_new_agent():
@@ -1426,8 +1506,10 @@ if __name__ == "__main__":
     test_onboarding_resumes_after_a_bubble_fails()
     test_onboarding_cards_stay_inside_ten_seconds()
     test_pairing_code_is_sent_without_the_owner_texting_first()
-    test_pairing_code_opens_the_owner_email_when_nobody_texted()
-    test_pairing_code_uses_the_mailbox_when_the_phone_line_has_no_thread()
+    test_owner_email_is_not_a_pairing_destination()
+    test_hi_is_answered_with_every_bubble_and_nothing_is_opened()
+    test_no_chat_yet_does_not_email_or_open_one()
+    test_a_mailed_claim_does_not_skip_the_hi_reply()
     test_reused_line_volume_sends_the_code_once_for_the_new_agent()
     test_same_agent_texts_the_code_once_when_the_image_changes()
     test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp()

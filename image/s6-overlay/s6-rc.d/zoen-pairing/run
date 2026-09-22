@@ -1,11 +1,11 @@
 #!/command/with-contenv sh
-# Open the owner's iMessage before plow-init has a home chat. That first
-# text is what lets the rest of the boot finish. Nobody has to text the line.
+# The user already texted. Their message creates the chat. Send the prebuilt
+# bubbles as soon as that chat is visible, before the gateway is up.
 PATH=/command:/usr/local/bin:/opt/hermes/.venv/bin:/usr/bin:/bin
 export PATH
 
 until /opt/hermes/.venv/bin/python /opt/hermes/plugins/zoen-face/whatsapp.py; do
-  echo "zoen-pairing: owner chat not opened yet, retrying" >&2
-  /bin/sleep 0.5
+  echo "zoen-pairing: owner's text not answered yet, retrying" >&2
+  /bin/sleep 0.2
 done
 exec /bin/sleep infinity

@@ -702,12 +702,11 @@ def _tel_key(phone: str) -> str:
 
 
 def _handle_claim(handle: str) -> tuple[str, str, str]:
-    """Claim key, chat member, and idempotency stamp for a phone or an iMessage email."""
+    """Claim key, chat member, and idempotency stamp for a phone. Email is not a destination."""
     phone = _digits(handle)
-    if phone:
-        return _tel_key(phone), f"+{phone}", phone
-    email = str(handle or "").strip()
-    return "mail:" + email.lower(), email, email.lower()
+    if not phone:
+        return "", "", ""
+    return _tel_key(phone), f"+{phone}", phone
 
 
 async def _open_pairing(agent: str, line_uid: str, handle: str, code: str) -> None:
@@ -741,53 +740,6 @@ async def _open_pairing(agent: str, line_uid: str, handle: str, code: str) -> No
         await _attach_cards(uid, deadline)
 
 
-async def _mailbox_uid(agent: str, me: dict) -> str:
-    """The persona mailbox on this credential. It can send before any chat exists."""
-    line = me.get("line") if isinstance(me, dict) and isinstance(me.get("line"), dict) else {}
-    persona = str(line.get("display_name") or "")
-    try:
-        found = await _plow_json(agent, "/v1/lines")
-    except Exception:
-        return ""
-    rows = found.get("data") if isinstance(found, dict) else []
-    if not isinstance(rows, list):
-        return ""
-    for row in rows:
-        if not isinstance(row, dict) or row.get("provider_type") != "email":
-            continue
-        if persona and str(row.get("display_name") or "") != persona:
-            continue
-        uid = str(row.get("uid") or "")
-        if uid:
-            return uid
-    return ""
-
-
-async def _open_mailbox(agent: str, me: dict, handle: str, code: str) -> None:
-    """Mail the code from the persona address. Chat create cannot see a line with no thread yet."""
-    key, member, _stamp = _handle_claim(handle)
-    mailbox = await _mailbox_uid(agent, me)
-    api = os.environ.get("PLOW_API_BASE", "").strip().rstrip("/")
-    if not api or not mailbox or "@" not in member or not _claim_chat(key):
-        return
-    try:
-        await _request(
-            "POST",
-            f"{api}/v1/email-lines/{quote(mailbox, safe='')}/messages",
-            agent,
-            {
-                "to": [member],
-                "subject": "seu código do whatsapp",
-                "body": pairing_message(code),
-            },
-        )
-    except RuntimeError as exc:
-        if str(exc).startswith("whatsapp_http_"):
-            _release_chat(key)
-        raise
-    log.warning("whatsapp code mailed")
-
-
 async def _chat_history(agent: str, uid: str) -> list:
     try:
         found = await _plow_json(agent, f"/v1/chats/{quote(uid, safe='')}/messages?limit=30")
@@ -816,15 +768,6 @@ async def _push_pairing(agent: str, me: dict) -> None:
     line_uid = str(line.get("uid") or "")
     own = _digits(line.get("provider_key"))
     known = phones_in_chats(me)
-    for chat in me.get("chats") or []:
-        if not isinstance(chat, dict):
-            continue
-        for person in chat.get("participants") or []:
-            if not isinstance(person, dict) or person.get("type") != "member":
-                continue
-            email = str(person.get("provider_key") or "").strip().lower()
-            if "@" in email:
-                known.add(email)
     rows: list = []
     try:
         found = await _plow_json(agent, "/v1/contacts")
@@ -832,20 +775,11 @@ async def _push_pairing(agent: str, me: dict) -> None:
             rows = found
     except Exception:
         rows = []
-    for handle in owner_handles(rows):
-        stamp = _digits(handle) or handle.strip().lower()
-        if stamp == own or stamp in known:
+    for handle in owner_phones(rows):
+        if handle == own or handle in known:
             continue
         try:
             await _open_pairing(agent, line_uid, handle, code)
-        except RuntimeError as exc:
-            if "line_not_found" not in str(exc) or "@" not in handle:
-                log.warning("whatsapp code open failed: %s", exc)
-                continue
-            try:
-                await _open_mailbox(agent, me, handle, code)
-            except Exception as mail_exc:
-                log.warning("whatsapp code mailbox failed: %s", mail_exc)
         except Exception as exc:
             log.warning("whatsapp code open failed: %s", exc)
 
@@ -1176,16 +1110,35 @@ async def _adopt_install(agent: str) -> bool:
     return True
 
 
-async def _ensure_pairing(agent: str) -> None:
-    """Text the code once for this image, even when WhatsApp is already bound."""
-    if not agent or _pairing_settled():
-        return
+def _chats_answered() -> bool:
+    """A mailed claim is not the reply. Only a chat that already got the bubbles counts."""
+    return not _image_changed() and any(uid.startswith("cht_") for uid in _sent_chats())
+
+
+async def _ensure_pairing(agent: str) -> bool:
+    """Send the prebuilt bubbles to a chat the user's text already created.
+
+    Returns True once every such chat has the full reply. No chat yet means
+    wait: do not open one and do not email.
+    """
+    if not agent:
+        return False
+    if _chats_answered():
+        return True
     try:
         found = await _plow_json(agent, "/v1/agents/me")
     except Exception:
-        return
-    if isinstance(found, dict):
-        await _push_pairing(agent, found)
+        return False
+    if not isinstance(found, dict):
+        return False
+    _release_previous_install(_agent_uid(found))
+    uids = pairing_chat_uids(found)
+    if not uids:
+        return False
+    pending = [uid for uid in uids if uid not in _sent_chats()]
+    if pending:
+        await _announce_chats(agent, pending, _pairing_code())
+    return all(uid in _sent_chats() for uid in uids)
 
 
 def poll_pause(idle: int) -> float:
@@ -1407,16 +1360,17 @@ async def _accept(adapter_cls, module, message, base, pairing: bool = False) -> 
 
 
 def boot_announce() -> int:
-    """Text the owner before plow-init has a home chat. That chat is what lets the boot finish."""
+    """Answer the chat the user already opened. Their text creates it; this only sends."""
     agent = os.environ.get("PLOW_AGENT_TOKEN", "").strip()
     if not agent:
         return 1
-    try:
-        asyncio.run(_ensure_pairing(agent))
-    except Exception:
-        log.warning("whatsapp boot announce failed")
-        return 1
-    return 0 if _pairing_settled() else 1
+    while True:
+        try:
+            if asyncio.run(_ensure_pairing(agent)):
+                return 0
+        except Exception:
+            log.warning("whatsapp boot announce failed")
+        time.sleep(0.2)
 
 
 if __name__ == "__main__":
