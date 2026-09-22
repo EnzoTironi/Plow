@@ -79,7 +79,8 @@ _RETIRED_HELLO = (
 
 
 _OPENERS = frozenset({
-    "oi", "oii", "oie", "olá", "ola", "hey", "hi", "hello", "eai", "e ai", "e aí",
+    "oi", "oii", "oie", "olá", "ola", "alo", "alô", "aloo",
+    "hey", "hi", "hello", "eai", "e ai", "e aí",
     "fala", "salve", "opa", "yo", "bom dia", "boa tarde", "boa noite",
     "tudo bem", "tudo bom", "td bem",
 })

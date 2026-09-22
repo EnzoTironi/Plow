@@ -524,6 +524,86 @@ def test_activation_code_uses_the_onboarding_chat_a_normal_reply_uses():
     assert [row[2]["body"] for row in sends] == bubbles
 
 
+def test_onboarding_sends_every_bubble_without_waiting_out_the_card_reserve():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_all_bubbles", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    posted = []
+    clock = {"now": 1_000.0}
+
+    def monotonic():
+        return clock["now"]
+
+    async def fake_request(method, url, token, payload=None, extra=None):
+        clock["now"] += 7
+        posted.append((method, url, payload))
+        return {}
+
+    original_monotonic = whatsapp.time.monotonic
+    whatsapp.time.monotonic = monotonic
+    whatsapp._request = fake_request
+    previous_home = os.environ.get("HERMES_HOME")
+    previous_api = os.environ.get("PLOW_API_BASE")
+    try:
+        with tempfile.TemporaryDirectory() as home:
+            os.environ["HERMES_HOME"] = home
+            os.environ["PLOW_API_BASE"] = "https://plow.example"
+            asyncio.run(whatsapp._announce_code("agt_test", "cht_home", "142857"))
+    finally:
+        whatsapp.time.monotonic = original_monotonic
+        if previous_home is None:
+            os.environ.pop("HERMES_HOME", None)
+        else:
+            os.environ["HERMES_HOME"] = previous_home
+        if previous_api is None:
+            os.environ.pop("PLOW_API_BASE", None)
+        else:
+            os.environ["PLOW_API_BASE"] = previous_api
+    bubbles = whatsapp.pairing_bubbles("142857")
+    assert [row[2]["body"] for row in posted] == bubbles
+    assert "https://wa.me/553798136141?text=142857" in [row[2]["body"] for row in posted]
+
+
+def test_onboarding_resumes_after_a_bubble_fails():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_resume", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    posted = []
+    calls = {"n": 0}
+
+    async def fake_request(method, url, token, payload=None, extra=None):
+        calls["n"] += 1
+        posted.append(payload["body"])
+        if calls["n"] == 3:
+            raise RuntimeError("whatsapp_http_500")
+        return {}
+
+    whatsapp._request = fake_request
+    previous_home = os.environ.get("HERMES_HOME")
+    previous_api = os.environ.get("PLOW_API_BASE")
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        os.environ["PLOW_API_BASE"] = "https://plow.example"
+        try:
+            asyncio.run(whatsapp._announce_code("agt_test", "cht_home", "142857"))
+            asyncio.run(whatsapp._announce_code("agt_test", "cht_home", "142857"))
+        finally:
+            if previous_home is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous_home
+            if previous_api is None:
+                os.environ.pop("PLOW_API_BASE", None)
+            else:
+                os.environ["PLOW_API_BASE"] = previous_api
+    bubbles = whatsapp.pairing_bubbles("142857")
+    assert posted == bubbles[:3] + bubbles[2:]
+
+
 def test_onboarding_cards_stay_inside_ten_seconds():
     spec_wa = importlib.util.spec_from_file_location(
         "zoen_face_whatsapp_budget", ROOT / "image/plugins/zoen-face/whatsapp.py"
@@ -1342,6 +1422,8 @@ if __name__ == "__main__":
     test_pairing_code_reaches_every_phone_chat()
     test_pairing_code_alone_opens_whatsapp_and_a_real_text_owns_the_turn()
     test_activation_code_uses_the_onboarding_chat_a_normal_reply_uses()
+    test_onboarding_sends_every_bubble_without_waiting_out_the_card_reserve()
+    test_onboarding_resumes_after_a_bubble_fails()
     test_onboarding_cards_stay_inside_ten_seconds()
     test_pairing_code_is_sent_without_the_owner_texting_first()
     test_pairing_code_opens_the_owner_email_when_nobody_texted()

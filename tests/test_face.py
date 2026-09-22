@@ -478,6 +478,23 @@ def test_first_imessage_opener_keeps_the_prebuilt_bubbles_and_the_language():
     assert saved == "pt"
 
 
+def test_alo_keeps_the_prebuilt_hello():
+    previous = os.environ.get("HERMES_HOME")
+    try:
+        for text in ("alo", "alô"):
+            event = Event(text)
+            with tempfile.TemporaryDirectory() as home:
+                os.environ["HERMES_HOME"] = home
+                action = face.greet_on_dispatch(event, voiced=False, send=no_intro)
+            assert action == {"action": "skip", "reason": "prebuilt hello"}
+            assert "first contact" not in getattr(event, "channel_prompt", "")
+    finally:
+        if previous is None:
+            os.environ.pop("HERMES_HOME", None)
+        else:
+            os.environ["HERMES_HOME"] = previous
+
+
 def test_second_imessage_message_greets_with_the_saved_code():
     plow = FakePlow(history=said(
         "boa noite",
@@ -788,6 +805,7 @@ if __name__ == "__main__":
     test_card_send_skips_if_zoen_vcf_already_went()
     test_dispatch_asks_the_model_to_onboard()
     test_first_imessage_opener_keeps_the_prebuilt_bubbles_and_the_language()
+    test_alo_keeps_the_prebuilt_hello()
     test_second_imessage_message_greets_with_the_saved_code()
     test_whatsapp_code_replies_in_the_language_already_identified()
     test_whatsapp_code_replies_in_english_when_that_is_the_language()

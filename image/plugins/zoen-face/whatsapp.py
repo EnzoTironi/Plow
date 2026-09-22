@@ -16,7 +16,6 @@ from urllib.parse import quote
 log = logging.getLogger("zoen-whatsapp")
 WHATSAPP_DOOR = "553798136141"
 ONBOARD_SECONDS = 10.0
-CARD_RESERVE = 4.0
 try:
     import face as _face
 except ImportError:
@@ -26,6 +25,20 @@ _IMAGE_STAMP = "/etc/zoen-image-id"
 _QUIET = None
 _TASK = None
 _TOKEN = ""
+_ANNOUNCE_LOCK = None
+_ANNOUNCE_LOOP = None
+
+
+def _announce_lock() -> asyncio.Lock:
+    """One lock per running loop. Tests call asyncio.run more than once."""
+    global _ANNOUNCE_LOCK, _ANNOUNCE_LOOP
+    loop = asyncio.get_running_loop()
+    if _ANNOUNCE_LOCK is None or _ANNOUNCE_LOOP is not loop:
+        _ANNOUNCE_LOCK = asyncio.Lock()
+        _ANNOUNCE_LOOP = loop
+    return _ANNOUNCE_LOCK
+
+
 def _voice_written() -> bool:
     root = (os.environ.get("HERMES_HOME") or "").strip()
     if not root:
@@ -141,11 +154,13 @@ def install(adapter_cls, module) -> None:
     if original_message is not None:
         @functools.wraps(original_message)
         async def on_message(self, message, chat):
-            _remember(adapter_cls, self, module, base)
+            # The prebuilt bubbles are the reply. They go out before the poll,
+            # the reception, and the model, on whatever text just arrived.
             try:
                 await _offer_code(self, module, chat)
             except Exception:
                 log.warning("whatsapp code offer failed")
+            _remember(adapter_cls, self, module, base)
             return await original_message(self, message, chat)
 
         adapter_cls._on_message = on_message
@@ -436,10 +451,11 @@ def _clear_sent_claims() -> None:
     descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX)
-        try:
-            os.remove(_code_path() + ".sent")
-        except OSError:
-            return
+        for suffix in (".sent", ".progress"):
+            try:
+                os.remove(_code_path() + suffix)
+            except OSError:
+                pass
     finally:
         fcntl.flock(descriptor, fcntl.LOCK_UN)
         os.close(descriptor)
@@ -569,6 +585,40 @@ def _code_announced(code: str, chat: str = "") -> bool:
     return bool(sent)
 
 
+def _progress_path() -> str:
+    return _code_path() + ".progress"
+
+
+def _read_progress() -> dict[str, int]:
+    try:
+        lines = open(_progress_path(), encoding="utf-8").read().splitlines()
+    except OSError:
+        return {}
+    found: dict[str, int] = {}
+    for line in lines:
+        chat, _, count = line.partition("\t")
+        chat = chat.strip()
+        if chat.startswith(("cht_", "tel:", "mail:")) and count.strip().isdigit():
+            found[chat] = int(count.strip())
+    return found
+
+
+def _write_progress(rows: dict[str, int]) -> None:
+    path = _progress_path()
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        for chat, count in sorted(rows.items()):
+            handle.write(f"{chat}\t{count}\n")
+
+
+def _mark_chat_sent(chat: str) -> None:
+    """Caller holds the announce lock. A chat lands here only after every bubble."""
+    chats = _sent_chats()
+    chats.add(chat)
+    _write_sent(chats)
+
+
 def _cards_sync(chat: str, deadline: float) -> dict:
     """Send both vCards on this chat. Stops when the onboarding budget is gone."""
     base = os.environ.get("PLOW_API_BASE", "")
@@ -595,33 +645,48 @@ async def _attach_cards(chat: str, deadline: float) -> None:
 
 
 async def _announce_code(agent: str, chat: str, code: str) -> None:
-    """One normal message on the chat the owner already has. RCS and iMessage both use this send."""
+    """Every prebuilt bubble, before cards. A short budget must not drop the link."""
     if not agent or not chat:
         return
     api = os.environ.get("PLOW_API_BASE", "").strip().rstrip("/")
-    if not api or not _claim_chat(chat):
+    if not api:
         return
-    deadline = time.monotonic() + ONBOARD_SECONDS
-    sent = False
-    try:
-        for bubble in pairing_bubbles(code):
-            if time.monotonic() >= deadline - CARD_RESERVE:
-                break
-            await _request(
-                "POST",
-                f"{api}/v1/chats/{quote(chat, safe='')}/messages",
-                agent,
-                {"body": bubble, "format": "none"},
-            )
-            sent = True
-    except RuntimeError as exc:
-        if str(exc).startswith("whatsapp_http_") and not sent:
-            _release_chat(chat)
-            raise
-        log.warning("onboarding text stopped inside the 10s budget")
-    except _Uncertain:
-        log.warning("onboarding text uncertain; cards still go once")
-    await _attach_cards(chat, deadline)
+    bubbles = pairing_bubbles(code)
+    send_cards = False
+    async with _announce_lock():
+        path = _code_path() + ".lock"
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        descriptor = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            if chat in _sent_chats():
+                return
+            progress = _read_progress()
+            done = progress.get(chat, 0)
+            url = f"{api}/v1/chats/{quote(chat, safe='')}/messages"
+            for bubble in bubbles[done:]:
+                try:
+                    await _request("POST", url, agent, {"body": bubble, "format": "none"})
+                except _Uncertain:
+                    log.warning("onboarding bubble uncertain; continuing")
+                except RuntimeError as exc:
+                    if done == 0 and str(exc).startswith("whatsapp_http_"):
+                        raise
+                    log.warning("onboarding text stopped")
+                    break
+                done += 1
+                progress[chat] = done
+                _write_progress(progress)
+            if done >= len(bubbles):
+                progress.pop(chat, None)
+                _write_progress(progress)
+                _mark_chat_sent(chat)
+                send_cards = True
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
+    if send_cards:
+        await _attach_cards(chat, time.monotonic() + ONBOARD_SECONDS)
 
 
 async def _announce_chats(agent: str, chats: list[str], code: str) -> None:
@@ -737,9 +802,13 @@ async def _push_pairing(agent: str, me: dict) -> None:
     _release_previous_install(_agent_uid(me))
     code = _pairing_code()
     uids = pairing_chat_uids(me)
-    loaded = await asyncio.gather(*(_chat_history(agent, uid) for uid in uids))
-    histories = dict(zip(uids, loaded))
+    histories: dict = {}
+    if len(uids) > 1:
+        loaded = await asyncio.gather(*(_chat_history(agent, uid) for uid in uids))
+        histories = dict(zip(uids, loaded))
     targets = activation_chat_uids(me, histories)
+    if len(uids) == 1 and not targets:
+        targets = list(uids)
     await _announce_chats(agent, targets or ([_HOME] if _HOME else []), code)
     if targets:
         return
@@ -797,13 +866,7 @@ async def _offer_code(adapter, module, chat) -> None:
     agent = os.environ.get("PLOW_AGENT_TOKEN", "").strip()
     if not agent:
         return
-    try:
-        code = open(_code_path(), encoding="utf-8").read().strip()
-    except OSError:
-        code = ""
-    if not re.fullmatch(r"\d{6}", code):
-        return
-    await _announce_code(agent, uid, code)
+    await _announce_code(agent, uid, _pairing_code())
 
 
 def _agent_secret() -> str:
