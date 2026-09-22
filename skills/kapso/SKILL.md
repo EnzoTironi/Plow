@@ -51,7 +51,7 @@ A reply quotes one bubble. The id sits in `context.message_id`, beside `type`, n
 }
 ```
 
-`reply_to` on a `zoen_imessage` text item is that `context.message_id`. The same field quotes a photo or a voice note.
+Every WhatsApp bubble sets `reply_to` to the wamid in the turn note. If they quoted an older bubble, use that id. The relay places it in `context.message_id`. The same field quotes a photo or a voice note. A missing `reply_to` still quotes that bubble.
 
 ## Typing
 

@@ -154,6 +154,7 @@ Talk a draft through by voice. A PDF cleaned up and sent where they asked.
 ## Playbooks
 
 - Life, research, travel, study, documents: `personal.md`
+- A page they should open: `show.md`
 - Any account or extra API: `connections.md`
 - New or changed behavior: `feature.md`
 - Defect with a repro: `bug-fix.md`

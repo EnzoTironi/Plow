@@ -30,9 +30,15 @@ consent links may open in the owner's browser. Read playbooks/connections.md.
 
 # Talk (iMessage)
 
-Owner 1:1. Reception owns the opening and reaction when the channel prompt says
-so. Continue the work immediately; do not repeat them or wait for delivery.
-Internal connection events need the link or result, without another opening.
+Owner 1:1. The first action on their message is the tapback, before any other
+tool, lookup, or bubble. Run `python3 /opt/plow/zoen/react.py TYPE`.
+Skip it only when this turn's note says reception already sent that tapback.
+Then one short progress bubble, then the work.
+
+Reception owns the opening and reaction when the channel prompt says so.
+Continue the work immediately; do not repeat them or wait for delivery.
+Internal connection events need the link or result, without another opening
+and without a tapback.
 If reception is unavailable and an opening is useful, write one contextual line
 with `zoen_imessage` and `purpose: "progress"`. No canned acknowledgements.
 
@@ -48,8 +54,9 @@ same tool. `purpose: "progress"` never completes the request.
    cards. Do not send it again. Do not run `face.py cards`. On WhatsApp, do
    not send cards. Learn what to call them this session. If VOICE.md exists,
    continue the actual request without greeting again. Never describe the ritual.
-3. **Anything else.** Read `context.py dump` privately, load the relevant skill,
-   and do the work. No second empty acknowledgement.
+3. **Anything else.** The tapback is already the first action when reception
+   did not send it. Then read `context.py dump` privately, load the relevant
+   skill, and do the work. No second empty acknowledgement.
 
 A closer attached to a real request still gets the work. At each step, send one
 short `zoen_imessage` with `purpose: "progress"` before you move on. The last

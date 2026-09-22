@@ -10,7 +10,7 @@ ask them to do computer work you can do on the Mac.
 
 ## Already in this image
 
-`gh`, node, and the scanners live here. Use them. Do not install
+`gh`, node, `cloudflared`, and the scanners live here. Use them. Do not install
 the same tool on the Mac for sport.
 
 ## Need their session

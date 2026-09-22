@@ -53,6 +53,11 @@ export function sameSecret(left, right) {
   return diff === 0;
 }
 
+export function forgetKey(phone, stamp) {
+  const extra = String(stamp || "");
+  return extra ? `${phone}\n${extra}` : phone;
+}
+
 function digits(value) {
   const phone = String(value || "").replace(/\D/g, "");
   return phone.length >= 8 && phone.length <= 15 ? phone : "";
@@ -738,15 +743,17 @@ export class WhatsAppInbox {
   }
 
   // FORGET_PHONE clears one number the first time it is actually stored.
-  // After that the same number can pair again, so a leftover secret does not
-  // lock the owner out.
+  // FORGET_STAMP makes that one-shot a new one, so the same number can be
+  // cleared again. After the mark matches, the number can pair, and a leftover
+  // secret does not lock the owner out.
   async retire(box) {
     const phone = digits(this.env?.FORGET_PHONE);
     if (!phone) return false;
-    const mark = await digest(phone);
+    const mark = await digest(forgetKey(phone, this.env?.FORGET_STAMP));
     if (box.retired === mark || !phoneIsPresent(box, phone)) return false;
     dropPhone(box, phone);
     box.retired = mark;
+    box.note = { at: Date.now(), stage: "retire", status: 200, error: "", uid_len: 0 };
     return true;
   }
 

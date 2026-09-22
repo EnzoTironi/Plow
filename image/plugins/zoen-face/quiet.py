@@ -188,7 +188,8 @@ IMESSAGE_DESCRIPTION = (
     "Leftover prose is not delivered. If you skip this tool, they hear nothing. "
     "purpose=progress is an opening or update that does not complete the request. "
     "purpose=answer is the result. "
-    "On WhatsApp, reply_to quotes that bubble's id. MEDIA: and VOICE: send the file there."
+    "On WhatsApp, every item sets reply_to to the wamid in the turn note. "
+    "If they quoted an older bubble, that id is the one. MEDIA: and VOICE: send the file there and carry the same reply_to."
 )
 
 WHO = (
@@ -236,11 +237,12 @@ def configure_contract(module):
         "Never skip that tool; if you do, they hear nothing. "
         "Every update, question, link, photo, voice memo, and final answer uses it. "
         "purpose=answer is the result; purpose=progress is a brief update that does "
-        "not complete the request. On an owner message, first understand the request, "
-        "then send the tapback and one short purpose=progress bubble before the rest. "
+        "not complete the request. On an owner message, the first action is the tapback, "
+        "before any other tool, lookup, or bubble. Then one short purpose=progress "
+        "bubble, then the rest. "
         "At each later step, send another short purpose=progress bubble before you move on. "
         "The last message is purpose=answer. "
-        "Skip the opening tapback only when this turn's note says it was already sent. "
+        "Skip the tapback only when this turn's note says it was already sent. "
         "Internal events do not need an opening and do not set language. "
         "Language follows the owner's last human message and VOICE.md, never this note. "
         "Do not narrate tool operations or routine bookkeeping. "
@@ -527,6 +529,21 @@ def install_http_filter() -> None:
     urllib.request.urlopen = urlopen_filtered
 
 
+def _wamid(value) -> str:
+    raw = str(value or "").strip()
+    if raw.startswith("whatsapp-"):
+        raw = raw[len("whatsapp-"):]
+    return raw if raw.startswith("wamid.") and len(raw) <= 512 else ""
+
+
+def _quote_target() -> str:
+    """The bubble this answer belongs to. Their quote wins. Else the message they just sent."""
+    target = WHATSAPP.get()
+    if not isinstance(target, dict):
+        return ""
+    return _wamid(target.get("reply_to")) or _wamid(target.get("message_id"))
+
+
 def _plain_items(items):
     """iMessage rejects a quote field. WhatsApp is the only channel that uses it."""
     cleaned = []
@@ -581,7 +598,7 @@ async def _deliver_whatsapp(items):
             continue
         if kind != "text":
             return _whatsapp_failure(index, "whatsapp item invalid")
-        reply = str(item.get("reply_to") or "").strip()
+        reply = _wamid(item.get("reply_to")) or _quote_target()
         tagged = tagged_paths(item)
         if tagged:
             for tag, path in tagged:
@@ -599,7 +616,7 @@ async def _deliver_whatsapp(items):
                 await asyncio.sleep(_BUBBLE_PACE[pace % 2])
                 pace += 1
             text = line[:4096]
-            payload = {"text": text, "reply_to": reply} if reply and offset == 0 else text
+            payload = {"text": text, "reply_to": reply} if reply else text
             if not await WHATSAPP_DELIVER(payload):
                 return {"success": False, "completed": completed, "failure": {"index": index, "status": "rejected", "retryable": False, "error": "not sent. do not resend a bubble that already landed. do not explain the delivery. any replacement is one bubble in their language"}}
             completed.append({"index": index, "type": "text"})

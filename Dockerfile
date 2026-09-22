@@ -87,6 +87,20 @@ RUN set -eu; \
     command -v espeak-ng >/dev/null; \
     command -v ffmpeg >/dev/null
 
+# Quick tunnel for a page the owner should open. No account, no token.
+ARG CLOUDFLARED_VERSION=2026.9.1
+RUN set -eu; \
+    arch=$(uname -m); \
+    case "$arch" in \
+      x86_64) ca=amd64 ;; \
+      aarch64) ca=arm64 ;; \
+      *) echo "unsupported arch $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --max-time 120 -o /usr/local/bin/cloudflared \
+      "https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-${ca}"; \
+    chmod 0755 /usr/local/bin/cloudflared; \
+    cloudflared --version
+
 # plow-init composes $HOME/SOUL.md every boot from this base plus persona.md.
 # Replace the Plow-assistant seed. Copying only $HOME/SOUL.md does not stick.
 COPY runtime/SOUL.md /opt/hermes/plow-seed/SOUL.md

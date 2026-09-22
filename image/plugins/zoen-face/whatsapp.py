@@ -36,7 +36,31 @@ def _voice_written() -> bool:
         return False
 
 
-def _prompt(message_id: str, *, first: bool = False) -> str:
+def _bubble_id(value: str) -> str:
+    raw = str(value or "").strip()
+    if raw.startswith("whatsapp-"):
+        raw = raw[len("whatsapp-"):]
+    return raw if raw.startswith("wamid.") and len(raw) <= 512 else ""
+
+
+def _quote_line(message_id: str, quoted_id: str, quoted_text: str) -> str:
+    pointed = _bubble_id(quoted_id)
+    target = pointed or _bubble_id(message_id) or message_id
+    line = ""
+    if pointed:
+        said = " ".join(str(quoted_text or "").split())[:240]
+        line = f"They replied to {pointed}. "
+        if said:
+            line += f"That bubble said: {said}. "
+    return (
+        line
+        + f"Every zoen_imessage item sets reply_to to {target}. "
+        "That value is the wamid, with no whatsapp- prefix. "
+        "The relay sends it as context.message_id. "
+    )
+
+
+def _prompt(message_id: str, *, first: bool = False, quoted_id: str = "", quoted_text: str = "") -> str:
     if first:
         opening = (
             "This is the first WhatsApp turn, right after they linked the line. "
@@ -51,13 +75,14 @@ def _prompt(message_id: str, *, first: bool = False) -> str:
     return (
         opening
         + "WhatsApp has no reception agent. Nothing has been sent for this bubble. "
-        "First, understand the request, then do these two before the rest of the work: "
-        f"python3 /opt/plow/zoen/react.py TYPE --message {message_id} "
-        "and one short zoen_imessage with purpose progress that shows you understood. "
+        "The first action is the tapback, before any other tool, lookup, or bubble: "
+        f"python3 /opt/plow/zoen/react.py TYPE --message {message_id}. "
+        "Then one short zoen_imessage with purpose progress that shows you understood. "
+        "Then the rest of the work. "
         "TYPE is like, love, laugh, emphasize, question, or dislike. "
         "The relay turns that into Kapso's reaction body: reaction.message_id and reaction.emoji. "
-        "A quote is reply_to on that zoen_imessage item. The relay sends it as context.message_id. "
-        "Read skill kapso before a reaction, quote, voice note, or contact card. Do not call Kapso. "
+        + _quote_line(message_id, quoted_id, quoted_text)
+        + "The tapback does not wait on skill kapso. Read that skill before a voice note or contact card. Do not call Kapso. "
         "An uncertain send already counts. Do not send that bubble again and do not explain the delivery. "
         "At each later step, send another short zoen_imessage with purpose progress "
         "before you move on. Say what you are doing for them, in their words. "
@@ -1296,7 +1321,10 @@ async def _accept(adapter_cls, module, message, base, pairing: bool = False) -> 
     # from the next turn, which made every WhatsApp message a blank session.
     event.zoen_pairing_code = pairing
     event.channel_prompt = (event.channel_prompt or "") + "\n" + _prompt(
-        str(message["id"])[:200], first=pairing or not _voice_written(),
+        str(message["id"])[:200],
+        first=pairing or not _voice_written(),
+        quoted_id=str(message.get("reply_to") or ""),
+        quoted_text=str(message.get("reply_text") or ""),
     )
     event.internal = False
     event.authority, event.recall_everywhere = authority, False
@@ -1309,6 +1337,7 @@ async def _accept(adapter_cls, module, message, base, pairing: bool = False) -> 
         "to": message.get("to"),
         "recipient": message.get("recipient"),
         "message_id": str(message["id"])[:256],
+        "reply_to": str(message.get("reply_to") or "")[:256],
     }
     await live._handoff_message(event)
     return bool(getattr(event, "_gateway_accepted", True))
