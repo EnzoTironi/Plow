@@ -20,7 +20,7 @@ Do not fan cards that share mutable state. Those serialize.
 
 One `delegate_task` lot. Every brief stands alone: goal, slice, how
 to verify, what to report (`PASS` | `ISSUES` | `BLOCKED` plus
-evidence). Model: `openai/gpt-5.6-luna` for every slice.
+evidence). Model: `anthropic/claude-sonnet-5` for every slice.
 If a worker drops, proceed with N-1 and note it.
 
 ## Aggregate

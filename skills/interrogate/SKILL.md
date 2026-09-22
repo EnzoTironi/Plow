@@ -6,7 +6,7 @@ description: Backstage for Zoen. Adversarial review of a sketch or a diff. Synth
 # Interrogate
 
 Zoen is the talker. Fan readonly leaves on the same brief. The
-signal is independent reads on `openai/gpt-5.6-luna`. Deliverable
+signal is independent reads on `anthropic/claude-sonnet-5`. Deliverable
 is a synthesized verdict.
 Do NOT auto-apply.
 
@@ -23,7 +23,7 @@ One paragraph from the Brief, commits, or PR body. Then spawn.
 ## Fan
 
 One `delegate_task` lot. Same schema from every leaf. Reviewers:
-`openai/gpt-5.6-luna`. Critical auth/money/prod stays on that slug.
+`anthropic/claude-sonnet-5`. Critical auth/money/prod stays on that slug.
 
 ```text
 file, line, severity (critical|high|medium|low),

@@ -13,10 +13,10 @@ data shapes, what not to touch.
 ## Complexity
 
 - **Simple** (one module, one function): one `delegate_task` leaf
-  on `openai/gpt-5.6-luna`. Explore and explain in a single pass.
+  on `anthropic/claude-sonnet-5`. Explore and explain in a single pass.
 - **Complex** (several files or services): 2–4 explorer leaves on
-  `openai/gpt-5.6-luna` in one `delegate_task` lot, then one synthesis
-  leaf on `openai/gpt-5.6-luna`.
+  `anthropic/claude-sonnet-5` in one `delegate_task` lot, then one synthesis
+  leaf on `anthropic/claude-sonnet-5`.
 - When in doubt, simple.
 
 Leaves are readonly. They do not Latch. They do not ship.

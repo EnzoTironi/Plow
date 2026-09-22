@@ -15,7 +15,7 @@ task. It refreshes the recipient's membership during the burst's quiet window,
 restarting that read on each new message. Reads and POSTs each have a three-second
 timeout. During the same window, a short model call writes a contextual opening
 using the existing persona, the owner's voice preferences, the whole burst and
-the last three openings. `zoen.reception_model` selects that model (Luna by
+the last three openings. `zoen.reception_model` selects that model (Sonnet by
 default, with reasoning disabled). The model selects both a contextual line and
 an appropriate tapback, using the previous six inbound messages for context.
 Generation is bounded to 3.2 seconds; POST timeouts use the remainder of the
@@ -187,11 +187,11 @@ similar speed, not a claim that Luna is always faster. The
 [OpenRouter model catalog](https://openrouter.ai/api/v1/models) listed Luna at
 $0.20/M input and $1.20/M output tokens, versus Sonnet at $2/M and $10/M, for the
 short-context pricing tier on 2026-09-19. These are catalog rates, not a guarantee
-of Plow billing. Luna is the only pinned model: main turn, reception, vision,
+of Plow billing. Sonnet is the only pinned model: main turn, reception, vision,
 and fallback. Only reception explicitly disables reasoning. Live Treg validation exposed
 temporary upstream Luna rate limits; a streamed Sonnet response through Plow was
 verified before the first fallback existed. This cannot bypass an outage of Plow itself,
-and the reception call still uses Luna.
+and the reception call uses the same Sonnet pin.
 
 With Luna and a reused HTTP session, live measurements were:
 

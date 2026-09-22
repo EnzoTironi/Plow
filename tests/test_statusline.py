@@ -25,7 +25,8 @@ def test_contextual_opening_or_no_text(tmp_path, code, content, recent, expected
     async def run():
         async def complete(request):
             payload = await request.json()
-            assert payload["reasoning_effort"] == "none"
+            assert payload["model"] == "anthropic/claude-sonnet-5"
+            assert payload["thinking"] == {"type": "disabled"}
             assert "Zoen" in payload["messages"][0]["content"]
             context = json.loads(payload["messages"][1]["content"])
             assert context["incoming_burst"][-1]["text"] == "quero um passeio tranquilo"

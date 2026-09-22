@@ -47,7 +47,7 @@ def request_body(messages, home: Path, recent, context=()):
     settings = config.get("zoen") or {}
     if not isinstance(settings, dict):
         raise ValueError("invalid reception configuration")
-    model = os.environ.get("ZOEN_RECEPTION_MODEL") or settings.get("reception_model") or "openai/gpt-5.6-luna"
+    model = os.environ.get("ZOEN_RECEPTION_MODEL") or settings.get("reception_model") or "anthropic/claude-sonnet-5"
     if not isinstance(model, str):
         raise ValueError("invalid reception model")
     payload = {

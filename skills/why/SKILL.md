@@ -25,7 +25,7 @@ Seed: paths, symbols, commits, PR numbers, linked issues.
 ## Evidence
 
 Fan readonly `delegate_task` leaves in one lot, one source each that
-exists. Investigators and synthesis: `openai/gpt-5.6-luna`.
+exists. Investigators and synthesis: `anthropic/claude-sonnet-5`.
 
 1. git + `gh` (always)
 2. Linear (`issues.py linear`) when `LINEAR_API_KEY` is set

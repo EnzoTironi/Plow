@@ -7,7 +7,7 @@ description: Backstage for Zoen. When no playbook fits. Frame a falsifiable done
 
 Zoen is the talker. When Feature, Bug fix, and Investigation do not
 fit (big migration, multi-hour, unknown), design the run first.
-Spawn this lead on `openai/gpt-5.6-luna`.
+Spawn this lead on `anthropic/claude-sonnet-5`.
 
 Do not invent a new Zoen script.
 

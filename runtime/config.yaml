@@ -2,7 +2,7 @@
 # A short model call writes reception while the main turn is prepared.
 # Native Kanban requires an explicit opt-in; platform defaults remain intact.
 zoen:
-  reception_model: openai/gpt-5.6-luna
+  reception_model: anthropic/claude-sonnet-5
   oauth_relay_url: https://zoen-oauth-relay.agenttironi.workers.dev
   google_relay_url: https://zoen-oauth-relay.agenttironi.workers.dev
 toolsets:
@@ -13,16 +13,16 @@ agent:
 browser:
   backend: local
 model:
-  default: openai/gpt-5.6-luna
+  default: anthropic/claude-sonnet-5
   provider: plow
 fallback_model:
   provider: plow
-  model: openai/gpt-5.6-luna
+  model: anthropic/claude-sonnet-5
 providers:
   plow:
     models:
-      openai/gpt-5.6-luna: {}
+      anthropic/claude-sonnet-5: {}
 auxiliary:
   vision:
     provider: plow
-    model: openai/gpt-5.6-luna
+    model: anthropic/claude-sonnet-5

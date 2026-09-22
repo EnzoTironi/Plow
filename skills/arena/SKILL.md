@@ -22,7 +22,7 @@ N ≥ 2. Each candidate its own worktree or `/tmp/arena-<slug>/<n>/`.
 
 One `delegate_task` lot. Each worker writes the sketch plus a short
 rationale (what it considered and rejected). Form sketches, UI
-sketches, and the cross-judge use `openai/gpt-5.6-luna`. If one drops,
+sketches, and the cross-judge use `anthropic/claude-sonnet-5`. If one drops,
 proceed with N-1 and note it.
 
 ## Pick

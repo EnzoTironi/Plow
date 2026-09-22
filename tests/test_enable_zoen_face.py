@@ -57,8 +57,8 @@ def test_live_dump_gains_zoen_face_and_keeps_plow_chat():
         assert data["security"]["tirith_enabled"] is False
         assert data["display"]["interim_assistant_messages"] is False
         assert data["display"]["platforms"]["plow_chat"]["long_running_notifications"] is False
-        assert data["model"]["default"] == "openai/gpt-5.6-luna"
-        assert "openai/gpt-5.6-luna" in data["providers"]["plow"]["models"]
+        assert data["model"]["default"] == "anthropic/claude-sonnet-5"
+        assert "anthropic/claude-sonnet-5" in data["providers"]["plow"]["models"]
 
 
 def test_apply_runtime_turns_yolo_on_and_quiets_plow_chat():
@@ -74,7 +74,7 @@ def test_apply_runtime_turns_yolo_on_and_quiets_plow_chat():
     assert enable.apply_runtime(data) is False
 
 
-def test_apply_runtime_pins_luna_and_drops_other_models():
+def test_apply_runtime_pins_sonnet_and_drops_other_models():
     data = {
         "model": {"default": "z-ai/glm-5.2", "provider": "plow"},
         "providers": {
@@ -82,12 +82,12 @@ def test_apply_runtime_pins_luna_and_drops_other_models():
         },
     }
     assert enable.apply_runtime(data) is True
-    assert data["model"]["default"] == "openai/gpt-5.6-luna"
+    assert data["model"]["default"] == "anthropic/claude-sonnet-5"
     assert data["model"]["provider"] == "plow"
     models = data["providers"]["plow"]["models"]
-    assert list(models) == ["openai/gpt-5.6-luna"]
-    assert data["fallback_model"]["model"] == "openai/gpt-5.6-luna"
-    assert data["auxiliary"]["vision"]["model"] == "openai/gpt-5.6-luna"
+    assert list(models) == ["anthropic/claude-sonnet-5"]
+    assert data["fallback_model"]["model"] == "anthropic/claude-sonnet-5"
+    assert data["auxiliary"]["vision"]["model"] == "anthropic/claude-sonnet-5"
     assert enable.apply_runtime(data) is False
 
 
@@ -96,19 +96,19 @@ def test_apply_runtime_drops_other_models_from_an_existing_catalog():
         "providers": {
             "plow": {
                 "models": {
-                    "anthropic/claude-sonnet-5": {},
+                    "anthropic/claude-sonnet-5": {"prompt_caching": True},
                     "anthropic/claude-opus-5": {},
                     "moonshotai/kimi-k3": {},
                     "z-ai/glm-5.3-flash": {},
-                    "openai/gpt-5.6-luna": {"prompt_caching": True},
+                    "openai/gpt-5.6-luna": {},
                 }
             }
         }
     }
     assert enable.apply_runtime(data) is True
     models = data["providers"]["plow"]["models"]
-    assert list(models) == ["openai/gpt-5.6-luna"]
-    assert models["openai/gpt-5.6-luna"]["prompt_caching"] is True
+    assert list(models) == ["anthropic/claude-sonnet-5"]
+    assert models["anthropic/claude-sonnet-5"]["prompt_caching"] is True
 
 
 def test_already_listed_still_gains_yolo():
@@ -235,7 +235,7 @@ def test_refresh_pins_workspace_leftover_face():
 if __name__ == "__main__":
     test_live_dump_gains_zoen_face_and_keeps_plow_chat()
     test_apply_runtime_turns_yolo_on_and_quiets_plow_chat()
-    test_apply_runtime_pins_luna_and_drops_other_models()
+    test_apply_runtime_pins_sonnet_and_drops_other_models()
     test_apply_runtime_drops_other_models_from_an_existing_catalog()
     test_already_listed_still_gains_yolo()
     test_seed_text_keeps_indent_and_neighbors()
