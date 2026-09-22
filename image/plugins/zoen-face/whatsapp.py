@@ -9,17 +9,38 @@ import os
 import re
 import secrets
 from pathlib import Path
+from urllib.parse import quote
 
 log = logging.getLogger("zoen-whatsapp")
+WHATSAPP_DOOR = "553798136141"
 _QUIET = None
 _TASK = None
 _TOKEN = ""
-def _prompt(message_id: str) -> str:
+def _voice_written() -> bool:
+    root = (os.environ.get("HERMES_HOME") or "").strip()
+    if not root:
+        return False
+    try:
+        return bool((Path(root) / "zoen" / "VOICE.md").read_text(encoding="utf-8").strip())
+    except OSError:
+        return False
+
+
+def _prompt(message_id: str, *, first: bool = False) -> str:
+    if first:
+        opening = (
+            "This is the first WhatsApp turn, right after they linked the line. "
+            "Follow the first-contact note and answer them. "
+        )
+    else:
+        opening = (
+            "This WhatsApp message continues the same owner conversation. "
+            "Earlier turns in this session are the history. Answer from that history. "
+            "Do not greet again and do not start over. "
+        )
     return (
-        "This WhatsApp message continues the same owner conversation. "
-        "Earlier turns in this session are the history. Answer from that history. "
-        "Do not greet again and do not start over. "
-        "The only way they see a reply is zoen_imessage, and that call is delivered on WhatsApp. "
+        opening
+        + "The only way they see a reply is zoen_imessage, and that call is delivered on WhatsApp. "
         "Each text item is its own bubble. MEDIA:/absolute/path sends the picture here. "
         "VOICE:/absolute/path sends the voice note here. "
         f"This bubble's id is {message_id}. "
@@ -161,6 +182,74 @@ def owner_phone(adapter, module) -> str:
     return ""
 
 
+def pairing_message(code: str, door: str = WHATSAPP_DOOR) -> str:
+    """iMessage the owner taps. The link opens WhatsApp with this VM's code filled in."""
+    return (
+        f"pra eu te achar no whatsapp, envia este código: {code}\n\n"
+        f"https://wa.me/{door}?text={code}"
+    )
+
+
+def _code_path() -> str:
+    return os.path.join(os.path.dirname(_token_path()), "whatsapp.code")
+
+
+def _pairing_code() -> str:
+    """Stable on this volume so a retry keeps the same code."""
+    path = _code_path()
+    try:
+        current = open(path, encoding="utf-8").read().strip()
+    except OSError:
+        current = ""
+    if re.fullmatch(r"\d{6}", current):
+        return current
+    current = str(secrets.randbelow(900000) + 100000)
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(current + "\n")
+    return current
+
+
+def _forget_code() -> None:
+    for suffix in ("", ".sent"):
+        try:
+            os.remove(_code_path() + suffix)
+        except OSError:
+            continue
+
+
+def _code_announced(code: str) -> bool:
+    try:
+        return open(_code_path() + ".sent", encoding="utf-8").read().strip() == code
+    except OSError:
+        return False
+
+
+def _mark_announced(code: str) -> None:
+    path = _code_path() + ".sent"
+    os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(code + "\n")
+
+
+async def _announce_code(agent: str, chat: str, code: str) -> None:
+    """The line tells its owner the code. Plow delivers that bubble on iMessage or SMS."""
+    if not agent or not chat or _code_announced(code):
+        return
+    api = os.environ.get("PLOW_API_BASE", "").strip().rstrip("/")
+    if not api:
+        return
+    await _request(
+        "POST",
+        f"{api}/v1/chats/{quote(chat, safe='')}/messages",
+        agent,
+        {"body": pairing_message(code), "format": "none"},
+    )
+    _mark_announced(code)
+
+
 def _agent_secret() -> str:
     """Stable on this VM's volume. The cloud token is only the placeholder."""
     path = os.path.join(os.path.dirname(_token_path()), "agent.id")
@@ -216,7 +305,14 @@ async def _request(method, url, token, body=None):
     async with aiohttp.ClientSession(timeout=timeout) as http:
         async with http.request(method, url, json=body, headers=headers, allow_redirects=False) as result:
             if result.status >= 300:
-                raise RuntimeError(f"whatsapp_http_{result.status}")
+                error = ""
+                try:
+                    payload = await result.json()
+                    if isinstance(payload, dict):
+                        error = str(payload.get("error") or "")
+                except Exception:
+                    error = ""
+                raise RuntimeError(f"whatsapp_http_{result.status}" + (f"_{error}" if error else ""))
             data = await result.json()
             if not isinstance(data, (dict, list)):
                 raise RuntimeError("whatsapp_response_invalid")
@@ -325,20 +421,30 @@ async def _register(adapter_cls, module, base) -> str:
     except Exception:
         me = {}
     _HOME = home_chat_uid(me) or _HOME
-    payload = {}
+    code = _pairing_code()
+    try:
+        await _announce_code(agent, _HOME, code)
+    except Exception:
+        log.warning("whatsapp code announce failed")
+    payload = {"code": code}
     if agent == "proxied":
         uid = ""
         if isinstance(me, dict):
             uid = str((me.get("agent") or {}).get("uid") or me.get("uid") or "")
         if not re.fullmatch(r"[a-f0-9]{32}", uid):
             return ""
-        payload = {"agent_uid": uid, "secret": _agent_secret()}
+        payload = {"agent_uid": uid, "secret": _agent_secret(), "code": code}
     try:
         data = await _request("POST", base + "/whatsapp/register", agent, payload)
     except RuntimeError as exc:
-        if str(exc) in {"whatsapp_http_404", "whatsapp_http_409"}:
+        if str(exc) == "whatsapp_http_409_code_taken":
+            _forget_code()
+            return ""
+        if str(exc).startswith("whatsapp_http_404") or str(exc).startswith("whatsapp_http_409"):
             return ""
         raise
+    if data.get("waiting"):
+        return ""
     token = str(data.get("token") or "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{43,256}", token):
         raise RuntimeError("whatsapp_response_invalid")
@@ -355,9 +461,27 @@ async def _run(adapter_cls, module, base) -> None:
                 _TOKEN = await _register(adapter_cls, module, base)
             if _TOKEN:
                 data = await _request("GET", base + "/whatsapp/inbox", _TOKEN)
+                code = ""
+                try:
+                    code = open(_code_path(), encoding="utf-8").read().strip()
+                except OSError:
+                    code = ""
+                real, codes = [], []
                 for message in data.get("messages") or []:
+                    if code and str(message.get("text") or "").strip() == code:
+                        codes.append(message)
+                    else:
+                        real.append(message)
+                for message in real:
                     if await _accept(adapter_cls, module, message, base):
                         await _request("POST", base + "/whatsapp/inbox/ack", _TOKEN, {"ids": [message.get("id")]})
+                # The code only links the line. A real message owns the intro.
+                # If the code is all they sent, that message is the intro.
+                intro = not real and codes and not _voice_written()
+                if intro and not await _accept(adapter_cls, module, codes[-1], base):
+                    codes = codes[:-1]
+                for message in codes:
+                    await _request("POST", base + "/whatsapp/inbox/ack", _TOKEN, {"ids": [message.get("id")]})
         except Exception:
             log.warning("whatsapp poll failed")
         await asyncio.sleep(2)
@@ -454,7 +578,9 @@ async def _accept(adapter_cls, module, message, base) -> bool:
     )
     # A real owner turn. internal=True is stored as a notification and stripped
     # from the next turn, which made every WhatsApp message a blank session.
-    event.channel_prompt = (event.channel_prompt or "") + "\n" + _prompt(str(message["id"])[:200])
+    event.channel_prompt = (event.channel_prompt or "") + "\n" + _prompt(
+        str(message["id"])[:200], first=not _voice_written(),
+    )
     event.internal = False
     event.authority, event.recall_everywhere = authority, False
     event.reply_to_message_id = message.get("reply_to") or None

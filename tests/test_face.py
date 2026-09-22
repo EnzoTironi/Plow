@@ -448,6 +448,19 @@ def test_dispatch_asks_the_model_to_onboard():
         assert face.HELLO["en"][0] not in prompt
 
 
+def test_whatsapp_first_contact_uses_the_same_idea_without_imessage_cards():
+    event = Event("oi")
+    event.zoen_whatsapp = {"to": "5511999999999", "message_id": "wamid.1"}
+    action = face.greet_on_dispatch(event, voiced=False, send=no_intro)
+    assert action == {"action": "allow", "reason": "zoen onboarding"}
+    prompt = event.channel_prompt
+    assert "Enzo made you" in prompt
+    assert "thousand" in prompt
+    assert "zoen_owner_profile" in prompt
+    assert "Do not run face.py cards" in prompt
+    assert "python3 /opt/plow/zoen/face.py cards" not in prompt
+
+
 def test_dispatch_lets_the_model_run_after_first_run():
     action = face.greet_on_dispatch(
         Event("Opa"),
@@ -678,6 +691,7 @@ if __name__ == "__main__":
     test_account_token_reads_xdg_config_home_first()
     test_card_send_skips_if_zoen_vcf_already_went()
     test_dispatch_asks_the_model_to_onboard()
+    test_whatsapp_first_contact_uses_the_same_idea_without_imessage_cards()
     test_dispatch_lets_the_model_run_after_first_run()
     test_dispatch_does_not_reopen_first_contact_when_chat_already_has_hello()
     test_dispatch_swallows_plow_setup_without_intro()

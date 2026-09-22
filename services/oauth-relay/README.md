@@ -53,10 +53,11 @@ backed by a Durable Object alarm. There is no shared relay administrator key.
 WhatsApp uses the same Worker as transport only. Kapso signs `POST /whatsapp/webhook`.
 A number that has not finished SMS setup receives one link to `+1 628 246-3032`
 with the Index phrase. The WhatsApp text stays queued. After Plow boots the VM,
-the agent calls `/whatsapp/register` with its Plow agent token. The owner handle,
-phone or email, is not compared. One waiting WhatsApp binds to that agent. When
-several are waiting, the page opened from that phone's button confirms its own
-request. The agent reads the queue, runs the turn, and replies with `zoen_imessage`.
+the agent sends a code on iMessage or SMS and calls `/whatsapp/register` with that
+code. The owner handle, phone or email, is not compared. The WhatsApp that sends
+the code back is the one bound to that agent. Every new person does this. An agent
+that already owns a phone refreshes that binding. The agent reads the queue, runs
+the turn, and replies with `zoen_imessage`.
 That tool call is delivered to the WhatsApp phone on the message. Set these as Worker secrets, not image env:
 
 ```sh

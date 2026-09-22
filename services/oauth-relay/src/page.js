@@ -42,7 +42,7 @@ const COPY = {
     label: "Confirmação de dois fatores",
     title: "Falta um passo.",
     accent: "Pra gente começar.",
-    text: "Esse botão manda um SMS pra confirmar o seu telefone. Assim que você enviar, eu respondo aqui no WhatsApp.",
+    text: "Esse botão manda um SMS pra confirmar o seu telefone. Quando a linha existir, eu te mando um código no iMessage. Você envia esse código aqui no WhatsApp. Pode levar alguns minutinhos.",
     button: "Enviar o SMS",
     href: "sms:+16282463032?&body=Set%20this%20up%20for%20me%3A%20aiworthusing.com%2Fagent-index%2Fzoen",
     hint: "Pode fechar esta página depois de enviar.",

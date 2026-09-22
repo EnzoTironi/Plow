@@ -76,7 +76,25 @@ _RETIRED_HELLO = (
 )
 
 
-def first_contact_prompt() -> str:
+def first_contact_prompt(whatsapp: bool = False) -> str:
+    if whatsapp:
+        return (
+            "\n[Zoen first contact]\n"
+            "VOICE.md is missing. They just linked WhatsApp. Answer them "
+            "normally via zoen_imessage, which delivers on WhatsApp, in "
+            "their language, like @tryZoen: short stacked thoughts, slightly "
+            "lowercase, dry, a little witty. This turn they need to know: you "
+            "are Zoen, the little monster that makes their dreams happen; "
+            "Enzo made you; you can connect their apps — more than a "
+            "thousand connections and MCPs — wherever they need. How you "
+            "say it is yours. Not a menu. Do not copy an older intro from "
+            "this chat. Never send a phone number or 'a gente te ajuda'. "
+            "If their message is only the pairing code, do not repeat it. "
+            "Do not run face.py cards. Handle their request. This session, "
+            "learn what to call them: zoen_owner_profile action=save if the "
+            "name is already in the message or memory, else action=ask and "
+            "ask only if ask=true. Write VOICE.md this turn."
+        )
     return (
         "\n[Zoen first contact]\n"
         "VOICE.md is missing. Answer them normally via zoen_imessage, in "
@@ -1100,7 +1118,9 @@ def greet_on_dispatch(
     text = spoken_text(event) or str(getattr(event, "text", None) or "").strip()
     if not text or text.startswith("/"):
         return {"action": "allow"}
-    event.channel_prompt = (getattr(event, "channel_prompt", "") or "") + first_contact_prompt()
+    event.channel_prompt = (getattr(event, "channel_prompt", "") or "") + first_contact_prompt(
+        whatsapp=bool(getattr(event, "zoen_whatsapp", None))
+    )
     return {"action": "allow", "reason": "zoen onboarding"}
 
 

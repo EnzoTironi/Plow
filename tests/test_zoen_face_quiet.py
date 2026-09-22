@@ -294,6 +294,29 @@ def test_agent_secret_is_stable_for_the_volume():
     assert len(first) >= 43
 
 
+def test_pairing_code_stays_on_the_volume_and_opens_whatsapp():
+    spec_wa = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_code", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    whatsapp = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(whatsapp)
+    previous = os.environ.get("HERMES_HOME")
+    with tempfile.TemporaryDirectory() as home:
+        os.environ["HERMES_HOME"] = home
+        try:
+            first = whatsapp._pairing_code()
+            second = whatsapp._pairing_code()
+            text = whatsapp.pairing_message(first)
+        finally:
+            if previous is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous
+    assert first == second
+    assert len(first) == 6 and first.isdigit()
+    assert f"https://wa.me/553798136141?text={first}" in text
+
+
 def test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp():
     Adapter = _adapter()
     quiet.silence(Adapter)
@@ -355,6 +378,9 @@ def test_whatsapp_turn_stays_in_the_session():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert "history" in module._prompt("wamid.1")
+    first = module._prompt("wamid.1", first=True)
+    assert "first-contact" in first
+    assert "Do not greet again" not in first
 
 
 def test_whatsapp_reply_stays_off_imessage():
@@ -636,6 +662,7 @@ if __name__ == "__main__":
     test_whatsapp_poll_starts_when_the_line_connects()
     test_whatsapp_credits_follow_the_inbound_and_imessage_stays_on_imessage()
     test_agent_secret_is_stable_for_the_volume()
+    test_pairing_code_stays_on_the_volume_and_opens_whatsapp()
     test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp()
     test_imessage_quote_field_does_not_reach_plow()
     test_whatsapp_turn_stays_in_the_session()

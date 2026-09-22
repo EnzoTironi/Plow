@@ -4,9 +4,10 @@ import { page } from "./page.js";
 const TEXT_LIMIT = 4096;
 const QUEUE_LIMIT = 40;
 const HOLD_MS = 2 * 60 * 60 * 1000;
+const SETUP_COOLDOWN_MS = 15 * 60 * 1000;
 export const SETUP_URL = "https://auth.tryzoen.com/whatsapp/start";
 
-const SETUP_BODY = "pra gente começar a conversar, preciso de uma confirmação de dois fatores. o botão manda um sms pra confirmar o seu telefone. assim que você enviar, eu respondo aqui";
+const SETUP_BODY = "pra gente começar a conversar, preciso de uma confirmação de dois fatores. o botão manda um sms pra confirmar o seu telefone. quando a linha existir, eu te mando um código no imessage. você envia esse código aqui. pode levar alguns minutinhos";
 
 export function setupMessage(target, url = SETUP_URL) {
   const body = {
@@ -353,11 +354,13 @@ async function registerAgent(request, env) {
       claim: String(body?.claim || ""),
       agent,
       secretHash,
+      code: pairingCode(body?.code),
       hash: await digest(session),
     }),
   });
   const data = await bound.json();
   await remember(env, { stage: "bind", status: bound.status, error: data.error || "" });
+  if (data.waiting) return response({ ok: true, waiting: true });
   if (!bound.ok) return response(data, bound.status);
   if (data.fresh) await deliver(env, kapsoBody({ to: data.phone }, "pode falar. eu tô aqui."));
   return response({ ok: true, token: session });
@@ -521,7 +524,19 @@ async function deliver(env, payload) {
 }
 
 function emptyBox() {
-  return { seen: [], pending: {}, bindings: {}, queues: {} };
+  return { seen: [], pending: {}, bindings: {}, queues: {}, codes: {}, heard: {} };
+}
+
+function pairingCode(value) {
+  const code = String(value || "").trim();
+  return /^\d{6}$/.test(code) ? code : "";
+}
+
+function phoneThatSent(box, code) {
+  for (const phone of Object.keys(box.queues || {})) {
+    if ((box.queues[phone] || []).some((item) => pairingCode(item.text) === code)) return phone;
+  }
+  return "";
 }
 
 export class WhatsAppInbox {
@@ -562,12 +577,17 @@ export class WhatsAppInbox {
         queue.push({ ...message, at: now });
         box.queues[phone] = queue.filter((item) => item.at > now - HOLD_MS).slice(-QUEUE_LIMIT);
       }
+      const code = pairingCode(message.text);
+      if (code && box.codes[code]) box.heard[code] = phone;
       if (box.bindings[phone]) continue;
       const pending = asPending(box.pending[phone]);
       if (!pending.claim) pending.claim = claimToken();
-      pending.at = now;
+      const due = !pending.at || now - pending.at >= SETUP_COOLDOWN_MS;
+      if (due) {
+        pending.at = now;
+        setups.push({ phone, claim: pending.claim });
+      }
       box.pending[phone] = pending;
-      setups.push({ phone, claim: pending.claim });
     }
     if (body.key) box.seen = [...box.seen, body.key].slice(-500);
     await this.ctx.storage.put("box", box);
@@ -595,32 +615,26 @@ export class WhatsAppInbox {
   }
 
   async bind(box, body) {
-    const requested = digits(body.phone);
-    const claim = String(body.claim || "");
     const agent = String(body.agent || "");
     const hash = String(body.hash || "");
+    const code = pairingCode(body.code);
     if (!/^[a-f0-9]{64}$/.test(hash)) return response({ error: "unauthorized" }, 403);
+    const owned = Object.keys(box.bindings).filter((key) => box.bindings[key].agent === agent);
+    if (owned.length > 1) return response({ error: "ambiguous" }, 409);
     let phone = "";
-    if (claim) {
-      phone = Object.keys(box.pending).find((key) => asPending(box.pending[key]).claim === claim) || "";
-      if (!phone) return response({ error: "not_waiting" }, 404);
-    } else if (requested) {
-      phone = Object.keys(box.pending).find((key) => samePhone(key, requested))
-        || Object.keys(box.bindings).find((key) => samePhone(key, requested))
-        || "";
-      if (!phone) return response({ error: "phone_mismatch" }, 403);
-    } else {
-      const owned = Object.keys(box.bindings).filter((key) => box.bindings[key].agent === agent);
-      if (owned.length > 1) return response({ error: "ambiguous" }, 409);
-      if (owned.length === 1) {
-        phone = owned[0];
-      } else {
-        const confirmed = Object.keys(box.pending).filter((key) => asPending(box.pending[key]).confirmed);
-        const pool = confirmed.length ? confirmed : Object.keys(box.pending);
-        if (pool.length === 0) return response({ error: "not_waiting" }, 404);
-        if (pool.length > 1) return response({ error: "ambiguous" }, 409);
-        phone = pool[0];
+    if (owned.length === 1) {
+      phone = owned[0];
+    } else if (code) {
+      const existing = box.codes[code];
+      if (existing && existing.agent !== agent) return response({ error: "code_taken" }, 409);
+      box.codes[code] = { agent, secretHash: String(body.secretHash || ""), at: Date.now() };
+      phone = box.heard[code] || phoneThatSent(box, code);
+      if (!phone) {
+        await this.ctx.storage.put("box", box);
+        return response({ waiting: true });
       }
+    } else {
+      return response({ error: "not_waiting" }, 404);
     }
     const current = box.bindings[phone];
     const secretHash = String(body.secretHash || "");
@@ -662,6 +676,15 @@ export class WhatsAppInbox {
   async release(box, hash) {
     const phone = phoneFor(box, hash);
     if (!phone) return response({ error: "unauthorized" }, 403);
+    const agent = box.bindings[phone]?.agent || "";
+    if (agent) {
+      for (const code of Object.keys(box.codes)) {
+        if (box.codes[code].agent === agent) delete box.codes[code];
+      }
+    }
+    for (const code of Object.keys(box.heard)) {
+      if (samePhone(box.heard[code], phone)) delete box.heard[code];
+    }
     for (const key of Object.keys(box.bindings)) {
       if (samePhone(key, phone)) delete box.bindings[key];
     }
@@ -697,8 +720,13 @@ export class WhatsAppInbox {
 
 function normalize(box, now) {
   if (!box || !box.queues || !box.bindings || !box.pending) box = emptyBox();
+  if (!box.codes) box.codes = {};
+  if (!box.heard) box.heard = {};
   for (const phone of Object.keys(box.queues)) {
     box.queues[phone] = box.queues[phone].filter((item) => item.at > now - HOLD_MS);
+  }
+  for (const code of Object.keys(box.codes)) {
+    if ((box.codes[code]?.at || 0) <= now - HOLD_MS) delete box.codes[code];
   }
   return box;
 }
