@@ -1085,10 +1085,36 @@ def test_whatsapp_omitted_reply_does_not_quote():
         quiet.WHATSAPP.reset(token)
         quiet.WHATSAPP_DELIVER = None
     assert result["success"] is True
-    assert sent == [
-        "oi",
-        {"text": "sobre aquilo", "reply_to": "wamid.explicit"},
-    ]
+    assert sent == ["oi", "sobre aquilo"]
+
+
+def test_whatsapp_stops_after_four_text_bubbles():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    sent = []
+
+    async def deliver(payload):
+        sent.append(payload)
+        return True
+
+    quiet.WHATSAPP_DELIVER = deliver
+    target = {"to": "5511999999999", "message_id": "wamid.1"}
+    token = quiet.WHATSAPP.set(target)
+    try:
+        first = asyncio.run(box.send_sequence({"items": [
+            {"type": "text", "body": "um\ndois\ntrês\nquatro\ncinco"},
+        ]}, {"chat_uid": "cht_x"}))
+        second = asyncio.run(box.send_sequence({"items": [
+            {"type": "text", "body": "já te contei ali em cima"},
+        ]}, {"chat_uid": "cht_x"}))
+    finally:
+        quiet.WHATSAPP.reset(token)
+        quiet.WHATSAPP_DELIVER = None
+    assert first["success"] is True
+    assert second["success"] is True
+    assert sent == ["um", "dois", "três", "quatro"]
+    assert second["completed"] == []
 
 
 def test_whatsapp_quotes_the_bubble_they_pointed_at():
@@ -1194,6 +1220,7 @@ def test_whatsapp_turn_stays_in_the_session():
     assert "</reply_to>" in prompt
     assert "<delivery>" in prompt
     assert "Never tell them you already sent something" in prompt
+    assert "two or three concrete jobs" not in prompt
     assert "Answer from that history" not in prompt
     assert "reaction.emoji" in prompt
     assert "context.message_id" in prompt
@@ -1457,8 +1484,7 @@ def test_seed_soul_is_zoen_not_a_plow_assistant():
     soul = (ROOT / "runtime" / "SOUL.md").read_text()
     persona = (ROOT / "runtime" / "persona.md").read_text()
     assert soul.lstrip().startswith("# Zoen")
-    assert persona.lstrip().startswith("# Who you are")
-    assert soul.split("\n", 1)[1] == persona.split("\n", 1)[1]
+    assert persona.strip() == ""
     assert "You are **Zoen**" in soul
     assert "https://tryzoen.com" in soul
     assert "add you to an iMessage group" in soul
@@ -1466,12 +1492,14 @@ def test_seed_soul_is_zoen_not_a_plow_assistant():
     assert "mention /help" in soul.lower()
     assert "zoen_connections" in soul
     assert "zoen_imessage" in soul
-    assert "Anything you make for them is shown in this chat" in persona
+    assert "Anything you make for them is shown in this chat" in soul
     assert "catalog" in soul
+    assert "<person>" in soul
+    assert "two or three concrete jobs" not in soul
 
 
 def test_persona_route_index_names_playbooks_and_skills():
-    persona = (ROOT / "runtime" / "persona.md").read_text()
+    persona = (ROOT / "runtime" / "SOUL.md").read_text()
     assert "# Route" in persona
     for needle in (
         "context.py dump",

@@ -20,22 +20,20 @@ REPO_OVERLAY = Path(__file__).resolve().parents[1] / "runtime/config.yaml"
 LIVE = Path(os.environ.get("HERMES_HOME", "/var/lib/hermes")) / "config.yaml"
 BUNDLED_SKILL = Path("/opt/hermes/skills/zoen")
 BUNDLED_SCRIPTS = Path("/opt/hermes/skills/zoen/scripts")
-SONNET = "anthropic/claude-sonnet-5"
 LUNA = "openai/gpt-5.6-luna"
-ALLOWED_MODELS = {SONNET, LUNA}
+ALLOWED_MODELS = {LUNA}
 MODELS = {
     "model": {
-        "default": SONNET,
+        "default": LUNA,
         "provider": "plow",
     },
     "fallback_model": {
         "provider": "plow",
-        "model": SONNET,
+        "model": LUNA,
     },
     "providers": {
         "plow": {
             "models": {
-                SONNET: {},
                 LUNA: {},
             }
         }
@@ -43,7 +41,7 @@ MODELS = {
     "auxiliary": {
         "vision": {
             "provider": "plow",
-            "model": SONNET,
+            "model": LUNA,
         }
     },
     "delegation": {

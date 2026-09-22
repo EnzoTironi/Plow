@@ -101,8 +101,9 @@ RUN set -eu; \
     chmod 0755 /usr/local/bin/cloudflared; \
     cloudflared --version
 
-# plow-init composes $HOME/SOUL.md every boot from this base plus persona.md.
-# Replace the Plow-assistant seed. Copying only $HOME/SOUL.md does not stick.
+# plow-init writes $HOME/SOUL.md from this file plus persona.md on every boot.
+# Hermes injects that one file and truncates it past 20k characters. persona.md
+# stays empty so the identity is not sent twice and the middle is not cut.
 COPY runtime/SOUL.md /opt/hermes/plow-seed/SOUL.md
 COPY runtime/persona.md /opt/hermes/plow-seed/persona.md
 COPY runtime/bootstrap.md /opt/hermes/plow-seed/bootstrap.md

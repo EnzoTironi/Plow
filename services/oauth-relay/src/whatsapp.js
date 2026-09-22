@@ -4,6 +4,7 @@ import { page } from "./page.js";
 const TEXT_LIMIT = 4096;
 const QUEUE_LIMIT = 40;
 const HOLD_MS = 2 * 60 * 60 * 1000;
+const ECHO_MS = 3 * 60 * 1000;
 const SETUP_COOLDOWN_MS = 15 * 60 * 1000;
 export const SETUP_URL = "https://auth.tryzoen.com/whatsapp/start";
 
@@ -61,6 +62,26 @@ export function forgetKey(phone, stamp) {
 function digits(value) {
   const phone = String(value || "").replace(/\D/g, "");
   return phone.length >= 8 && phone.length <= 15 ? phone : "";
+}
+
+export function spokenLine(value) {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+export function rememberOutbound(box, phone, text, now) {
+  const line = spokenLine(text);
+  const target = digits(phone);
+  if (!target || line.length < 8) return;
+  const sent = Array.isArray(box.sent) ? box.sent : [];
+  sent.push({ phone: target, text: line, at: now });
+  box.sent = sent.filter((item) => item.at > now - ECHO_MS).slice(-80);
+}
+
+export function outboundEcho(box, phone, text, now) {
+  const line = spokenLine(text);
+  const target = digits(phone);
+  if (!target || line.length < 8) return false;
+  return (box.sent || []).some((item) => item.at > now - ECHO_MS && samePhone(item.phone, target) && item.text === line);
 }
 
 // WhatsApp still sends some Brazilian mobiles without the extra 9.
@@ -513,6 +534,12 @@ async function sendWhatsapp(request, env, inbox, headers) {
     payload = text ? kapsoBody(target, text, body.reply_to) : null;
   }
   if (!payload) return response({ error: "invalid_message" }, 400);
+  if (to && body.text && body.typing !== true && !body.reaction && !body.media) {
+    await inbox.fetch("https://whatsapp/sent", {
+      method: "POST",
+      body: JSON.stringify({ phone: to, text: String(body.text) }),
+    });
+  }
   if (!await deliver(env, payload)) return response({ error: "whatsapp_send_failed" }, 502);
   return response({ ok: true });
 }
@@ -599,6 +626,7 @@ export class WhatsAppInbox {
       if (path === "/confirm") return this.confirm(box, await request.json());
       if (path === "/bind") return this.bind(box, await request.json());
       if (path === "/note" && request.method === "POST") return this.note(box, await request.json());
+      if (path === "/sent" && request.method === "POST") return this.rememberSent(box, await request.json());
       if (path === "/diag" && request.method === "GET") return this.diag(box);
       if (path === "/allow") return this.allow(box, request.headers.get("X-Secret-Hash"), await request.json());
       if (path === "/release" && request.method === "POST") return this.release(box, request.headers.get("X-Secret-Hash"));
@@ -619,6 +647,7 @@ export class WhatsAppInbox {
     for (const message of body.messages || []) {
       const phone = message?.to;
       if (!phone) continue;
+      if (outboundEcho(box, phone, message.text, now)) continue;
       const queue = box.queues[phone] || [];
       if (!queue.some((item) => item.id === message.id)) {
         queue.push({ ...message, at: now });
@@ -698,6 +727,12 @@ export class WhatsAppInbox {
     delete box.pending[phone];
     await this.ctx.storage.put("box", box);
     return response({ ok: true, fresh: !current, phone });
+  }
+
+  async rememberSent(box, body) {
+    rememberOutbound(box, body?.phone, body?.text, Date.now());
+    await this.ctx.storage.put("box", box);
+    return response({ ok: true });
   }
 
   async note(box, body) {
@@ -782,6 +817,8 @@ function normalize(box, now) {
   if (!box || !box.queues || !box.bindings || !box.pending) box = emptyBox();
   if (!box.codes) box.codes = {};
   if (!box.heard) box.heard = {};
+  if (!Array.isArray(box.sent)) box.sent = [];
+  box.sent = box.sent.filter((item) => item && item.at > now - ECHO_MS);
   for (const phone of Object.keys(box.queues)) {
     box.queues[phone] = box.queues[phone].filter((item) => item.at > now - HOLD_MS);
   }

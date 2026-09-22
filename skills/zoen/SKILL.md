@@ -58,7 +58,11 @@ same tool. `purpose: "progress"` never completes the request.
    did not send it. Then read `context.py dump` privately, load the relevant
    skill, and do the work. The latest human message is the request. No second
    empty acknowledgement. Never tell them you already sent something or already
-   said something.
+   said something. Your own bubbles are not a new request. If they ask what you
+   can do, you barely know them. Who they are, what they do, and what is hard
+   today is the picture. Gmail, a LinkedIn, or them telling you can start it.
+   `playbooks/index.md`, the skills, and research are background for flows that
+   would fit this person. Fit the reply to what you already know.
 
 A closer attached to a real request still gets the work. At each step, send one
 short `zoen_imessage` with `purpose: "progress"` before you move on. The last

@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import sys
+import time
 import urllib.request
 from contextlib import nullcontext
 from pathlib import Path
@@ -264,7 +265,9 @@ def configure_contract(module):
         "not complete the request. On an owner message, the first action is the tapback, "
         "before any other tool, lookup, or bubble. Then one short purpose=progress "
         "bubble, then the rest. "
-        "At each later step, send another short purpose=progress bubble before you move on. "
+        "At each later step of real work, send another short purpose=progress bubble before you move on. "
+        "A question you can answer without a tool does not get those updates. "
+        "Stop after the answer. Do not answer or quote your own bubbles. "
         "The last message is purpose=answer. "
         "Skip the tapback only when this turn's note says it was already sent. "
         "Internal events do not need an opening and do not set language. "
@@ -592,6 +595,52 @@ def _whatsapp_failure(index, error):
 
 
 _BUBBLE_PACE = (0.4, 0.55)
+_TEXT_CAP = 4
+_OUTBOUND_WINDOW = 180.0
+_RECENT_OUTBOUND: list[tuple[float, str]] = []
+
+
+def _norm_line(text: str) -> str:
+    return " ".join(str(text or "").split())
+
+
+def _remember_outbound(text: str) -> None:
+    line = _norm_line(text)
+    if len(line) < 8:
+        return
+    now = time.monotonic()
+    _RECENT_OUTBOUND.append((now, line))
+    del _RECENT_OUTBOUND[:-40]
+
+
+def outbound_echo(text: str) -> bool:
+    """A bubble we just sent coming back as if they typed it."""
+    line = _norm_line(text)
+    if len(line) < 8:
+        return False
+    now = time.monotonic()
+    return any(now - at < _OUTBOUND_WINDOW and sent == line for at, sent in _RECENT_OUTBOUND)
+
+
+def _quote_allowed(reply, target) -> str:
+    """Quote the human bubble this turn is about. A bubble we sent is not one of those."""
+    quote = _wamid(reply)
+    if not quote or not isinstance(target, dict):
+        return ""
+    allowed = {_wamid(target.get("message_id")), _wamid(target.get("reply_to"))}
+    allowed.discard("")
+    return quote if quote in allowed else ""
+
+
+def _count_text(target) -> bool:
+    """Four text bubbles is the turn. More is the model talking to itself."""
+    if not isinstance(target, dict):
+        return True
+    sent = int(target.get("zoen_text_bubbles") or 0)
+    if sent >= _TEXT_CAP:
+        return False
+    target["zoen_text_bubbles"] = sent + 1
+    return True
 
 
 def _text_bubbles(body: str) -> list[str]:
@@ -614,7 +663,7 @@ async def _deliver_whatsapp(items, target=None):
             continue
         if kind != "text":
             return _whatsapp_failure(index, "whatsapp item invalid")
-        reply = _wamid(item.get("reply_to"))
+        reply = _quote_allowed(item.get("reply_to"), target)
         tagged = tagged_paths(item)
         if tagged:
             for tag, path in tagged:
@@ -629,10 +678,13 @@ async def _deliver_whatsapp(items, target=None):
         if not lines or WHATSAPP_DELIVER is None:
             return _whatsapp_failure(index, "whatsapp text missing")
         for offset, line in enumerate(lines):
+            if not _count_text(target):
+                return {"success": True, "completed": completed}
             if offset:
                 await asyncio.sleep(_BUBBLE_PACE[pace % 2])
                 pace += 1
             text = line[:4096]
+            _remember_outbound(text)
             payload = {"text": text, "reply_to": reply} if reply else text
             if not await WHATSAPP_DELIVER(payload):
                 return {"success": False, "completed": completed, "failure": {"index": index, "status": "rejected", "retryable": False, "error": "not sent. do not resend a bubble that already landed. do not explain the delivery. any replacement is one bubble in their language"}}

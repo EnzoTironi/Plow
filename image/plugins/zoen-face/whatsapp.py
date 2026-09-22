@@ -115,14 +115,16 @@ def _prompt(message_id: str, *, first: bool = False, pairing: bool = False, quot
         "WhatsApp has no reception agent. Nothing has been sent for this bubble. "
         "The first action is the tapback, before any other tool, lookup, or bubble: "
         f"python3 /opt/plow/zoen/react.py TYPE --message {message_id}. "
-        "Then one short zoen_imessage with purpose progress about this inbound. "
-        "Then the rest of the work. "
+        "If they asked what you can do, answer that question. No progress line. Then stop. "
+        "Otherwise one short zoen_imessage with purpose progress about this inbound, then the work. "
         "TYPE is like, love, laugh, emphasize, question, or dislike. "
         "The relay turns that into Kapso's reaction body: reaction.message_id and reaction.emoji. "
         "The tapback does not wait on skill kapso. Read that skill before a voice note or contact card. Do not call Kapso. "
         "An uncertain send already counts. Do not send that bubble again and do not explain the delivery. "
-        "At each later step, send another short zoen_imessage with purpose progress "
-        "before you move on. Say what you are doing for them, in their words. "
+        "Do not send another bubble after the answer. "
+        "Do not answer your own bubbles. Do not quote a bubble you sent. "
+        "Never tell them you already sent something or already said something. "
+        "No já te falei, já te contei, I already told you, as I said, or like I sent. "
         "The last message of the turn is the result, with purpose answer. "
         "The only way they see a reply is zoen_imessage. "
         "This inbound arrived on WhatsApp, so this reply is delivered on WhatsApp. "
@@ -1342,6 +1344,8 @@ async def _accept(adapter_cls, module, message, base, pairing: bool = False) -> 
         text = await _hear(text, media_urls, media_types)
     if not text:
         return False
+    if _QUIET is not None and _QUIET.outbound_echo(text):
+        return True
     await live._refresh_current_chat(chat_uid)
     chat = await live.get_chat_info(chat_uid)
     authority, _recall = module._authority(chat, True, human=True)

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inboundMessages } from "../src/whatsapp.js";
+import { inboundMessages, outboundEcho, rememberOutbound } from "../src/whatsapp.js";
 
 test("a voice transcript object is the spoken text", () => {
   const messages = inboundMessages("whatsapp.message.received", {
@@ -33,4 +33,13 @@ test("an empty transcript object does not become object Object", () => {
   });
   assert.equal(messages[0].text, "");
   assert.equal(messages[0].media_id, "media-voice");
+});
+
+test("a bubble we just sent is not a new inbound", () => {
+  const box = { sent: [] };
+  const now = 1_000_000;
+  rememberOutbound(box, "5537999827561", "oi, sou o zoen", now);
+  assert.equal(outboundEcho(box, "5537999827561", "oi, sou o zoen", now + 1000), true);
+  assert.equal(outboundEcho(box, "5537999827561", "o que vc consegue fazer por mim?", now + 1000), false);
+  assert.equal(outboundEcho(box, "5511999999999", "oi, sou o zoen", now + 1000), false);
 });
