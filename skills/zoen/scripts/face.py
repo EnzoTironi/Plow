@@ -76,6 +76,150 @@ _RETIRED_HELLO = (
 )
 
 
+_OPENERS = frozenset({
+    "oi", "oii", "oie", "olá", "ola", "hey", "hi", "hello", "eai", "e ai", "e aí",
+    "fala", "salve", "opa", "yo", "bom dia", "boa tarde", "boa noite",
+    "tudo bem", "tudo bom", "td bem",
+})
+
+
+def normalized_line(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower()).rstrip(".!?,")
+
+
+def real_request(text: str) -> bool:
+    """A first message that already asks for work. A hello or the Index phrase does not."""
+    spoken = (text or "").strip()
+    if not spoken or spoken.startswith("/"):
+        return False
+    if re.fullmatch(r"\d{6}", spoken):
+        return False
+    folded = normalized_line(spoken)
+    if folded in _OPENERS:
+        return False
+    if "agent-index/" in folded or folded.startswith("set this up for me"):
+        return False
+    return True
+
+
+def _inbound_bodies(history: Any) -> list[str]:
+    bodies = []
+    for item in newest_rows(history):
+        if str(item.get("direction") or "inbound") == "outbound" or is_noise_row(item):
+            continue
+        body = str(item.get("body") or "").strip()
+        if body:
+            bodies.append(body)
+    return bodies
+
+
+def earlier_owner_messages(event: Any, http: Http | None = None) -> int:
+    """Owner texts already in the chat before this one. Zero when this is the first."""
+    try:
+        history = chat_history(event, http)
+    except (SystemExit, OSError, TypeError, ValueError, KeyError):
+        return 0
+    if not history:
+        return 0
+    current = normalized_line(spoken_text(event) or str(getattr(event, "text", None) or ""))
+    bodies = _inbound_bodies(history)
+    if not bodies:
+        return 0
+    if current and normalized_line(bodies[0]) == current:
+        return max(0, len(bodies) - 1)
+    return len(bodies)
+
+
+def greeting_due(event: Any, http: Http | None = None) -> bool:
+    """Greet on a real first request, on the second message, or when the WhatsApp code arrives."""
+    if getattr(event, "zoen_pairing_code", False):
+        return True
+    text = spoken_text(event) or str(getattr(event, "text", None) or "")
+    if real_request(text):
+        return True
+    return earlier_owner_messages(event, http) >= 1
+
+
+_LANG_NAMES = {
+    "pt": "Portuguese",
+    "en": "English",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "nl": "Dutch",
+    "ja": "Japanese",
+    "zh": "Chinese",
+    "ar": "Arabic",
+}
+
+
+def _index_phrase(text: str) -> bool:
+    folded = normalized_line(text)
+    return "agent-index/" in folded or folded.startswith("set this up for me")
+
+
+def language_path(home: str | None = None) -> Path | None:
+    root = (home or os.environ.get("HERMES_HOME") or "").strip()
+    if not root:
+        return None
+    return Path(root) / "zoen" / "language"
+
+
+def saved_language(home: str | None = None) -> str:
+    path = language_path(home)
+    if path is None or not path.is_file():
+        return ""
+    token = path.read_text(encoding="utf-8").strip().split()
+    if not token or not token[0][:2].isalpha():
+        return ""
+    return token[0][:2].lower()
+
+
+def confident_language(text: str) -> str:
+    """lang.detect_language, kept only when the words themselves decide. A code does not."""
+    spoken = (text or "").strip()
+    if not spoken or _index_phrase(spoken) or re.fullmatch(r"\d{6}", spoken):
+        return ""
+    if sum(ch.isalpha() for ch in spoken) < 2:
+        return ""
+    plain = detect_language(spoken)
+    if plain != detect_language(spoken, prior="pt") or plain != detect_language(spoken, prior="en"):
+        return ""
+    return plain if plain in _LANG_NAMES else ""
+
+
+def remember_language(text: str, home: str | None = None) -> str:
+    """Keep the first confident language. The pairing code must not replace it."""
+    current = saved_language(home)
+    if current:
+        return current
+    lang = confident_language(text)
+    path = language_path(home)
+    if not lang or path is None:
+        return lang
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(lang + "\n", encoding="utf-8")
+    return lang
+
+
+def resolve_language(event: Any, http: Http | None = None) -> str:
+    """Language for the WhatsApp code reply: saved words, then earlier messages via lang.py."""
+    saved = saved_language() or (voice_language() or "")
+    if saved:
+        return saved
+    try:
+        history = chat_history(event, http)
+    except (SystemExit, OSError, TypeError, ValueError, KeyError):
+        history = None
+    for body in _inbound_bodies(history):
+        lang = confident_language(body)
+        if lang:
+            remember_language(body)
+            return lang
+    return ""
+
+
 def saved_pairing_code() -> str:
     """The code this volume already claimed. Empty until WhatsApp pairing writes it."""
     root = (os.environ.get("HERMES_HOME") or "").strip()
@@ -88,14 +232,30 @@ def saved_pairing_code() -> str:
     return code if re.fullmatch(r"\d{6}", code) else ""
 
 
-def first_contact_prompt(whatsapp: bool = False, *, offer_whatsapp: bool | None = None) -> str:
+def first_contact_prompt(
+    whatsapp: bool = False,
+    *,
+    offer_whatsapp: bool | None = None,
+    language: str = "",
+) -> str:
     if whatsapp:
+        named = _LANG_NAMES.get(language, "")
+        tongue = ""
+        if named:
+            tongue = (
+                f"Their language is {named} ({language}). "
+                "The pairing code is not a language signal. "
+                f"Write every bubble in {named}. "
+                f"Write VOICE.md with language: {language}. "
+            )
         return (
             "\n[Zoen first contact]\n"
             "VOICE.md is missing. They just linked WhatsApp. Answer them "
             "normally via zoen_imessage, which delivers on WhatsApp, in "
             "their language, like @tryZoen: short stacked thoughts, slightly "
-            "lowercase, dry, a little witty. This turn they need to know: you "
+            "lowercase, dry, a little witty. "
+            + tongue
+            + "This turn they need to know: you "
             "are Zoen, the little monster that makes their dreams happen; "
             "Enzo made you; you can connect their apps — more than a "
             "thousand connections and MCPs — wherever they need. How you "
@@ -1134,14 +1294,6 @@ def greet_on_dispatch(
         return {"action": "skip", "reason": "plow setup"}
     if is_group(event):
         return group_on_dispatch(event, http=http)
-    if getattr(event, "zoen_pairing_code", False):
-        event.channel_prompt = (
-            (getattr(event, "channel_prompt", "") or "")
-            + first_contact_prompt(whatsapp=False, offer_whatsapp=False)
-            + "\nTheir message is only the pairing code that linked WhatsApp. "
-            "Do not repeat the code. "
-        )
-        return {"action": "allow", "reason": "zoen onboarding"}
     live = voice_exists() if voiced is None else voiced
     if not live and already_introduced(event, http):
         stamp_voice("pt")
@@ -1151,9 +1303,21 @@ def greet_on_dispatch(
     text = spoken_text(event) or str(getattr(event, "text", None) or "").strip()
     if not text or text.startswith("/"):
         return {"action": "allow"}
-    event.channel_prompt = (getattr(event, "channel_prompt", "") or "") + first_contact_prompt(
-        whatsapp=bool(getattr(event, "zoen_whatsapp", None))
+    if not getattr(event, "zoen_pairing_code", False):
+        remember_language(text)
+    if not greeting_due(event, http):
+        return {"action": "skip", "reason": "prebuilt hello"}
+    whatsapp = bool(getattr(event, "zoen_whatsapp", None) or getattr(event, "zoen_pairing_code", False))
+    language = resolve_language(event, http) if whatsapp else ""
+    note = first_contact_prompt(
+        whatsapp=whatsapp, offer_whatsapp=not whatsapp, language=language,
     )
+    if getattr(event, "zoen_pairing_code", False):
+        note += (
+            "\nTheir message is only the pairing code that linked WhatsApp. "
+            "Do not repeat the code. "
+        )
+    event.channel_prompt = (getattr(event, "channel_prompt", "") or "") + note
     return {"action": "allow", "reason": "zoen onboarding"}
 
 

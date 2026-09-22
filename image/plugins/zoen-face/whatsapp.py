@@ -536,9 +536,7 @@ async def _announce_code(agent: str, chat: str, code: str) -> None:
         return
     sent = False
     try:
-        for index, bubble in enumerate(pairing_bubbles(code)):
-            if index:
-                await asyncio.sleep(0.4)
+        for bubble in pairing_bubbles(code):
             await _request(
                 "POST",
                 f"{api}/v1/chats/{quote(chat, safe='')}/messages",
@@ -662,7 +660,9 @@ async def _push_pairing(agent: str, me: dict) -> None:
     """Text the code into the onboarding chat, the same send a normal reply uses."""
     _release_previous_install(_agent_uid(me))
     code = _pairing_code()
-    histories = {uid: await _chat_history(agent, uid) for uid in pairing_chat_uids(me)}
+    uids = pairing_chat_uids(me)
+    loaded = await asyncio.gather(*(_chat_history(agent, uid) for uid in uids))
+    histories = dict(zip(uids, loaded))
     targets = activation_chat_uids(me, histories)
     await _announce_chats(agent, targets or ([_HOME] if _HOME else []), code)
     if targets:

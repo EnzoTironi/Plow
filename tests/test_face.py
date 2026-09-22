@@ -448,21 +448,35 @@ def test_dispatch_asks_the_model_to_onboard():
         assert face.HELLO["en"][0] not in prompt
 
 
-def test_imessage_intro_offers_whatsapp_with_the_saved_code():
+def test_first_imessage_opener_keeps_the_prebuilt_bubbles_and_the_language():
     previous = os.environ.get("HERMES_HOME")
     event = Event("oi")
     with tempfile.TemporaryDirectory() as home:
         os.environ["HERMES_HOME"] = home
-        code_path = Path(home) / "zoen" / "whatsapp.code"
-        code_path.parent.mkdir(parents=True)
-        code_path.write_text("142857\n", encoding="utf-8")
         try:
             action = face.greet_on_dispatch(event, voiced=False, send=no_intro)
+            saved = (Path(home) / "zoen" / "language").read_text(encoding="utf-8").strip()
         finally:
             if previous is None:
                 os.environ.pop("HERMES_HOME", None)
             else:
                 os.environ["HERMES_HOME"] = previous
+    assert action == {"action": "skip", "reason": "prebuilt hello"}
+    assert "first contact" not in getattr(event, "channel_prompt", "")
+    assert saved == "pt"
+
+
+def test_second_imessage_message_greets_with_the_saved_code():
+    plow = FakePlow(history=said(
+        "boa noite",
+        {"direction": "inbound", "body": "Set this up for me: aiworthusing.com/agent-index/zoen"},
+    ))
+    event = Event("boa noite", source=Source())
+    with tempfile.TemporaryDirectory() as home, face_env(home=home):
+        code_path = Path(home) / "zoen" / "whatsapp.code"
+        code_path.parent.mkdir(parents=True)
+        code_path.write_text("142857\n", encoding="utf-8")
+        action = face.greet_on_dispatch(event, voiced=False, send=no_intro, http=plow.http)
     assert action == {"action": "allow", "reason": "zoen onboarding"}
     prompt = event.channel_prompt
     assert "face.py cards" in prompt
@@ -471,29 +485,58 @@ def test_imessage_intro_offers_whatsapp_with_the_saved_code():
     assert "wa.me" not in prompt
 
 
-def test_whatsapp_pairing_code_starts_the_imessage_onboarding():
-    event = Event("142857")
+def test_whatsapp_code_replies_in_the_language_already_identified():
+    plow = FakePlow(history=said(
+        "142857",
+        {"direction": "inbound", "body": "Oi, tudo bem? faz o CLI pra mim"},
+    ))
+    event = Event("142857", source=Source())
     event.zoen_whatsapp = {"to": "5511999999999", "message_id": "wamid.code"}
     event.zoen_pairing_code = True
-    action = face.greet_on_dispatch(event, voiced=True, send=no_intro)
+    with tempfile.TemporaryDirectory() as home, face_env(home=home):
+        action = face.greet_on_dispatch(event, voiced=False, send=no_intro, http=plow.http)
+        saved = (Path(home) / "zoen" / "language").read_text(encoding="utf-8").strip()
     assert action == {"action": "allow", "reason": "zoen onboarding"}
     prompt = event.channel_prompt
-    assert "face.py cards" in prompt
-    assert "Enzo made you" in prompt
+    assert "Portuguese (pt)" in prompt
+    assert "language: pt" in prompt
     assert "Do not repeat the code" in prompt
-    assert "Do not run face.py cards" not in prompt
+    assert "Do not run face.py cards" in prompt
+    assert "python3 /opt/plow/zoen/face.py cards" not in prompt
     assert "wa.me" not in prompt
+    assert saved == "pt"
+
+
+def test_whatsapp_code_replies_in_english_when_that_is_the_language():
+    plow = FakePlow(history=said(
+        "142857",
+        {"direction": "inbound", "body": "hey, what's going on with the login"},
+    ))
+    event = Event("142857", source=Source())
+    event.zoen_whatsapp = {"to": "15555550100", "message_id": "wamid.code"}
+    event.zoen_pairing_code = True
+    with tempfile.TemporaryDirectory() as home, face_env(home=home):
+        action = face.greet_on_dispatch(event, voiced=False, send=no_intro, http=plow.http)
+    assert action == {"action": "allow", "reason": "zoen onboarding"}
+    assert "English (en)" in event.channel_prompt
+    assert "language: en" in event.channel_prompt
 
 
 def test_whatsapp_first_contact_uses_the_same_idea_without_imessage_cards():
-    event = Event("oi")
+    plow = FakePlow(history=said(
+        "me mostra o desenho",
+        {"direction": "inbound", "body": "oi"},
+    ))
+    event = Event("me mostra o desenho", source=Source())
     event.zoen_whatsapp = {"to": "5511999999999", "message_id": "wamid.1"}
-    action = face.greet_on_dispatch(event, voiced=False, send=no_intro)
+    with tempfile.TemporaryDirectory() as home, face_env(home=home):
+        action = face.greet_on_dispatch(event, voiced=False, send=no_intro, http=plow.http)
     assert action == {"action": "allow", "reason": "zoen onboarding"}
     prompt = event.channel_prompt
     assert "Enzo made you" in prompt
     assert "thousand" in prompt
     assert "zoen_owner_profile" in prompt
+    assert "Portuguese (pt)" in prompt
     assert "Do not run face.py cards" in prompt
     assert "python3 /opt/plow/zoen/face.py cards" not in prompt
 
@@ -728,8 +771,10 @@ if __name__ == "__main__":
     test_account_token_reads_xdg_config_home_first()
     test_card_send_skips_if_zoen_vcf_already_went()
     test_dispatch_asks_the_model_to_onboard()
-    test_imessage_intro_offers_whatsapp_with_the_saved_code()
-    test_whatsapp_pairing_code_starts_the_imessage_onboarding()
+    test_first_imessage_opener_keeps_the_prebuilt_bubbles_and_the_language()
+    test_second_imessage_message_greets_with_the_saved_code()
+    test_whatsapp_code_replies_in_the_language_already_identified()
+    test_whatsapp_code_replies_in_english_when_that_is_the_language()
     test_whatsapp_first_contact_uses_the_same_idea_without_imessage_cards()
     test_dispatch_lets_the_model_run_after_first_run()
     test_dispatch_does_not_reopen_first_contact_when_chat_already_has_hello()
