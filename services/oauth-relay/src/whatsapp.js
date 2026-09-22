@@ -279,6 +279,11 @@ export async function whatsappRoute(request, env) {
     const inbox = env.WHATSAPP.get(env.WHATSAPP.idFromName("zoen"));
     return inbox.fetch("https://whatsapp/diag");
   }
+  if (url.pathname === "/whatsapp/reset" && request.method === "POST") {
+    if (!sameSecret(bearer(request), String(env.FORGET_ALL || ""))) return response({ error: "unauthorized" }, 403);
+    const inbox = env.WHATSAPP.get(env.WHATSAPP.idFromName("zoen"));
+    return inbox.fetch("https://whatsapp/reset", { method: "POST" });
+  }
   const token = bearer(request);
   if (!capability(token, 43)) return response({ error: "unauthorized" }, 403);
   const hash = await digest(token);
@@ -592,6 +597,7 @@ export class WhatsAppInbox {
       if (path === "/diag" && request.method === "GET") return this.diag(box);
       if (path === "/allow") return this.allow(box, request.headers.get("X-Secret-Hash"), await request.json());
       if (path === "/release" && request.method === "POST") return this.release(box, request.headers.get("X-Secret-Hash"));
+      if (path === "/reset" && request.method === "POST") return this.reset(box);
       const phone = phoneFor(box, request.headers.get("X-Secret-Hash"));
       if (!phone) return response({ error: "unauthorized" }, 403);
       if (path === "/" && request.method === "GET") {
@@ -709,6 +715,17 @@ export class WhatsAppInbox {
       queued,
       note: box.note || null,
     });
+  }
+
+  async reset(box) {
+    box.bindings = {};
+    box.pending = {};
+    box.queues = {};
+    box.codes = {};
+    box.heard = {};
+    box.seen = [];
+    await this.ctx.storage.put("box", box);
+    return response({ ok: true });
   }
 
   async release(box, hash) {

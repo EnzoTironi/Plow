@@ -19,6 +19,7 @@ before(async () => {
     "--var", "KAPSO_WEBHOOK_SECRET:fixture-hook", "--var", "WHATSAPP_POLL_TOKEN:fixture-poll-token-32",
     "--var", "KAPSO_API_KEY:fixture-key", "--var", "KAPSO_PHONE_NUMBER_ID:123456789012345",
     "--var", "FORGET_PHONE:5511900000001",
+    "--var", "FORGET_ALL:fixture-forget-all",
     "--var", "KAPSO_API_BASE:http://127.0.0.1:18791/__fixture/kapso/v24.0",
     "--var", "PLOW_API_BASE:http://127.0.0.1:18791/__fixture/plow", "--log-level", "error"],
   { stdio: ["ignore", "ignore", "pipe"], env: { ...globalThis.process.env, WRANGLER_SEND_METRICS: "false" } });
@@ -584,4 +585,30 @@ test("the configured phone is cleared once and every other number stays", async 
   assert.equal(again.pending, before.pending + 2);
   assert.equal(again.queued, before.queued + 2);
   assert.equal(again.bindings, before.bindings);
+});
+
+test("reset drops every registered number and a new one can start again", async () => {
+  const diag = async () => (await fetch(`${base}/whatsapp/diag`)).json();
+  const reset = (token) => fetch(`${base}/whatsapp/reset`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  assert.equal((await reset()).status, 403);
+  assert.equal((await reset("fixture-forget-nope")).status, 403);
+  const before = await diag();
+  assert.ok(before.bindings > 0 || before.pending > 0);
+  assert.equal((await reset("fixture-forget-all")).status, 200);
+  const cleared = await diag();
+  assert.deepEqual({ pending: cleared.pending, bindings: cleared.bindings, queued: cleared.queued }, {
+    pending: 0, bindings: 0, queued: 0,
+  });
+  const phone = "5511900000099";
+  assert.equal((await fetch(`${base}/whatsapp/webhook`, kapso(JSON.stringify({
+    message: { id: "wamid.reset", type: "text", from: phone, text: { body: "oi" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Novo", phone_number: phone },
+  }), "idem-after-reset"))).status, 200);
+  const started = await diag();
+  assert.equal(started.pending, 1);
+  assert.equal(started.bindings, 0);
+  assert.equal(started.queued, 1);
 });
