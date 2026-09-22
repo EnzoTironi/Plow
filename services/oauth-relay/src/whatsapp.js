@@ -7,7 +7,7 @@ const HOLD_MS = 2 * 60 * 60 * 1000;
 const SETUP_COOLDOWN_MS = 15 * 60 * 1000;
 export const SETUP_URL = "https://auth.tryzoen.com/whatsapp/start";
 
-const SETUP_BODY = "o botão manda um sms pra confirmar o seu telefone. o agente que responder esse sms é com quem você fala.\n\nmanda uma mensagem pra ele. aí eu te mando um código.\n\npode continuar conversando comigo por lá\n\nou voltar aqui no whatsapp e enviar esse código\n\npode levar alguns minutinhos";
+const SETUP_BODY = "pra gente começar a conversar\n\npreciso de uma confirmação de dois fatores para a sua segurança.\n\no botão manda um sms pra confirmar o seu telefone e te devolve um contato.\n\nenvie um Oi para o contato. você pode continuar conversando pelo iMessage/Google Messages\n\nou enviar o código aqui e continuar com segurança.";
 
 export function setupMessage(target, url = SETUP_URL) {
   const body = {
@@ -104,14 +104,28 @@ function attachment(message) {
   return null;
 }
 
+function asText(value, depth = 0) {
+  if (typeof value === "string") return value.trim();
+  if (!value || depth > 4) return "";
+  if (Array.isArray(value)) {
+    return value.map((item) => asText(item, depth + 1)).filter(Boolean).join(" ").trim();
+  }
+  if (typeof value !== "object") return "";
+  for (const key of ["text", "body", "transcript", "content"]) {
+    const nested = asText(value[key], depth + 1);
+    if (nested) return nested;
+  }
+  return "";
+}
+
 function oneMessage(item) {
   const message = item?.message;
   if (!message || typeof message !== "object") return null;
   if (message.kapso?.direction && message.kapso.direction !== "inbound") return null;
   const media = attachment(message);
   const caption = media ? message[media.kind]?.caption : "";
-  const explicit = message.text?.body || caption || message.kapso?.transcript || "";
-  const text = String(explicit || "").trim().slice(0, TEXT_LIMIT);
+  const explicit = asText(message.text?.body) || asText(caption) || asText(message.kapso?.transcript) || asText(message[media?.kind]?.transcript);
+  const text = explicit.slice(0, TEXT_LIMIT);
   if (!text && !media?.id) return null;
   const id = String(message.id || "").slice(0, 256);
   if (!id) return null;
@@ -119,7 +133,7 @@ function oneMessage(item) {
   const scoped = String(message.from_user_id || item.conversation?.business_scoped_user_id || "").slice(0, 128);
   if (!phone && !scoped) return null;
   const replyTo = String(message.context?.id || message.context?.message_id || "").slice(0, 256);
-  const replyText = String(message.kapso?.quoted_content || message.kapso?.quoted_body || "").trim().slice(0, 500);
+  const replyText = (asText(message.kapso?.quoted_content) || asText(message.kapso?.quoted_body)).slice(0, 500);
   return {
     id,
     text,
@@ -171,9 +185,20 @@ export function kapsoBody(target, text, replyTo = "") {
     messaging_product: "whatsapp",
     recipient_type: "individual",
     type: "text",
-    text: { body: text, preview_url: false },
+    text: { body: text, preview_url: /https?:\/\//.test(text) },
     ...targetFields(target),
   }, replyTo);
+}
+
+export function typingBody(messageId) {
+  const id = String(messageId || "").trim().slice(0, 256);
+  if (!id) return null;
+  return {
+    messaging_product: "whatsapp",
+    status: "read",
+    message_id: id,
+    typing_indicator: { type: "text" },
+  };
 }
 
 export function reactionBody(target, messageId, kind) {
@@ -454,7 +479,9 @@ async function sendWhatsapp(request, env, inbox, headers) {
   }
   const target = { to: to || null, recipient: recipient || null };
   let payload = null;
-  if (body.reaction && typeof body.reaction === "object") {
+  if (body.typing === true) {
+    payload = typingBody(body.message_id);
+  } else if (body.reaction && typeof body.reaction === "object") {
     payload = reactionBody(target, body.reaction.message_id, body.reaction.type);
   } else if (body.media && typeof body.media === "object") {
     const file = decodeMedia(body.media);

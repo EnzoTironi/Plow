@@ -217,12 +217,11 @@ test("the two-factor link is one clickable address that opens the setup SMS", as
   const html = await start.text();
   assert.match(html, /class="connection-page"/);
   assert.match(html, /class="brand"/);
-  assert.match(html, /Onde a gente continua/);
-  assert.match(html, /Esse botão manda um SMS e confirma o seu telefone/);
-  assert.match(html, /O agente que responder esse SMS é com quem você fala/);
-  assert.match(html, /Manda uma mensagem pra ele/);
-  assert.match(html, /Pode continuar conversando comigo por lá, ou voltar aqui no WhatsApp e enviar esse código/);
-  assert.match(html, /Pode levar alguns minutinhos/);
+  assert.match(html, /Confirmação de dois fatores/);
+  assert.match(html, /Esse botão manda um SMS pra confirmar o seu telefone e te devolve um contato/);
+  assert.match(html, /Envie um Oi para o contato/);
+  assert.match(html, /continuar conversando pelo iMessage\/Google Messages/);
+  assert.match(html, /enviar o código aqui e continuar com segurança/);
   assert.match(html, /class="button" href="sms:\+16282463032\?&amp;body=Set%20this%20up%20for%20me%3A%20aiworthusing.com%2Fagent-index%2Fzoen"/);
 });
 
@@ -237,11 +236,11 @@ test("the setup button waits fifteen minutes before it is sent again", async () 
   const posts = await (await fetch(`${base}/__fixture/kapso/posts`)).json();
   const buttons = posts.filter((post) => post?.to === phone && post?.type === "interactive");
   assert.equal(buttons.length, 1);
-  assert.match(buttons[0].interactive.body.text, /o agente que responder esse sms é com quem você fala/);
-  assert.match(buttons[0].interactive.body.text, /manda uma mensagem pra ele/);
-  assert.match(buttons[0].interactive.body.text, /pode continuar conversando comigo por lá/);
-  assert.match(buttons[0].interactive.body.text, /ou voltar aqui no whatsapp e enviar esse código/);
-  assert.match(buttons[0].interactive.body.text, /pode levar alguns minutinhos/);
+  assert.match(buttons[0].interactive.body.text, /confirmação de dois fatores para a sua segurança/);
+  assert.match(buttons[0].interactive.body.text, /te devolve um contato/);
+  assert.match(buttons[0].interactive.body.text, /envie um Oi para o contato/);
+  assert.match(buttons[0].interactive.body.text, /iMessage\/Google Messages/);
+  assert.match(buttons[0].interactive.body.text, /enviar o código aqui e continuar com segurança/);
 });
 
 test("a new WhatsApp number gets the setup SMS, then only its own agent", async () => {
@@ -461,6 +460,11 @@ test("a WhatsApp photo, quote and tapback stay on that chat", async () => {
     headers: auth,
     body: JSON.stringify({ to: "5511644444444", reaction: { type: "love", message_id: "wamid.photo" } }),
   })).status, 200);
+  assert.equal((await fetch(`${base}/whatsapp/send`, {
+    method: "POST",
+    headers: auth,
+    body: JSON.stringify({ to: "5511644444444", typing: true, message_id: "wamid.photo" }),
+  })).status, 200);
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString("base64");
   assert.equal((await fetch(`${base}/whatsapp/send`, {
     method: "POST",
@@ -474,9 +478,12 @@ test("a WhatsApp photo, quote and tapback stay on that chat", async () => {
   const posts = await (await fetch(`${base}/__fixture/kapso/posts`)).json();
   const quote = posts.find((post) => post?.context?.message_id === "wamid.photo" && post?.type === "text");
   const heart = posts.find((post) => post?.type === "reaction" && post?.to === "5511644444444");
+  const typing = posts.find((post) => post?.typing_indicator?.type === "text" && post?.message_id === "wamid.photo");
   const picture = posts.find((post) => post?.type === "image" && post?.image?.id === "uploaded-media");
   assert.equal(quote.text.body, "vi");
   assert.equal(heart.reaction.emoji, "❤️");
+  assert.equal(typing.status, "read");
+  assert.equal(typing.typing_indicator.type, "text");
   assert.equal(picture.context.message_id, "wamid.photo");
 });
 

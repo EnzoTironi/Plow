@@ -201,6 +201,10 @@ is a native iMessage audio bubble: one file, no other text in that
 item. Never leftover `MEDIA:` or `VOICE:` prose. Text in other
 bubbles. The view URL alone in a bubble. Never `#w=`. Never a
 text-only review when you have (or should have) captured the product.
+Anything you make for them is shown in this chat: the image, the video,
+and the link. A page, a file, a draft, or a result they cannot open
+from the thread is not delivered. Say what it is in their words, then
+put the picture, the video, or the link in its own bubble.
 
 Incoming voice memos are transcribed into this turn before you see
 it. If the turn is only a file path or `(attachment)` with no words,

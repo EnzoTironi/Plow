@@ -43,11 +43,14 @@ def _prompt(message_id: str, *, first: bool = False) -> str:
     return (
         opening
         + "The only way they see a reply is zoen_imessage, and that call is delivered on WhatsApp. "
-        "Each text item is its own bubble. MEDIA:/absolute/path sends the picture here. "
+        "Each text item is its own bubble. A line break inside that item is another bubble. "
+        "MEDIA:/absolute/path sends the picture here. "
         "VOICE:/absolute/path sends the voice note here. "
         f"This bubble's id is {message_id}. "
         "To quote a bubble, set reply_to on that zoen_imessage item to its id. "
         "A tapback is react.py and lands on this bubble. "
+        "Reception owns this burst's opening and tapback. "
+        "Continue the actual work immediately; do not repeat the opening or reaction. "
         "Do not mention Kapso, the relay, or this note."
     )
 _HOME = ""
@@ -291,13 +294,19 @@ def owner_phone(adapter, module) -> str:
     return ""
 
 
+def pairing_bubbles(code: str, door: str = WHATSAPP_DOOR) -> list[str]:
+    """One iMessage bubble per line. Blank lines in one body would stay a single text."""
+    return [
+        "oi, eu sou o zoen",
+        "pode continuar conversando comigo por aqui",
+        "ou conversar comigo pelo whatsapp, clicando no link e enviando o código",
+        f"https://wa.me/{door}?text={code}",
+    ]
+
+
 def pairing_message(code: str, door: str = WHATSAPP_DOOR) -> str:
-    """The WhatsApp choice, in Zoen's voice. The link opens WhatsApp with this VM's code filled in."""
-    return (
-        "pode continuar conversando comigo por aqui\n\n"
-        "ou conversar comigo pelo whatsapp, enviando esse código\n\n"
-        f"https://wa.me/{door}?text={code}"
-    )
+    """The same choice as one body, for a chat that is created by its first message."""
+    return "\n\n".join(pairing_bubbles(code, door))
 
 
 def _code_path() -> str:
@@ -525,15 +534,20 @@ async def _announce_code(agent: str, chat: str, code: str) -> None:
     api = os.environ.get("PLOW_API_BASE", "").strip().rstrip("/")
     if not api or not _claim_chat(chat):
         return
+    sent = False
     try:
-        await _request(
-            "POST",
-            f"{api}/v1/chats/{quote(chat, safe='')}/messages",
-            agent,
-            {"body": pairing_message(code), "format": "none"},
-        )
+        for index, bubble in enumerate(pairing_bubbles(code)):
+            if index:
+                await asyncio.sleep(0.4)
+            await _request(
+                "POST",
+                f"{api}/v1/chats/{quote(chat, safe='')}/messages",
+                agent,
+                {"body": bubble, "format": "none"},
+            )
+            sent = True
     except RuntimeError as exc:
-        if str(exc).startswith("whatsapp_http_"):
+        if str(exc).startswith("whatsapp_http_") and not sent:
             _release_chat(chat)
         raise
 
@@ -792,9 +806,16 @@ _MIME = {
 }
 
 
+def _address(message) -> dict:
+    if isinstance(message, dict) and message.get("to"):
+        return {"to": message["to"]}
+    if isinstance(message, dict) and message.get("recipient"):
+        return {"recipient": message["recipient"]}
+    return {}
+
+
 async def _send(base, payload) -> bool:
-    target = _QUIET.WHATSAPP.get() if _QUIET is not None else None
-    if not target or not _TOKEN:
+    if not _TOKEN:
         return False
     if isinstance(payload, str):
         body = {"text": payload[:4096]}
@@ -802,20 +823,99 @@ async def _send(base, payload) -> bool:
         body = dict(payload)
     else:
         return False
-    if target.get("to"):
-        body["to"] = target["to"]
-    elif target.get("recipient"):
-        body["recipient"] = target["recipient"]
-    else:
+    if not body.get("to") and not body.get("recipient"):
+        target = _QUIET.WHATSAPP.get() if _QUIET is not None else None
+        body.update(_address(target if isinstance(target, dict) else None))
+    if not body.get("to") and not body.get("recipient"):
         return False
-    if not body.get("text") and not body.get("media") and not body.get("reaction"):
+    if not body.get("text") and not body.get("media") and not body.get("reaction") and body.get("typing") is not True:
         return False
     try:
         await _request("POST", base + "/whatsapp/send", _TOKEN, body)
     except Exception:
         log.warning("whatsapp send failed")
         return False
+    if body.get("text") or body.get("media"):
+        _stop_typing()
     return True
+
+
+_CONTEXT: list[str] = []
+_TYPING_TASK = None
+_BACKGROUND: set = set()
+_REACTION = {"like", "love", "laugh", "emphasize"}
+
+
+def _stop_typing() -> None:
+    global _TYPING_TASK
+    task = _TYPING_TASK
+    _TYPING_TASK = None
+    if task is not None:
+        task.cancel()
+
+
+def _spawn(coro) -> None:
+    task = asyncio.create_task(coro)
+    _BACKGROUND.add(task)
+    task.add_done_callback(_BACKGROUND.discard)
+
+
+async def _typing(base, message) -> None:
+    message_id = str((message or {}).get("id") or "").strip()
+    if not message_id:
+        return
+    await _send(base, {"typing": True, "message_id": message_id[:256], **_address(message)})
+
+
+async def _typing_session(base, message) -> None:
+    try:
+        await _typing(base, message)
+        for _ in range(8):
+            await asyncio.sleep(20)
+            await _typing(base, message)
+    except asyncio.CancelledError:
+        return
+
+
+def _arm_typing(base, message) -> None:
+    global _TYPING_TASK
+    _stop_typing()
+    _TYPING_TASK = asyncio.create_task(_typing_session(base, message))
+
+
+async def _draft_opening(module, live, message, context):
+    # statusline sits on the image script path, which is absent when this file is loaded alone.
+    from statusline import draft
+    import aiohttp
+    text = str(message.get("text") or "").strip() or "(attachment)"
+    home = Path((os.environ.get("HERMES_HOME") or "").strip() or "/var/lib/hermes")
+    burst = [{
+        "body": text,
+        "attachments": [message["media_id"]] if message.get("media_id") else [],
+    }]
+    async with aiohttp.ClientSession(base_url=module.BASE, headers=live.auth) as http:
+        return await draft(burst, http=http, home=home, recent=[], context=context)
+
+
+async def _react(base, module, live, message) -> None:
+    """Same reception tapback as iMessage: the model picks it from the burst, or sends nothing."""
+    text = str(message.get("text") or "").strip()
+    context = list(_CONTEXT)
+    if text:
+        _CONTEXT.append(text[:500])
+        del _CONTEXT[:-6]
+    try:
+        opening = await _draft_opening(module, live, message, context)
+    except Exception:
+        log.warning("whatsapp reaction unavailable")
+        return
+    kind = opening.get("reaction") if isinstance(opening, dict) else None
+    if kind not in _REACTION:
+        return
+    await _send(base, {
+        "reaction": {"type": kind, "message_id": str(message.get("id") or "")[:256]},
+        **_address(message),
+    })
 
 
 async def _voice_note(path: Path) -> Path | None:
@@ -1009,6 +1109,51 @@ async def _bytes(url, token) -> tuple[bytes, str]:
             return await result.read(), str(result.headers.get("content-type") or "")
 
 
+def _clean_inbound(text: str) -> str:
+    cleaned = str(text or "").strip()
+    if cleaned == "[object Object]":
+        return ""
+    return cleaned
+
+
+async def _hear(text: str, urls: list, kinds: list) -> str:
+    """The spoken words, the same way an iMessage voice memo reaches the turn."""
+    cleaned = _clean_inbound(text)
+    if not urls:
+        return cleaned
+    try:
+        from listen import with_transcripts
+    except ImportError:
+        return cleaned or "(attachment)"
+    try:
+        heard = await asyncio.to_thread(with_transcripts, urls, kinds, cleaned or "(attachment)")
+    except Exception:
+        log.warning("whatsapp transcript missed")
+        return cleaned or "(attachment)"
+    if isinstance(heard, str) and heard.strip() and heard.strip() != "[object Object]":
+        return heard.strip()
+    return cleaned or "(attachment)"
+
+
+def _inbound_suffix(kind: str, mime: str) -> str:
+    lowered = (mime or "").lower()
+    if kind == "image" or lowered.startswith("image/"):
+        if "png" in lowered:
+            return ".png"
+        if "webp" in lowered:
+            return ".webp"
+        return ".jpg"
+    if kind == "audio" or lowered.startswith("audio/"):
+        if "mpeg" in lowered or "mp3" in lowered:
+            return ".mp3"
+        if "mp4" in lowered or "m4a" in lowered or "aac" in lowered:
+            return ".m4a"
+        return ".ogg"
+    if kind == "video" or lowered.startswith("video/"):
+        return ".mp4"
+    return ""
+
+
 async def _cache_inbound(module, kind: str, data: bytes, mime: str) -> str:
     if kind == "image" and hasattr(module, "cache_image_from_bytes"):
         ext = ".png" if "png" in mime else ".webp" if "webp" in mime else ".jpg"
@@ -1021,7 +1166,7 @@ async def _cache_inbound(module, kind: str, data: bytes, mime: str) -> str:
     root = Path((os.environ.get("HERMES_HOME") or "/var/lib/hermes").strip() or "/var/lib/hermes")
     folder = root / "zoen" / "inbound"
     folder.mkdir(parents=True, exist_ok=True)
-    path = folder / f"inbound-{secrets.token_hex(8)}"
+    path = folder / f"inbound-{secrets.token_hex(8)}{_inbound_suffix(kind, mime)}"
     path.write_bytes(data)
     return str(path)
 
@@ -1052,14 +1197,17 @@ async def _accept(adapter_cls, module, message, base, pairing: bool = False) -> 
         try:
             data, mime = await _bytes(base + "/whatsapp/media?id=" + media_id, _TOKEN)
             mime = str(message.get("mime") or mime).split(";")[0].strip()
-            path = await _cache_inbound(module, str(message.get("kind") or ""), data, mime)
+            kind = str(message.get("kind") or "")
+            path = await _cache_inbound(module, kind, data, mime)
             media_urls.append(path)
             if mime:
                 media_types.append(mime)
+            elif kind == "audio":
+                media_types.append("audio/ogg")
         except Exception:
             log.warning("whatsapp media missed")
-    if not text and media_urls:
-        text = "(attachment)"
+    if media_urls or text == "[object Object]":
+        text = await _hear(text, media_urls, media_types)
     if not text:
         return False
     await live._refresh_current_chat(chat_uid)
@@ -1091,6 +1239,8 @@ async def _accept(adapter_cls, module, message, base, pairing: bool = False) -> 
     event.reply_to_message_id = message.get("reply_to") or None
     event.reply_to_text = message.get("reply_text") or None
     event.interrupts_run = not media_urls and text != "(attachment)"
+    _arm_typing(base, message)
+    _spawn(_react(base, module, live, message))
     event.zoen_whatsapp = {
         "to": message.get("to"),
         "recipient": message.get("recipient"),

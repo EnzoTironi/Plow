@@ -466,9 +466,9 @@ def test_imessage_intro_offers_whatsapp_with_the_saved_code():
     assert action == {"action": "allow", "reason": "zoen onboarding"}
     prompt = event.channel_prompt
     assert "face.py cards" in prompt
-    assert "pode continuar conversando comigo por aqui" in prompt
-    assert "https://wa.me/553798136141?text=142857" in prompt
-    assert "do not send it again" in prompt
+    assert "oi, eu sou o zoen" in prompt
+    assert "142857" in prompt
+    assert "wa.me" not in prompt
 
 
 def test_whatsapp_pairing_code_starts_the_imessage_onboarding():

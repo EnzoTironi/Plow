@@ -76,9 +76,6 @@ _RETIRED_HELLO = (
 )
 
 
-WHATSAPP_DOOR = "553798136141"
-
-
 def saved_pairing_code() -> str:
     """The code this volume already claimed. Empty until WhatsApp pairing writes it."""
     root = (os.environ.get("HERMES_HOME") or "").strip()
@@ -89,15 +86,6 @@ def saved_pairing_code() -> str:
     except OSError:
         return ""
     return code if re.fullmatch(r"\d{6}", code) else ""
-
-
-def whatsapp_choice(code: str, door: str = WHATSAPP_DOOR) -> str:
-    """Verbatim lines for the iMessage intro. The link opens WhatsApp with the code filled in."""
-    return (
-        "pode continuar conversando comigo por aqui\n\n"
-        "ou conversar comigo pelo whatsapp, enviando esse código\n\n"
-        f"https://wa.me/{door}?text={code}"
-    )
 
 
 def first_contact_prompt(whatsapp: bool = False, *, offer_whatsapp: bool | None = None) -> str:
@@ -124,13 +112,11 @@ def first_contact_prompt(whatsapp: bool = False, *, offer_whatsapp: bool | None 
     if offer:
         code = saved_pairing_code()
         if code:
-            lines = whatsapp_choice(code)
             choice = (
-                "In this same reply, after the intro, they can keep talking "
-                "here or move to WhatsApp. Use these lines verbatim. Do not "
-                "invent another code or another link. This link is required "
-                "and is not the phone number the next rule forbids. If this "
-                f"exact link is already in the chat, do not send it again.\n{lines}\n"
+                "These bubbles already went out on this chat: oi, eu sou o "
+                "zoen; stay here; or send the code on WhatsApp; then the "
+                f"link with {code}. Do not send those lines again. Do not "
+                "invent another code or another link.\n"
             )
     return (
         "\n[Zoen first contact]\n"

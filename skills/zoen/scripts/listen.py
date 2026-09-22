@@ -26,7 +26,8 @@ AUDIO_PREFIX = "audio/"
 AUDIO_SUFFIXES = frozenset(
     {".mp3", ".m4a", ".aac", ".wav", ".caf", ".amr", ".ogg", ".opus", ".mpga"}
 )
-DEFAULT_MODEL = "tiny"
+# Multilingual Whisper. The `.en` weights only hear English.
+DEFAULT_MODEL = "small"
 _models: dict[str, object] = {}
 
 
@@ -36,7 +37,11 @@ def cache_dir() -> Path:
 
 
 def model_name() -> str:
-    return (os.environ.get("ZOEN_WHISPER_MODEL") or "").strip() or DEFAULT_MODEL
+    """The multilingual weights. An English-only name falls back to the default."""
+    raw = (os.environ.get("ZOEN_WHISPER_MODEL") or "").strip() or DEFAULT_MODEL
+    if raw.endswith(".en"):
+        return DEFAULT_MODEL
+    return raw
 
 
 def is_audio(kind: str | None, path: str | Path | None = None) -> bool:
@@ -75,7 +80,13 @@ def transcribe(path: str | Path, model: str | None = None) -> str:
     if whisper is None:
         return ""
     try:
-        segments, _info = whisper.transcribe(str(source), beam_size=1, vad_filter=True)
+        segments, _info = whisper.transcribe(
+            str(source),
+            beam_size=1,
+            vad_filter=True,
+            language=None,
+            task="transcribe",
+        )
         parts = [seg.text.strip() for seg in segments if getattr(seg, "text", "").strip()]
     except Exception as exc:
         log.warning("zoen-listen: %s failed: %s", source.name, type(exc).__name__)

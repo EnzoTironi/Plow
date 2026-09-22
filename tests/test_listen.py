@@ -2,6 +2,7 @@
 """Run: python3 tests/test_listen.py"""
 import asyncio
 import importlib.util
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -49,6 +50,23 @@ def test_failed_stt_keeps_the_original_text():
     ) == ""
 
 
+def test_transcription_model_is_multilingual():
+    previous = os.environ.get("ZOEN_WHISPER_MODEL")
+    try:
+        os.environ.pop("ZOEN_WHISPER_MODEL", None)
+        assert listen.model_name() == "small"
+        assert not listen.model_name().endswith(".en")
+        os.environ["ZOEN_WHISPER_MODEL"] = "tiny.en"
+        assert listen.model_name() == "small"
+        os.environ["ZOEN_WHISPER_MODEL"] = "base"
+        assert listen.model_name() == "base"
+    finally:
+        if previous is None:
+            os.environ.pop("ZOEN_WHISPER_MODEL", None)
+        else:
+            os.environ["ZOEN_WHISPER_MODEL"] = previous
+
+
 def test_transcribe_missing_file_is_empty():
     assert listen.transcribe("/no/such/zoen-memo.m4a") == ""
 
@@ -73,6 +91,7 @@ if __name__ == "__main__":
     test_ignores_photos()
     test_application_octet_stream_m4a_is_audio()
     test_failed_stt_keeps_the_original_text()
+    test_transcription_model_is_multilingual()
     test_transcribe_missing_file_is_empty()
     test_install_merges_audio_into_resolve_parts()
     print("ok")

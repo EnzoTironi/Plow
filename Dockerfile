@@ -74,7 +74,7 @@ ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # Inbound STT and outbound TTS for iMessage voice memos. ffmpeg is on the
 # base image. Bake faster-whisper so the first memo does not lazy-install.
-ARG WHISPER_MODEL=tiny
+ARG WHISPER_MODEL=small
 ENV ZOEN_WHISPER_MODEL=${WHISPER_MODEL} \
     ZOEN_WHISPER_DIR=/opt/plow/whisper
 RUN set -eu; \

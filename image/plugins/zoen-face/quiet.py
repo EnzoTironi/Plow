@@ -552,11 +552,20 @@ def _whatsapp_failure(index, error):
     return {"success": False, "completed": [], "failure": {"index": index, "status": "rejected", "error": error}}
 
 
+_BUBBLE_PACE = (0.4, 0.55)
+
+
+def _text_bubbles(body: str) -> list[str]:
+    """A line break inside one item is another bubble. WhatsApp would otherwise keep it in the same text."""
+    return [line.strip() for line in body.splitlines() if line.strip()]
+
+
 async def _deliver_whatsapp(items):
-    """One item, one bubble, on the chat they just wrote in."""
+    """One line, one bubble, on the chat they just wrote in."""
     if WHATSAPP.get() is None:
         return None
     completed = []
+    pace = 0
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             return _whatsapp_failure(index, "whatsapp item invalid")
@@ -576,13 +585,18 @@ async def _deliver_whatsapp(items):
                     return {"success": False, "completed": completed, "failure": {"index": index, "status": "rejected", "error": "whatsapp media failed"}}
                 completed.append({"index": index, "type": "voice" if tag == "VOICE" else "file"})
             continue
-        body = str(item.get("body") or "").strip()
-        if not body or WHATSAPP_DELIVER is None:
+        lines = _text_bubbles(str(item.get("body") or ""))
+        if not lines or WHATSAPP_DELIVER is None:
             return _whatsapp_failure(index, "whatsapp text missing")
-        payload = {"text": body[:4096], "reply_to": reply} if reply else body[:4096]
-        if not await WHATSAPP_DELIVER(payload):
-            return {"success": False, "completed": completed, "failure": {"index": index, "status": "delivery_unknown", "error": "whatsapp send failed"}}
-        completed.append({"index": index, "type": "text"})
+        for offset, line in enumerate(lines):
+            if offset:
+                await asyncio.sleep(_BUBBLE_PACE[pace % 2])
+                pace += 1
+            text = line[:4096]
+            payload = {"text": text, "reply_to": reply} if reply and offset == 0 else text
+            if not await WHATSAPP_DELIVER(payload):
+                return {"success": False, "completed": completed, "failure": {"index": index, "status": "delivery_unknown", "error": "whatsapp send failed"}}
+            completed.append({"index": index, "type": "text"})
     if not completed:
         return _whatsapp_failure(0, "whatsapp text missing")
     return {"success": True, "completed": completed}

@@ -391,12 +391,16 @@ def test_pairing_code_reaches_every_phone_chat():
                 os.environ.pop("PLOW_AGENT_TOKEN", None)
             else:
                 os.environ["PLOW_AGENT_TOKEN"] = previous_token
-    assert [row[1] for row in posted] == [
-        "https://plow.example/v1/chats/cht_home/messages",
-        "https://plow.example/v1/chats/cht_android/messages",
-        "https://plow.example/v1/chats/cht_new/messages",
-    ]
-    assert all(code in row[2]["body"] for row in posted)
+    bubbles = whatsapp.pairing_bubbles(code)
+    home = [row[2]["body"] for row in posted if row[1].endswith("/cht_home/messages")]
+    assert home == bubbles
+    assert [row[1] for row in posted] == (
+        ["https://plow.example/v1/chats/cht_home/messages"] * len(bubbles)
+        + ["https://plow.example/v1/chats/cht_android/messages"] * len(bubbles)
+        + ["https://plow.example/v1/chats/cht_new/messages"] * len(bubbles)
+    )
+    assert all(row[2]["format"] == "none" for row in posted)
+    assert all("\n" not in row[2]["body"] for row in posted)
 
 
 def test_pairing_code_alone_opens_whatsapp_and_a_real_text_owns_the_turn():
@@ -478,9 +482,9 @@ def test_activation_code_uses_the_onboarding_chat_a_normal_reply_uses():
             else:
                 os.environ["PLOW_API_BASE"] = previous_api
     sends = [row for row in posted if row[0] == "POST"]
-    assert [row[1] for row in sends] == ["https://plow.example/v1/chats/cht_rcs/messages"]
-    assert sends[0][2]["format"] == "none"
-    assert code in sends[0][2]["body"]
+    bubbles = whatsapp.pairing_bubbles(code)
+    assert [row[1] for row in sends] == ["https://plow.example/v1/chats/cht_rcs/messages"] * len(bubbles)
+    assert [row[2]["body"] for row in sends] == bubbles
 
 
 def test_pairing_code_is_sent_without_the_owner_texting_first():
@@ -692,7 +696,7 @@ def test_reused_line_volume_sends_the_code_once_for_the_new_agent():
                 os.environ["PLOW_API_BASE"] = previous_api
     assert [row[1] for row in posted if row[0] == "POST"] == [
         "https://plow.example/v1/chats/cht_alder/messages",
-    ]
+    ] * len(whatsapp.pairing_bubbles("000000"))
 
 
 def test_same_agent_texts_the_code_once_when_the_image_changes():
@@ -754,7 +758,7 @@ def test_same_agent_texts_the_code_once_when_the_image_changes():
                 os.environ["ZOEN_IMAGE_ID"] = previous_image
     assert [row[1] for row in posted if row[0] == "POST"] == [
         "https://plow.example/v1/chats/cht_alder/messages",
-    ]
+    ] * len(whatsapp.pairing_bubbles("000000"))
 
 
 def test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp():
@@ -794,6 +798,70 @@ def test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp():
         {"path": "/tmp/note.m4a", "voice": True, "reply_to": ""},
     ]
     assert box.posted == []
+
+
+def test_whatsapp_line_break_is_its_own_bubble():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    sent = []
+
+    async def deliver(payload):
+        sent.append(payload)
+        return True
+
+    quiet.WHATSAPP_DELIVER = deliver
+    token = quiet.WHATSAPP.set({"to": "5511999999999", "message_id": "wamid.1"})
+    try:
+        result = asyncio.run(box.send_sequence({"items": [
+            {"type": "text", "body": "consigo sim, do rabisco ao visual bem acabado\nme diz o que você quer ver", "reply_to": "wamid.1"},
+        ]}, {"chat_uid": "cht_x"}))
+    finally:
+        quiet.WHATSAPP.reset(token)
+        quiet.WHATSAPP_DELIVER = None
+    assert result["success"] is True
+    assert sent == [
+        {"text": "consigo sim, do rabisco ao visual bem acabado", "reply_to": "wamid.1"},
+        "me diz o que você quer ver",
+    ]
+    assert box.posted == []
+
+
+def test_whatsapp_reaction_uses_the_burst_and_skips_a_blank_one():
+    spec = importlib.util.spec_from_file_location(
+        "zoen_face_whatsapp_react", ROOT / "image/plugins/zoen-face/whatsapp.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    sent = []
+
+    async def fake_request(method, url, token, body=None):
+        sent.append(body)
+        return {}
+
+    async def laugh(_module, _live, message, context):
+        assert message["text"] == "que piada"
+        assert context == []
+        return {"line": None, "reaction": "laugh"}
+
+    async def quiet_opening(_module, _live, message, context):
+        assert context == ["que piada"]
+        return {"line": None, "reaction": None}
+
+    module._request = fake_request
+    module._TOKEN = "a" * 43
+    module._draft_opening = laugh
+    asyncio.run(module._react("https://relay.example", None, None, {
+        "id": "wamid.joke", "text": "que piada", "to": "5511999999999",
+    }))
+    module._draft_opening = quiet_opening
+    asyncio.run(module._react("https://relay.example", None, None, {
+        "id": "wamid.hard", "text": "notícia difícil", "to": "5511999999999",
+    }))
+    assert sent == [{
+        "reaction": {"type": "laugh", "message_id": "wamid.joke"},
+        "to": "5511999999999",
+    }]
 
 
 def test_imessage_quote_field_does_not_reach_plow():
@@ -1046,6 +1114,7 @@ def test_seed_soul_is_zoen_not_a_plow_assistant():
     assert "mention /help" in soul.lower()
     assert "zoen_connections" in soul
     assert "zoen_imessage" in soul
+    assert "Anything you make for them is shown in this chat" in persona
     assert "catalog" in soul
 
 
@@ -1112,6 +1181,8 @@ if __name__ == "__main__":
     test_reused_line_volume_sends_the_code_once_for_the_new_agent()
     test_same_agent_texts_the_code_once_when_the_image_changes()
     test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp()
+    test_whatsapp_line_break_is_its_own_bubble()
+    test_whatsapp_reaction_uses_the_burst_and_skips_a_blank_one()
     test_imessage_quote_field_does_not_reach_plow()
     test_whatsapp_turn_stays_in_the_session()
     test_whatsapp_reply_stays_off_imessage()
