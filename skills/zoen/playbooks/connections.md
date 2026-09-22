@@ -20,6 +20,9 @@ reconnection/permission state, not an empty mailbox or calendar. Never print tok
 cookies or credential files into the conversation. Record the blocked task and
 connector in native Kanban and resume only after verifying access.
 
+The map of use cases, playbooks and connectors is `index.md` in this directory.
+Read it before choosing a service. Then confirm the name with `zoen_connections`.
+
 For more services, use `zoen_connections` action `catalog`, optionally with a `query`
 by service name or capability (the descriptions use English). It lists the complete
 installed Hermes catalog plus Zoen's additions and the existing Plow connections.
@@ -67,6 +70,15 @@ share its official consent action and keep the task waiting for that access.
 Do not send feedback, reviews or catalog requests unless the owner requests it.
 The five enabled Treg tools cover discovery, detail, calls and account verification;
 there is no CLI, local credential upload or imported remote skill involved.
+
+Monid is available as `monid` using its official MCP at `https://mcp.monid.ai/v1`.
+It is the same kind of catalog as Treg. Authorize the owner's own Monid account
+with the same iMessage flow. Verify with `monid_balance`. `monid_discover` and
+`monid_inspect` do not purchase a run. Inspect the current price and use an
+explicit spending authorization before `monid_run`. Poll with `monid_get_run`.
+Stop an in-flight run with `monid_stop_run` only when that run says it can be
+stopped. If a call needs a workspace, list them with `monid_list_workspaces`.
+Do not release resources, top up, or manage API keys from the chat.
 
 Some providers require an operator-registered OAuth app. Report the concrete failure
 and retain the task awaiting access. Device-code-only providers are not wired to

@@ -1128,7 +1128,9 @@ def test_persona_route_index_names_playbooks_and_skills():
         "zoen_connections",
         "catalog",
         "treg",
+        "monid",
         "google-workspace",
+        "index.md",
         "personal.md",
         "connections.md",
         "feature.md",
@@ -1158,6 +1160,24 @@ def test_persona_route_index_names_playbooks_and_skills():
         "`floor`",
     ):
         assert needle in persona, needle
+    index = (ROOT / "skills" / "zoen" / "playbooks" / "index.md").read_text()
+    for heading in ("## Use cases", "## Playbooks", "## Connectors"):
+        assert heading in index, heading
+    playbooks = ROOT / "skills" / "zoen" / "playbooks"
+    for path in playbooks.glob("*.md"):
+        if path.name == "index.md":
+            continue
+        assert path.name in index, path.name
+    for name in ("treg", "monid", "notion", "google", "slack", "kiwi"):
+        assert f"`{name}`" in index, name
+    for source in (
+        "https://treg.to/use-cases",
+        "https://treg.to/workflows",
+        "https://poke.com/recipes",
+        "https://assistantbenchmark.com/use-cases",
+        "monid_discover",
+    ):
+        assert source in index, source
 
 
 if __name__ == "__main__":

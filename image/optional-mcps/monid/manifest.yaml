@@ -1,0 +1,30 @@
+# Zoen-reviewed addition to Hermes' native catalog. No CLI or server code is installed.
+manifest_version: 1
+name: monid
+description: >-
+  Search and call Monid's catalog of external APIs: web research, enrichment,
+  social data, images and video. Provider runs may spend the Monid balance.
+source: https://docs.monid.ai/guide/quickstart-mcp.html
+transport:
+  type: http
+  url: https://mcp.monid.ai/v1
+auth:
+  type: oauth
+tools:
+  default_enabled:
+    - monid_discover
+    - monid_inspect
+    - monid_run
+    - monid_get_run
+    - monid_list_runs
+    - monid_stop_run
+    - monid_balance
+    - monid_list_workspaces
+suggest:
+  keywords: [monid, enrichment, scraping, social, api]
+  hosts: [monid.ai, mcp.monid.ai]
+post_install: >-
+  Authorize your own Monid account through Zoen's iMessage link.
+  Verify the connected account with monid_balance and browse monid_discover.
+  Inspect monid_inspect pricing and obtain the owner's spending authorization
+  before monid_run; connection verification must not spend the balance.

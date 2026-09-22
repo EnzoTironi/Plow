@@ -1,8 +1,8 @@
 # Integration inventory
 
-Snapshot: 2026-09-19, Hermes 0.21.2 plus the Zoen Treg manifest.
+Snapshot: 2026-09-22, Hermes 0.21.2 plus the Zoen Treg and Monid manifests.
 
-The iMessage catalog exposes 68 entries: 55 remote OAuth services, 9 public HTTPS services, one existing Plow connection, Zoen’s independent Google OAuth connector and two entries requiring operator/local setup.
+The iMessage catalog exposes 69 entries: 56 remote OAuth services, 9 public HTTPS services, one existing Plow connection, Zoen’s independent Google OAuth connector and two entries requiring operator/local setup.
 
 Only a service selected for the owner's task is enabled. Listing a service does not install software, authorize an account or preload its tools. `zoen_connections` supports `catalog` with an optional `query`, `connect`, `status` and `cancel`.
 
@@ -17,6 +17,14 @@ Five Treg tools are enabled after consent: `catalog_search`, `catalog_get`, `cat
 A read can cost credits. Zoen must inspect the current endpoint/overflow price and use an explicit budget for the task before paid calls. No automatic top-ups, shared operator token, local key uploads, CLI installation or imported remote skills are configured. The V2 surface also avoids arbitrary team-owned tool execution. Feedback/review/request tools are excluded by the manifest.
 
 Sources: [Treg architecture](https://github.com/superdesigndev/treg/blob/main/docs/context/architecture/mcp-oauth.md), [Treg resource metadata](https://treg.to/.well-known/oauth-protected-resource/mcp/v2).
+
+## Monid
+
+The official `https://mcp.monid.ai/v1` surface uses the same native Hermes OAuth flow. Public metadata advertises dynamic client registration, S256 PKCE and the resource `https://mcp.monid.ai/v1`. Account consent has not been completed in this checkout. No provider runs were purchased.
+
+Eight Monid tools are enabled after consent: `monid_discover`, `monid_inspect`, `monid_run`, `monid_get_run`, `monid_list_runs`, `monid_stop_run`, `monid_balance` and `monid_list_workspaces`. Discover and inspect do not buy a run. A run spends the owner's Monid balance, so Zoen inspects the current price and uses an explicit budget before `monid_run`. Resource release, API-key management and top-ups stay out of the manifest. No CLI is installed.
+
+Sources: [Monid MCP setup](https://docs.monid.ai/guide/quickstart-mcp.html), [Monid resource metadata](https://mcp.monid.ai/.well-known/oauth-protected-resource/v1).
 
 ## Catalog
 
@@ -62,6 +70,7 @@ Sources: [Treg architecture](https://github.com/superdesigndev/treg/blob/main/do
 | [miro](https://developers.miro.com/docs/connecting-to-miro-mcp) | OAuth via iMessage | Catalog routing available; account not tested |
 | [mixpanel](https://docs.mixpanel.com/docs/mcp) | OAuth via iMessage | Catalog routing available; account not tested |
 | [monday](https://developer.monday.com/apps/docs/mondaycom-mcp-integration) | OAuth via iMessage | Catalog routing available; account not tested |
+| [monid](https://docs.monid.ai/guide/quickstart-mcp.html) | OAuth via iMessage | Catalog routing available; OAuth metadata checked; account not tested |
 | [motherduck](https://motherduck.com/docs/key-tasks/ai-and-motherduck/mcp-setup/) | OAuth via iMessage | Catalog routing available; account not tested |
 | [n8n](https://github.com/CyberSamuraiX/hermes-n8n-mcp) | Operator setup | Listed with limitation; not activated by the iMessage tool |
 | [neon](https://neon.com/docs/ai/neon-mcp-server) | OAuth via iMessage | Catalog routing available; account not tested |

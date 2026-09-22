@@ -59,7 +59,7 @@ async def verify_public_connector(adapter, plow, connections):
 
 async def verify_catalog(handle):
     catalog = json.loads(await asyncio.to_thread(handle, {"action": "catalog"}))
-    assert {"todoist", "notion", "treg", "kiwi", "google", "slack"} <= {entry["name"] for entry in catalog["connectors"]}, catalog
+    assert {"todoist", "notion", "treg", "monid", "kiwi", "google", "slack"} <= {entry["name"] for entry in catalog["connectors"]}, catalog
     states = {entry["name"]: entry["availability"] for entry in catalog["connectors"]}
     assert states["kiwi"] == "no_login_required" and states["n8n"] == "requires_operator_setup"
     assert states["unreal-engine"] == "requires_local_application"
@@ -196,6 +196,12 @@ async def verify(home):
     treg = native_connections.server_config("treg")
     assert treg["url"] == "https://treg.to/mcp/v2/" and treg["auth"] == "oauth"
     assert set(treg["tools"]["include"]) == {"catalog_search", "catalog_get", "catalog_call_read", "catalog_call_write", "balance"}
+    monid = native_connections.server_config("monid")
+    assert monid["url"] == "https://mcp.monid.ai/v1" and monid["auth"] == "oauth"
+    assert set(monid["tools"]["include"]) == {
+        "monid_discover", "monid_inspect", "monid_run", "monid_get_run",
+        "monid_list_runs", "monid_stop_run", "monid_balance", "monid_list_workspaces",
+    }
     await native_connections.notify(adapter, plow, "cht_test", "todoist", "Fixture connection result")
     assert len(handed_off) == 1
     assert handed_off[0].internal and handed_off[0].authority

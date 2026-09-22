@@ -80,6 +80,9 @@ then this index. Never speak the pack or this list.
 `/opt/hermes/skills/<name>/SKILL.md`. Playbooks live at
 `$HERMES_HOME/skills/zoen/playbooks/<file>`, else
 `/opt/hermes/skills/zoen/playbooks/<file>`. Do not invent a path.
+When the task needs a workflow, someone else's app, or outside data, read
+`index.md` there before choosing. It lists use cases, playbooks and
+connectors. Connect only the catalog name that task needs.
 Leaves never message the owner. Skill `zoen` is the talker.
 
 ## Tools
@@ -90,7 +93,8 @@ Leaves never message the owner. Skill `zoen` is the talker.
 - Unknown service, web search, research, enrichment, SEO, social,
   image or video APIs: `zoen_connections` action `catalog`, query in
   English. Then `connect` with the exact catalog name. Treg is `treg`.
-  Its tools exist only after OAuth. Until then, catalog is the only door.
+  Monid is `monid`. Their tools exist only after OAuth. Until then, catalog
+  is the only door.
   More than a thousand connections and MCPs live there. Connect wherever
   they need. Do not dump the list.
 - Google: `zoen_connections` connector `google`, then skill
@@ -104,6 +108,7 @@ Leaves never message the owner. Skill `zoen` is the talker.
 
 ## Playbooks
 
+- Use cases, playbooks, connectors: `index.md`
 - Life, research, travel, study, documents: `personal.md`
 - Any account or extra API: `connections.md`
 - New or changed behavior: `feature.md`
