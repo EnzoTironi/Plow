@@ -279,7 +279,7 @@ def test_reaction_is_chosen_by_model_not_keywords(tmp_path, monkeypatch):
     assert adapter.posts == [("cht_owner", "messages", {"body": "vou conectar sua agenda", "format": "none"})]
 
 
-def test_the_eye_goes_out_when_the_model_is_called(tmp_path, monkeypatch):
+def test_typing_starts_when_the_model_is_called_and_no_eye_is_written(tmp_path, monkeypatch):
     receiving, adapter = receiver(tmp_path, monkeypatch)
 
     async def run():
@@ -293,11 +293,7 @@ def test_the_eye_goes_out_when_the_model_is_called(tmp_path, monkeypatch):
 
     asyncio.run(run())
     assert adapter.typed == ["cht_owner"]
-    assert adapter.posts == [(
-        "cht_owner",
-        "messages/msg_9/reactions",
-        {"operation": "add", "type": "custom", "custom_emoji": "👀"},
-    )]
+    assert adapter.posts == []
 
 
 def test_commands_do_not_receive_an_ack(tmp_path, monkeypatch):

@@ -401,7 +401,7 @@ class WhatsAppLine:
                 return []
             token = await self.authorize()
             if not token:
-                self._auth_not_before = now + 15
+                self._auth_not_before = now + 2
                 return []
             self.transport.token = token
         return await self.poll_once()
@@ -464,8 +464,14 @@ class WhatsAppLine:
             return {"success": True, "message_id": None}
         if copy is not None:
             content = copy
+        # Hermes posts the model's own prose beside the tool: interim commentary
+        # first, then the final text. The tool is the reply. That prose is not.
+        if isinstance(metadata, dict) and metadata.get("_interim_send"):
+            return {"success": True, "message_id": None}
+        spoke = getattr(_QUIET, "turn_spoke", None) if _QUIET is not None else None
         if _QUIET is not None and (
             _QUIET.is_silence(content) or _QUIET.outbound_echo(content) or _QUIET.turn_copy(content)
+            or (callable(spoke) and spoke())
         ):
             return {"success": True, "message_id": None}
         address = _address_from_line(chat_id)
@@ -634,8 +640,13 @@ def _address_from_line(chat_id: str) -> Address:
     raise ValueError("whatsapp line id has no address")
 
 
+def relay_base() -> str:
+    """The public relay. The image knows it; the env can point a test elsewhere."""
+    return (os.environ.get("ZOEN_OAUTH_RELAY_URL") or "https://zoen-oauth-relay.agenttironi.workers.dev").strip().rstrip("/")
+
+
 def relay_configured() -> bool:
-    return bool(os.environ.get("ZOEN_OAUTH_RELAY_URL", "").strip())
+    return bool(relay_base())
 
 
 async def steer_followup(handler, runner, event, session_key) -> bool:
@@ -673,7 +684,7 @@ if BasePlatformAdapter is not None:
         def __init__(self, config, authorize=None):
             super().__init__(config, Platform("whatsapp"))
             extra = getattr(config, "extra", None) or {}
-            url = str(extra.get("relay_url") or os.environ.get("ZOEN_OAUTH_RELAY_URL") or "")
+            url = str(extra.get("relay_url") or relay_base())
             self._line = WhatsAppLine(url.strip(), RelayTransport(), authorize=authorize)
 
         @property

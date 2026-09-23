@@ -1810,6 +1810,19 @@ def test_persona_route_index_names_playbooks_and_skills():
         assert source in index, source
 
 
+def test_pairing_does_not_hold_the_gateway():
+    pairing = ROOT / "image/s6-overlay/s6-rc.d/zoen-pairing"
+    gateway = ROOT / "image/s6-overlay/s6-rc.d/hermes-gateway/dependencies.d/zoen-pairing"
+    assert (pairing / "type").read_text().strip() == "oneshot"
+    up = (pairing / "up").read_text().strip()
+    assert up == "/command/with-contenv /bin/sh /etc/s6-overlay/s6-rc.d/zoen-pairing/pairing.sh"
+    assert "whatsapp.py" in (pairing / "pairing.sh").read_text()
+    assert not (pairing / "run").exists()
+    assert (pairing / "dependencies.d" / "plow-init").exists()
+    assert not (pairing / "dependencies.d" / "base").exists()
+    assert not gateway.exists()
+
+
 if __name__ == "__main__":
     test_normal_final_is_dropped()
     test_contract_renames_send_and_forbids_leftover()
@@ -1853,5 +1866,6 @@ if __name__ == "__main__":
     test_claim_identity_replaces_the_line_name()
     test_claim_identity_skips_modules_without_the_seam()
     test_seed_soul_is_zoen_not_a_plow_assistant()
+    test_pairing_does_not_hold_the_gateway()
     test_persona_route_index_names_playbooks_and_skills()
     print("ok")

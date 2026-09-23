@@ -181,7 +181,7 @@ def test_register_does_not_replace_plow_chat_methods():
     assert Plow._on_message is original
     assert seen["name"] == "zoen-whatsapp"
     assert seen["required_env"] == ["ZOEN_OAUTH_RELAY_URL"]
-    assert seen["check_fn"]() is False
+    assert seen["check_fn"]() is True
 
 
 def test_send_posts_relay_body():
@@ -572,6 +572,44 @@ def test_credits_failure_is_the_ready_notice_once_per_message():
         {"to": "5537999999999", "text": notice},
         {"to": "5537999999999", "text": notice},
     ]
+
+
+def test_gateway_prose_does_not_join_the_tool():
+    import asyncio
+    from types import SimpleNamespace
+
+    posted = []
+    copies = []
+
+    class Transport:
+        async def post(self, url, body):
+            posted.append(body)
+
+    adapter = line.WhatsAppLine("https://relay.example/", Transport())
+    previous = line._QUIET
+    line.bind_outbound(SimpleNamespace(
+        is_silence=quiet_is_silence,
+        outbound_echo=lambda _text: False,
+        turn_copy=lambda text: text in copies,
+        turn_spoke=lambda: bool(copies),
+        _remember_outbound=copies.append,
+    ))
+
+    async def run():
+        await adapter.send("whatsapp:5537999999999", "ainda sem a ferramenta")
+        await adapter.send(
+            "whatsapp:5537999999999",
+            "oi joão, sou o zoen",
+            metadata={"_interim_send": True},
+        )
+        copies.append("pesquiso qualquer coisa")
+        await adapter.send("whatsapp:5537999999999", "me fala o que vc ta precisando")
+
+    try:
+        asyncio.run(run())
+    finally:
+        line._QUIET = previous
+    assert posted == [{"to": "5537999999999", "text": "ainda sem a ferramenta"}]
 
 
 def test_silence_token_is_not_a_whatsapp_bubble():

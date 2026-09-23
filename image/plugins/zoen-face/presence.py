@@ -241,7 +241,11 @@ class Presence:
             return "uncertain"
 
     async def notice_model(self, event):
-        """Eye, then typing, as the model turn starts. Once per message."""
+        """Typing as the model turn starts. Once per message.
+
+        A custom emoji on this line is written out as a text bubble. The eye
+        stays on WhatsApp, where it is a reaction.
+        """
         if getattr(event, "internal", False) or getattr(event, "zoen_whatsapp", None):
             return
         source = getattr(event, "source", None)
@@ -254,19 +258,8 @@ class Presence:
         if (chat, message) in self.eyed:
             return
         self.eyed.add((chat, message))
-        log.info("zoen-face eye and typing")
+        log.info("zoen-face typing")
         await self.typing(chat)
-        session = aiohttp.ClientSession(base_url=self.module.BASE, headers=getattr(self.adapter, "auth", {}) or {})
-        try:
-            await self.post(
-                chat,
-                f"messages/{message}/reactions",
-                {"operation": "add", "type": "custom", "custom_emoji": "👀"},
-                session,
-                time.monotonic() + HTTP_TIMEOUT,
-            )
-        finally:
-            await session.close()
 
     async def annotate(self, event):
         if getattr(event, "internal", False):
@@ -277,7 +270,7 @@ class Presence:
             return
         event.zoen_reception = state or {"status": "pending", "reaction": "pending"}
         event.channel_prompt = (event.channel_prompt or "") + (
-            "\n<reception>\nThe eye is already on this message. Do not send another reaction. "
+            "\n<reception>\nTyping is already on. Do not send a reaction. "
             "Reception owns this burst's opening. "
             "Continue the actual work immediately; do not repeat the opening or reaction. "
             "An acknowledgement is not completion. Owner bubbles only go through "

@@ -269,6 +269,18 @@ test("a new WhatsApp number gets the setup SMS, then only its own agent", async 
     headers: { Authorization: "Bearer fixture-agent-token-32", "Content-Type": "application/json" },
     body: JSON.stringify({ phone: "5511888888888" }),
   })).status, 404);
+  const coded = await (await fetch(`${base}/whatsapp/register?code=908172`, {
+    method: "POST",
+    headers: { Authorization: "Bearer fixture-agent-token-32", "Content-Type": "application/json" },
+    body: "{}",
+  })).json();
+  assert.equal(coded.waiting, true);
+  const hidden = await (await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer proxied", "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_uid: "ef".repeat(16), secret: "c".repeat(43) + "zp192837" }),
+  })).json();
+  assert.equal(hidden.waiting, true);
   const registered = (await pair(
     { Authorization: "Bearer fixture-agent-token-32" },
     "5511999999999",
@@ -636,6 +648,120 @@ test("the configured phone is cleared once and every other number stays", async 
   assert.equal(again.pending, before.pending + 2);
   assert.equal(again.queued, before.queued + 2);
   assert.equal(again.bindings, before.bindings);
+});
+
+test("a rewritten code field loses to the digits carried in the secret", async () => {
+  const inbound = JSON.stringify({
+    message: { id: "wamid.tail", type: "text", from: "5511777666555", text: { body: "192838" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Tail", phone_number: "5511777666555" },
+  });
+  assert.equal((await (await fetch(`${base}/whatsapp/webhook`, kapso(inbound, "idem-tail"))).json()).ok, true);
+  const linked = await (await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer proxied", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      agent_uid: "fe".repeat(16),
+      secret: "d".repeat(35) + "zp192838",
+      code: "000000",
+    }),
+  })).json();
+  assert.equal(linked.waiting, undefined);
+  assert.equal(linked.ok, true);
+  assert.match(linked.token, /^[A-Za-z0-9_-]{43,}$/);
+});
+
+test("the pairing code in the register path beats a rewritten body", async () => {
+  const inbound = JSON.stringify({
+    message: { id: "wamid.path", type: "text", from: "5511777000111", text: { body: "445566" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Path", phone_number: "5511777000111" },
+  });
+  assert.equal((await (await fetch(`${base}/whatsapp/webhook`, kapso(inbound, "idem-path"))).json()).ok, true);
+  const linked = await (await fetch(`${base}/whatsapp/register/445566`, {
+    method: "POST",
+    headers: { Authorization: "Bearer proxied", "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_uid: "98".repeat(16), secret: "e".repeat(43), code: "000000" }),
+  })).json();
+  assert.equal(linked.waiting, undefined);
+  assert.equal(linked.ok, true);
+  assert.match(linked.token, /^[A-Za-z0-9_-]{43,}$/);
+});
+
+test("a cloud register without the proxied header keeps the pairing code", async () => {
+  const inbound = JSON.stringify({
+    message: { id: "wamid.unsigned", type: "text", from: "5511666000222", text: { body: "778899" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Unsigned", phone_number: "5511666000222" },
+  });
+  assert.equal((await (await fetch(`${base}/whatsapp/webhook`, kapso(inbound, "idem-unsigned"))).json()).ok, true);
+  const linked = await (await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      agent_uid: "76".repeat(16),
+      secret: "f".repeat(35) + "zp778899",
+      code: "000000",
+    }),
+  })).json();
+  assert.equal(linked.waiting, undefined);
+  assert.equal(linked.ok, true);
+  assert.match(linked.token, /^[A-Za-z0-9_-]{43,}$/);
+});
+
+test("an armed code beats a rewritten body that is also sitting in a queue", async () => {
+  const decoy = JSON.stringify({
+    message: { id: "wamid.decoy", type: "text", from: "5511444000111", text: { body: "864209" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Decoy", phone_number: "5511444000111" },
+  });
+  const real = JSON.stringify({
+    message: { id: "wamid.armed-real", type: "text", from: "5511444000222", text: { body: "975310" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Real", phone_number: "5511444000222" },
+  });
+  assert.equal((await (await fetch(`${base}/whatsapp/webhook`, kapso(decoy, "idem-decoy"))).json()).ok, true);
+  assert.equal((await (await fetch(`${base}/whatsapp/webhook`, kapso(real, "idem-armed-real"))).json()).ok, true);
+  const go = await fetch(`${base}/whatsapp/go?a=${"32".repeat(16)}&c=975310`, { redirect: "manual" });
+  assert.equal(go.status, 302);
+  const linked = await (await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer proxied", "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_uid: "32".repeat(16), secret: "b".repeat(43), code: "864209" }),
+  })).json();
+  assert.equal(linked.ok, true);
+  const inbox = await (await fetch(`${base}/whatsapp/inbox`, {
+    headers: { Authorization: `Bearer ${linked.token}` },
+  })).json();
+  assert.equal(inbox.messages.some((message) => message.text === "975310"), true);
+  assert.equal(inbox.messages.some((message) => message.text === "864209"), false);
+});
+
+test("a pairing ping from the VM is visible on the diagnostic note", async () => {
+  const ping = await fetch(`${base}/whatsapp/ping`, { headers: { Authorization: "Bearer proxied" } });
+  assert.equal(ping.status, 204);
+  const noted = await (await fetch(`${base}/whatsapp/diag`)).json();
+  assert.equal(noted.note.stage, "ping");
+  assert.equal(noted.note.token_kind, 1);
+});
+
+test("tapping the pairing link arms that install and the next register binds", async () => {
+  const inbound = JSON.stringify({
+    message: { id: "wamid.arm", type: "text", from: "5511555000333", text: { body: "135790" }, kapso: { direction: "inbound" } },
+    conversation: { contact_name: "Arm", phone_number: "5511555000333" },
+  });
+  assert.equal((await (await fetch(`${base}/whatsapp/webhook`, kapso(inbound, "idem-arm"))).json()).ok, true);
+  const go = await fetch(`${base}/whatsapp/go?a=${"54".repeat(16)}&c=135790`, { redirect: "manual" });
+  assert.equal(go.status, 302);
+  assert.match(go.headers.get("location") || "", /text=135790$/);
+  const linked = await (await fetch(`${base}/whatsapp/register`, {
+    method: "POST",
+    headers: { Authorization: "Bearer proxied", "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_uid: "54".repeat(16), secret: "a".repeat(43) }),
+  })).json();
+  assert.equal(linked.ok, true);
+  assert.match(linked.token, /^[A-Za-z0-9_-]{43,}$/);
+});
+
+test("a pairing path arms without an ampersand in the link", async () => {
+  const go = await fetch(`${base}/whatsapp/go/${"ba".repeat(16)}/271828`, { redirect: "manual" });
+  assert.equal(go.status, 302);
+  assert.match(go.headers.get("location") || "", /text=271828$/);
 });
 
 test("reset drops every registered number and a new one can start again", async () => {

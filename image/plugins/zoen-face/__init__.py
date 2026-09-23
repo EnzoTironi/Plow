@@ -61,8 +61,7 @@ async def _relay_token() -> str:
     if not whatsapp._TOKEN:
         await whatsapp._adopt_install(agent)
     if not whatsapp._TOKEN:
-        base = os.environ.get("ZOEN_OAUTH_RELAY_URL", "").strip().rstrip("/")
-        whatsapp._TOKEN = await whatsapp._register(base) or ""
+        whatsapp._TOKEN = await whatsapp._register(whatsapp_line.relay_base()) or ""
     return whatsapp._TOKEN or ""
 
 

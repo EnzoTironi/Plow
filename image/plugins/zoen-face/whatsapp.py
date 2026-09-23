@@ -8,7 +8,9 @@ import os
 import re
 import secrets
 import time
+from urllib.error import URLError
 from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 log = logging.getLogger("zoen-whatsapp")
 WHATSAPP_DOOR = "553798136141"
@@ -220,13 +222,20 @@ def owner_phone(adapter, module) -> str:
     return ""
 
 
-def pairing_bubbles(code: str, door: str = WHATSAPP_DOOR) -> list[str]:
+def pairing_link(code: str, door: str = WHATSAPP_DOOR, uid: str = "") -> str:
+    """The tap arms this install, then opens WhatsApp with the code filled in."""
+    if re.fullmatch(r"[a-f0-9]{32}", uid) and re.fullmatch(r"\d{6}", code):
+        return f"https://auth.tryzoen.com/whatsapp/go/{uid}/{code}"
+    return f"https://wa.me/{door}?text={code}"
+
+
+def pairing_bubbles(code: str, door: str = WHATSAPP_DOOR, uid: str = "") -> list[str]:
     """One iMessage bubble per line. Blank lines in one body would stay a single text."""
     return [
         "oi, eu sou o zoen",
         "pode continuar conversando comigo por aqui",
         "ou conversar comigo pelo whatsapp, clicando no link e enviando o código",
-        f"https://wa.me/{door}?text={code}",
+        pairing_link(code, door, uid),
         "Enzo me criou. consigo conectar seus apps, mais de mil, onde você precisar",
     ]
 
@@ -356,6 +365,11 @@ def _release_previous_install(uid: str) -> None:
             pass
         try:
             os.remove(_onboarded_path())
+        except OSError:
+            pass
+        # The previous install already published this code. A new agent needs its own.
+        try:
+            os.remove(_code_path())
         except OSError:
             pass
     _write_install(uid)
@@ -490,14 +504,14 @@ async def _attach_cards(chat: str, deadline: float) -> None:
         log.warning("onboarding cards stopped inside the 10s budget")
 
 
-async def _announce_code(agent: str, chat: str, code: str) -> None:
+async def _announce_code(agent: str, chat: str, code: str, uid: str = "") -> None:
     """Every prebuilt bubble, before cards. A short budget must not drop the link."""
     if not agent or not chat:
         return
     api = os.environ.get("PLOW_API_BASE", "").strip().rstrip("/")
     if not api:
         return
-    bubbles = pairing_bubbles(code)
+    bubbles = pairing_bubbles(code, uid=uid)
     send_cards = False
     async with _announce_lock():
         path = _code_path() + ".lock"
@@ -535,10 +549,10 @@ async def _announce_code(agent: str, chat: str, code: str) -> None:
         await _attach_cards(chat, time.monotonic() + ONBOARD_SECONDS)
 
 
-async def _announce_chats(agent: str, chats: list[str], code: str) -> None:
+async def _announce_chats(agent: str, chats: list[str], code: str, uid: str = "") -> None:
     for chat in chats:
         try:
-            await _announce_code(agent, chat, code)
+            await _announce_code(agent, chat, code, uid)
         except Exception:
             log.warning("whatsapp code announce failed")
 
@@ -656,6 +670,27 @@ def _token_path() -> str:
     return os.path.join(root, "zoen", "whatsapp.token")
 
 
+def _share_zoen() -> None:
+    """Pairing runs as root and the gateway runs as hermes. Both read this directory."""
+    root = os.path.dirname(_token_path())
+    try:
+        os.makedirs(root, mode=0o777, exist_ok=True)
+        os.chmod(root, 0o777)
+    except OSError:
+        return
+    for current, dirnames, filenames in os.walk(root):
+        for name in dirnames:
+            try:
+                os.chmod(os.path.join(current, name), 0o777)
+            except OSError:
+                pass
+        for name in filenames:
+            try:
+                os.chmod(os.path.join(current, name), 0o666)
+            except OSError:
+                pass
+
+
 def _read_token() -> str:
     try:
         token = open(_token_path(), encoding="utf-8").read().strip()
@@ -684,13 +719,17 @@ class _Uncertain(Exception):
 
 
 
-async def _request(method, url, token, body=None):
+async def _request(method, url, token, body=None, headers=None):
     import aiohttp
-    headers = {"Authorization": f"Bearer {token}"}
+    sent = {}
+    if token:
+        sent["Authorization"] = f"Bearer {token}"
+    if headers:
+        sent.update(headers)
     timeout = aiohttp.ClientTimeout(total=20)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as http:
-            async with http.request(method, url, json=body, headers=headers, allow_redirects=False) as result:
+            async with http.request(method, url, json=body, headers=sent, allow_redirects=False) as result:
                 if result.status in (408, 409, 429) or result.status >= 500:
                     raise _Uncertain()
                 if result.status >= 300:
@@ -739,41 +778,66 @@ async def _plow_json(agent: str, path: str):
 
 
 async def _register(base) -> str:
-    global _HOME
+    global _HOME, _LAST_BIND
+    _ping_relay(base)
     agent = os.environ.get("PLOW_AGENT_TOKEN", "").strip()
     if not agent:
+        _LAST_BIND = "noagent"
         return ""
     me = {}
     try:
         found = await _plow_json(agent, "/v1/agents/me")
         if isinstance(found, dict):
             me = found
-    except Exception:
+    except Exception as exc:
         me = {}
+        _LAST_BIND = "me" + type(exc).__name__
     _HOME = home_chat_uid(me) or _HOME
     _release_previous_install(_agent_uid(me))
     code = _pairing_code()
-    payload = {"code": code}
+    payload = {"code": code, "pair": code}
     if agent == "proxied":
         uid = _agent_uid(me)
         if not re.fullmatch(r"[a-f0-9]{32}", uid):
+            if not _LAST_BIND.startswith("me"):
+                _LAST_BIND = "nouid"
             return ""
-        payload = {"agent_uid": uid, "secret": _agent_secret(), "code": code}
+        secret = _agent_secret()
+        # Three fields, the same shape the exe proxy already forwards. A field
+        # named pair, a longer path, or a rewritten secret never arrives.
+        # The pairing link is what tells the relay which code the phone sent.
+        payload = {"agent_uid": uid, "secret": secret, "code": code}
     try:
-        data = await _request("POST", base + "/whatsapp/register", agent, payload)
+        data = await _request(
+            "POST",
+            base + "/whatsapp/register",
+            agent,
+            payload,
+        )
+    except _Uncertain:
+        _LAST_BIND = "uncertain"
+        return ""
     except RuntimeError as exc:
+        _LAST_BIND = re.sub(r"[^a-z0-9]", "", str(exc).lower())[:24] or "http"
         if str(exc) == "whatsapp_http_409_code_taken":
             _forget_code()
+            try:
+                await _ensure_pairing(agent)
+            except Exception:
+                log.warning("whatsapp code refresh failed")
             return ""
         if str(exc).startswith("whatsapp_http_404") or str(exc).startswith("whatsapp_http_409"):
             return ""
         raise
     if data.get("waiting"):
+        _LAST_BIND = "waiting"
         return ""
     token = str(data.get("token") or "")
     if not re.fullmatch(r"[A-Za-z0-9_-]{43,256}", token):
+        _LAST_BIND = "badtoken"
         raise RuntimeError("whatsapp_response_invalid")
     _write_token(token)
+    _LAST_BIND = "bound"
     return token
 
 
@@ -820,13 +884,14 @@ async def _ensure_pairing(agent: str) -> bool:
         return False
     if not isinstance(found, dict):
         return False
-    _release_previous_install(_agent_uid(found))
+    agent_uid = _agent_uid(found)
+    _release_previous_install(agent_uid)
     uids = pairing_chat_uids(found)
     if not uids:
         return False
     pending = [uid for uid in uids if uid not in _sent_chats()]
     if pending:
-        await _announce_chats(agent, pending, _pairing_code())
+        await _announce_chats(agent, pending, _pairing_code(), agent_uid)
     return all(uid in _sent_chats() for uid in uids)
 
 
@@ -850,6 +915,32 @@ async def _ensure_pairing(agent: str) -> bool:
 
 
 
+_PINGED = False
+_LAST_BIND = "none"
+
+
+def _ping_relay(base: str) -> None:
+    """One GET per process, so a poll that reaches the relay shows up once."""
+    global _PINGED, _LAST_BIND
+    if _PINGED:
+        return
+    _PINGED = True
+    root = (base or "https://zoen-oauth-relay.agenttironi.workers.dev").rstrip("/")
+    token = os.environ.get("PLOW_AGENT_TOKEN", "").strip()
+    request = Request(
+        root + "/whatsapp/ping",
+        headers={"User-Agent": "Zoen", "Authorization": f"Bearer {token}"},
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=4) as result:
+            _LAST_BIND = f"ping{result.status}"
+            result.read()
+    except (OSError, URLError) as exc:
+        _LAST_BIND = "ping" + type(exc).__name__
+        log.warning("whatsapp ping failed")
+
+
 def boot_announce() -> int:
     """Answer the chat the user already opened. Their text creates it; this only sends."""
     agent = os.environ.get("PLOW_AGENT_TOKEN", "").strip()
@@ -858,6 +949,13 @@ def boot_announce() -> int:
     while True:
         try:
             if asyncio.run(_ensure_pairing(agent)):
+                relay = (os.environ.get("ZOEN_OAUTH_RELAY_URL") or "https://zoen-oauth-relay.agenttironi.workers.dev").strip().rstrip("/")
+                try:
+                    asyncio.run(_register(relay))
+                except Exception:
+                    log.warning("whatsapp boot register failed")
+                finally:
+                    _share_zoen()
                 return 0
         except Exception:
             log.warning("whatsapp boot announce failed")

@@ -8,6 +8,7 @@ const CODE_LOOKBACK_MS = 15 * 60 * 1000;
 const ECHO_MS = 3 * 60 * 1000;
 const SETUP_COOLDOWN_MS = 15 * 60 * 1000;
 export const SETUP_URL = "https://auth.tryzoen.com/whatsapp/start";
+const WHATSAPP_DOOR = "553798136141";
 
 const SETUP_BODY = "pra gente começar a conversar\n\npreciso de uma confirmação de dois fatores para a sua segurança.\n\no botão manda um sms pra confirmar o seu telefone e te devolve um contato.\n\nenvie um Oi para o contato. você pode continuar conversando pelo iMessage/Google Messages\n\nou enviar o código aqui e continuar com segurança.";
 
@@ -324,8 +325,15 @@ function agentToken(value) {
 export async function whatsappRoute(request, env) {
   const url = new URL(request.url);
   if (url.pathname === "/whatsapp/start" && request.method === "GET") return openStart(request, env);
+  const go = url.pathname.match(/^\/whatsapp\/go(?:\/([a-f0-9]{32})\/(\d{6}))?$/);
+  if (go && request.method === "GET") return openPair(request, env, go[1], go[2]);
+  if (url.pathname === "/whatsapp/ping" && request.method === "GET") {
+    const token = bearer(request);
+    await remember(env, { stage: "ping", status: 204, token_kind: token === "proxied" ? 1 : token ? 0 : 2 });
+    return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+  }
   if (url.pathname === "/whatsapp/webhook" && request.method === "POST") return receiveWebhook(request, env);
-  if (url.pathname === "/whatsapp/register" && request.method === "POST") return registerAgent(request, env);
+  if (request.method === "POST" && /^\/whatsapp\/register(?:\/\d{6})?$/.test(url.pathname)) return registerAgent(request, env);
   if (url.pathname === "/whatsapp/diag" && request.method === "GET") {
     const inbox = env.WHATSAPP.get(env.WHATSAPP.idFromName("zoen"));
     return inbox.fetch("https://whatsapp/diag");
@@ -398,24 +406,49 @@ async function openStart(request, env) {
   return startPage();
 }
 
+async function openPair(request, env, pathAgent = "", pathCode = "") {
+  const url = new URL(request.url);
+  const agent = String(pathAgent || url.searchParams.get("a") || "");
+  const code = pairingCode(pathCode || url.searchParams.get("c"));
+  if (!/^[a-f0-9]{32}$/.test(agent) || !code) return response({ error: "not_found" }, 404);
+  const inbox = env.WHATSAPP.get(env.WHATSAPP.idFromName("zoen"));
+  const armed = await inbox.fetch("https://whatsapp/arm", {
+    method: "POST",
+    body: JSON.stringify({ agent, code }),
+  });
+  if (!armed.ok) return armed;
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: `https://wa.me/${WHATSAPP_DOOR}?text=${code}`,
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 async function registerAgent(request, env) {
   const token = bearer(request);
-  if (!agentToken(token)) {
-    await remember(env, { stage: "token", status: 403, uid_len: token.length });
-    return response({ error: "unauthorized" }, 403);
-  }
   let body = {};
   try {
     if (request.headers.get("content-length") !== "0") body = await request.json();
   } catch {
     return response({ error: "invalid_phone" }, 400);
   }
+  // Bearer proxied makes the exe proxy rewrite this body. The uid and secret
+  // identify the VM without that header, so the pairing code stays intact.
+  const unsigned = !agentToken(token) && body?.agent_uid && body?.secret;
+  if (!agentToken(token) && !unsigned) {
+    await remember(env, { stage: "token", status: 403, uid_len: token.length });
+    return response({ error: "unauthorized" }, 403);
+  }
   if (body?.phone && !digits(body.phone)) return response({ error: "invalid_phone" }, 400);
   let agent = "";
   let secretHash = "";
-  if (token === "proxied") {
+  const carried = carriedCode(body, new URL(request.url), request);
+  if (token === "proxied" || unsigned) {
     // The exe proxy keeps the real credential. The VM reads its own uid from
     // that proxy and proves continuity with a secret that stays on its volume.
+    // The same proxy drops a field named code, so the digits also ride in the secret.
     agent = String(body?.agent_uid || "");
     const secret = String(body?.secret || "");
     if (!/^[a-f0-9]{32}$/.test(agent) || !/^[A-Za-z0-9_-]{43,128}$/.test(secret)) {
@@ -437,6 +470,7 @@ async function registerAgent(request, env) {
   }
   const session = sessionToken();
   const inbox = env.WHATSAPP.get(env.WHATSAPP.idFromName("zoen"));
+  const code = carried.code;
   const bound = await inbox.fetch("https://whatsapp/bind", {
     method: "POST",
     body: JSON.stringify({
@@ -444,12 +478,27 @@ async function registerAgent(request, env) {
       claim: String(body?.claim || ""),
       agent,
       secretHash,
-      code: pairingCode(body?.code),
+      code,
       hash: await digest(session),
     }),
   });
   const data = await bound.json();
-  await remember(env, { stage: "bind", status: bound.status, error: data.error || "" });
+  const arrived = new URL(request.url);
+  await remember(env, {
+    stage: "bind",
+    status: bound.status,
+    error: data.error || "",
+    uid_len: agent.length,
+    uid_tail: agent.slice(-4),
+    query: arrived.search ? 1 : 0,
+    body_keys: Object.keys(body || {}).length,
+    code_len: code.length,
+    token_kind: unsigned ? 2 : token === "proxied" ? 1 : 0,
+    code_from: carried.from,
+    secret_len: String(body?.secret || "").length,
+    digit_items: Number(data.digit_items) || 0,
+    code_tag: code ? (await digest(code)).slice(0, 8) : "",
+  });
   if (data.waiting) return response({ ok: true, waiting: true });
   if (!bound.ok) return response(data, bound.status);
   return response({ ok: true, token: session });
@@ -652,6 +701,36 @@ function pairingCode(value) {
   return /^\d{6}$/.test(code) ? code : "";
 }
 
+function carriedCode(body, url, request) {
+  // The cloud proxy rewrites a field named code and drops the query string.
+  // The path and a dedicated header are tried first.
+  const path = url.pathname.match(/^\/whatsapp\/register\/(\d{6})$/);
+  if (path) return { code: path[1], from: 5 };
+  const header = pairingCode(request.headers.get("x-zoen-pair"));
+  if (header) return { code: header, from: 6 };
+  const marked = String(body?.secret || "").match(/zp(\d{6})$/);
+  if (marked) return { code: marked[1], from: 4 };
+  const named = pairingCode(body?.code);
+  if (named) return { code: named, from: 1 };
+  const pair = pairingCode(body?.pair);
+  if (pair) return { code: pair, from: 2 };
+  const query = pairingCode(url.searchParams.get("pair")) || pairingCode(url.searchParams.get("code"));
+  if (query) return { code: query, from: 3 };
+  return { code: "", from: 0 };
+}
+
+function heardArmed(box, agent) {
+  const armed = Object.keys(box.codes || {}).filter((key) => box.codes[key]?.agent === agent);
+  let matched = null;
+  for (const key of armed) {
+    const phone = box.heard[key] || phoneThatSent(box, key, (box.codes[key].at || Date.now()) - CODE_LOOKBACK_MS);
+    if (!phone) continue;
+    if (matched) return null;
+    matched = { code: key, phone };
+  }
+  return matched;
+}
+
 function phoneThatSent(box, code, since) {
   for (const phone of Object.keys(box.queues || {})) {
     if (box.bindings[phone]) continue;
@@ -673,6 +752,7 @@ export class WhatsAppInbox {
       if (path === "/ingest") return this.ingest(box, await request.json(), now);
       if (path === "/forget-setup") return this.forgetSetup(box, await request.json());
       if (path === "/confirm") return this.confirm(box, await request.json());
+      if (path === "/arm" && request.method === "POST") return this.arm(box, await request.json());
       if (path === "/bind") return this.bind(box, await request.json());
       if (path === "/note" && request.method === "POST") return this.note(box, await request.json());
       if (path === "/sent" && request.method === "POST") return this.rememberSent(box, await request.json());
@@ -741,10 +821,29 @@ export class WhatsAppInbox {
     return response({ ok: true });
   }
 
+  async arm(box, body) {
+    const agent = String(body.agent || "");
+    const code = pairingCode(body.code);
+    if (!/^[a-f0-9]{32}$/.test(agent) || !code) return response({ error: "invalid" }, 400);
+    const existing = box.codes[code];
+    if (existing && existing.agent !== agent) return response({ error: "code_taken" }, 409);
+    const at = existing?.at || Date.now();
+    box.codes[code] = { agent, secretHash: existing?.secretHash || "", at };
+    const phone = box.heard[code] || phoneThatSent(box, code, at - CODE_LOOKBACK_MS);
+    if (phone) box.heard[code] = phone;
+    let near = 0;
+    for (const queue of Object.values(box.queues || {})) {
+      for (const item of queue || []) if (String(item.text || "").includes(code)) near += 1;
+    }
+    box.arm = { at: Date.now(), heard: phone ? 1 : 0, near, uid_tail: agent.slice(-4) };
+    await this.ctx.storage.put("box", box);
+    return response({ ok: true });
+  }
+
   async bind(box, body) {
     const agent = String(body.agent || "");
     const hash = String(body.hash || "");
-    const code = pairingCode(body.code);
+    let code = pairingCode(body.code);
     if (!/^[a-f0-9]{64}$/.test(hash)) return response({ error: "unauthorized" }, 403);
     const owned = Object.keys(box.bindings).filter((key) => box.bindings[key].agent === agent);
     if (owned.length > 1) return response({ error: "ambiguous" }, 409);
@@ -755,14 +854,36 @@ export class WhatsAppInbox {
       const existing = box.codes[code];
       if (existing && existing.agent !== agent) return response({ error: "code_taken" }, 409);
       const issued = existing?.at || Date.now();
-      box.codes[code] = { agent, secretHash: String(body.secretHash || ""), at: issued };
-      phone = box.heard[code] || phoneThatSent(box, code, issued - CODE_LOOKBACK_MS);
+      const heardPhone = box.heard[code] || phoneThatSent(box, code, issued - CODE_LOOKBACK_MS);
+      // A cloud proxy can replace the digits in the body. The code stored when
+      // the phone opened the pairing link is the one the person actually sent.
+      const armed = heardArmed(box, agent);
+      if (armed && armed.code !== code) {
+        code = armed.code;
+        phone = armed.phone;
+        const kept = box.codes[code];
+        box.codes[code] = {
+          agent,
+          secretHash: String(body.secretHash || kept?.secretHash || ""),
+          at: kept?.at || Date.now(),
+        };
+      } else {
+        box.codes[code] = { agent, secretHash: String(body.secretHash || ""), at: issued };
+        phone = heardPhone;
+      }
       if (!phone) {
+        let digitItems = 0;
+        for (const queue of Object.values(box.queues || {})) {
+          for (const item of queue || []) if (pairingCode(item.text)) digitItems += 1;
+        }
         await this.ctx.storage.put("box", box);
-        return response({ waiting: true });
+        return response({ waiting: true, digit_items: digitItems });
       }
     } else {
-      return response({ error: "not_waiting" }, 404);
+      const matched = heardArmed(box, agent);
+      if (!matched) return response({ error: "not_waiting" }, 404);
+      code = matched.code;
+      phone = matched.phone;
     }
     const current = box.bindings[phone];
     const secretHash = String(body.secretHash || "");
@@ -805,6 +926,15 @@ export class WhatsAppInbox {
       status: Number(body.status) || 0,
       error: String(body.error || "").slice(0, 40),
       uid_len: Number(body.uid_len) || 0,
+      uid_tail: String(body.uid_tail || "").slice(0, 4),
+      query: Number(body.query) || 0,
+      body_keys: Number(body.body_keys) || 0,
+      code_len: Number(body.code_len) || 0,
+      token_kind: Number(body.token_kind) || 0,
+      code_from: Number(body.code_from) || 0,
+      secret_len: Number(body.secret_len) || 0,
+      digit_items: Number(body.digit_items) || 0,
+      code_tag: String(body.code_tag || "").slice(0, 8),
     };
     await this.ctx.storage.put("box", box);
     return response({ ok: true });
@@ -817,6 +947,7 @@ export class WhatsAppInbox {
       bindings: Object.keys(box.bindings).length,
       queued,
       note: box.note || null,
+      arm: box.arm || null,
     });
   }
 

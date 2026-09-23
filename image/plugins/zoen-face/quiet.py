@@ -840,6 +840,11 @@ def turn_copy(text: str) -> bool:
     return bool(line) and line in _TURN_COPIES
 
 
+def turn_spoke() -> bool:
+    """The tool already answered this turn. Later gateway prose is a second reply."""
+    return bool(_TURN_COPIES)
+
+
 def clear_turn_copies() -> None:
     _TURN_COPIES.clear()
 

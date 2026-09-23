@@ -70,7 +70,7 @@ COPY image/s6-overlay/ /etc/s6-overlay/
 RUN chmod 0644 /opt/hermes/plugins/zoen-face/plugin.yaml /opt/hermes/plugins/zoen-face/__init__.py /opt/hermes/plugins/zoen-face/quiet.py /opt/hermes/enable-zoen-face.py \
  && chmod 0755 /opt/hermes/plow-init-then-face.sh \
  && chmod 0755 /etc/s6-overlay/s6-rc.d/zoen-floor-cron/run \
- && chmod 0755 /etc/s6-overlay/s6-rc.d/zoen-pairing/run \
+ && chmod 0755 /etc/s6-overlay/s6-rc.d/zoen-pairing/up /etc/s6-overlay/s6-rc.d/zoen-pairing/pairing.sh \
  && /opt/hermes/.venv/bin/python /opt/hermes/enable-zoen-face.py
 
 # Public page copy does not invalidate the tool-install layers.
