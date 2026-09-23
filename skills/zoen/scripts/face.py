@@ -1237,6 +1237,14 @@ def greet_on_dispatch(
     **_: Any,
 ) -> dict[str, str]:
     if getattr(event, "internal", False):
+        event.channel_prompt = (getattr(event, "channel_prompt", "") or "") + (
+            "\n<wake>\n"
+            "This is a background result, not a new message from them. "
+            "If a child finished, send that result now with zoen_imessage purpose=answer. "
+            "Do not wait for them to write again. "
+            "An intermediate tick with nothing new stays silent.\n"
+            "</wake>\n"
+        )
         return {"action": "allow"}
     if is_plow_setup(event):
         # The native setup hook is synchronous and can race the real inbound

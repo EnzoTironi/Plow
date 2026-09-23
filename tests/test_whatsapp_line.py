@@ -693,6 +693,62 @@ def test_pairing_code_answers_without_starting_a_turn():
     )]
 
 
+def test_idle_wake_reuses_the_whatsapp_route():
+    import tempfile
+
+    previous = os.environ.get("HERMES_HOME")
+    home = tempfile.mkdtemp()
+    os.environ["HERMES_HOME"] = home
+    try:
+        line.remember_route({
+            "to": "5537999999999",
+            "line_id": "whatsapp:5537999999999",
+            "message_id": "wamid.opening",
+        })
+        event = type("Event", (), {
+            "zoen_whatsapp": None,
+            "source": type("Source", (), {
+                "chat_id": "5537999999999",
+                "platform": type("Platform", (), {"value": "whatsapp"})(),
+            })(),
+        })()
+        found = line.route_for_turn(event)
+    finally:
+        if previous is None:
+            os.environ.pop("HERMES_HOME", None)
+        else:
+            os.environ["HERMES_HOME"] = previous
+    assert found == {
+        "to": "5537999999999",
+        "line_id": "whatsapp:5537999999999",
+        "message_id": "wamid.opening",
+    }
+    assert event.zoen_whatsapp is found
+    other = type("Event", (), {
+        "zoen_whatsapp": None,
+        "source": type("Source", (), {
+            "chat_id": "5537999999999",
+            "platform": type("Platform", (), {"value": "bluebubbles"})(),
+        })(),
+    })()
+    assert line.route_for_turn(other) is None
+
+
+def test_wake_lookup_uses_the_builtin_whatsapp_slot():
+    if line.Platform is None:
+        return
+    adapter = object()
+    runner = type("Runner", (), {"adapters": {}, "delivery_router": type("Router", (), {"adapters": {}})()})()
+    line.publish_for_wakes(adapter, runner)
+    slot = line.Platform("whatsapp")
+    assert runner.adapters[slot] is adapter
+    assert runner.delivery_router.adapters[slot] is adapter
+    other = object()
+    runner.adapters[slot] = other
+    line.publish_for_wakes(adapter, runner)
+    assert runner.adapters[slot] is other
+
+
 def test_factory_fails_loud_without_the_hermes_base():
     if line.BasePlatformAdapter is None:
         try:

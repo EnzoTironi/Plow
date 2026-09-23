@@ -79,6 +79,81 @@ def live_line():
     return _LIVE
 
 
+def _route_path() -> Path:
+    root = Path((os.environ.get("HERMES_HOME") or "/var/lib/hermes").strip() or "/var/lib/hermes")
+    return root / "zoen" / "whatsapp.route"
+
+
+def remember_route(target: dict) -> None:
+    """Keep the phone after the turn ends. A child result arrives on an idle session."""
+    phone = digits(str((target or {}).get("to") or ""))
+    if not phone:
+        return
+    path = _route_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        current = {}
+        if path.is_file():
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                current = loaded
+        current[phone] = {
+            "to": phone,
+            "line_id": str(target.get("line_id") or f"whatsapp:{phone}"),
+            "message_id": str(target.get("message_id") or ""),
+        }
+        path.write_text(json.dumps(current), encoding="utf-8")
+    except (OSError, ValueError):
+        return
+
+
+def saved_route(chat_id: str) -> dict | None:
+    phone = digits(chat_id)
+    if not phone:
+        return None
+    try:
+        loaded = json.loads(_route_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    row = loaded.get(phone) if isinstance(loaded, dict) else None
+    if not isinstance(row, dict) or not row.get("to"):
+        return None
+    return row
+
+
+def route_for_turn(event) -> dict | None:
+    """A human message names the phone. An idle wake reuses that route."""
+    target = getattr(event, "zoen_whatsapp", None)
+    if isinstance(target, dict) and (target.get("to") or target.get("recipient")):
+        remember_route(target)
+        return target
+    source = getattr(event, "source", None)
+    platform = getattr(source, "platform", None)
+    value = str(getattr(platform, "value", platform) or "").lower()
+    if value not in {"whatsapp", "zoen-whatsapp"}:
+        return None
+    saved = saved_route(str(getattr(source, "chat_id", "") or ""))
+    if saved is not None:
+        event.zoen_whatsapp = saved
+    return saved
+
+
+def publish_for_wakes(adapter, runner) -> None:
+    """Child completions look up the built-in whatsapp slot. This line is registered beside it."""
+    if runner is None or Platform is None:
+        return
+    try:
+        slot = Platform("whatsapp")
+    except Exception:
+        return
+    for box in (getattr(runner, "adapters", None), getattr(getattr(runner, "delivery_router", None), "adapters", None)):
+        if not isinstance(box, dict):
+            continue
+        current = box.get(slot)
+        if current is None or current is adapter:
+            box[slot] = adapter
+
+
 def session_chat_id(burst: Burst) -> str:
     """The Hermes session id. A whatsapp: prefix is eaten at the first colon."""
     return burst.address.to or burst.address.recipient
@@ -706,6 +781,7 @@ if BasePlatformAdapter is not None:
             ok = await self._line.connect(is_reconnect=is_reconnect)
             if ok:
                 self._mark_connected()
+                publish_for_wakes(self, getattr(self, "gateway_runner", None))
             return ok
 
         async def disconnect(self) -> None:
@@ -723,12 +799,13 @@ if BasePlatformAdapter is not None:
             return {"name": str(chat_id), "type": "dm"}
 
         async def _process_message_background(self, event, session_key):
-            target = getattr(event, "zoen_whatsapp", None)
+            carried = getattr(event, "zoen_whatsapp", None)
+            target = route_for_turn(event)
             if _QUIET is not None:
                 _QUIET.clear_turn_copies()
                 _QUIET.LOOP = asyncio.get_running_loop()
                 _QUIET._stamp_whatsapp(target if isinstance(target, dict) else None)
-            message_id = str(target.get("message_id") or "") if isinstance(target, dict) else ""
+            message_id = str(carried.get("message_id") or "") if isinstance(carried, dict) else ""
             if message_id:
                 await self._line.mark_seen(message_id)
             try:
@@ -793,6 +870,8 @@ def register_line(ctx, *, factory=None) -> None:
             "A new message steers this session. Reply on this line. "
             "zoen_imessage sends the reaction, the text, the quote, the photo, the video, the voice note, and the contact card. "
             "reply_to is the wamid of the bubble you are answering. "
-            "There is no reception observer on this line."
+            "There is no reception observer on this line. "
+            "A finished child arrives later on this same session while it is idle. "
+            "Send that result then. Do not wait for another message."
         ),
     )

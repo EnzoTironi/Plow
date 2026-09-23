@@ -347,6 +347,8 @@ def configure_contract(module):
         "Stop after the answer. Do not answer or quote your own bubbles. "
         "The last message is purpose=answer. "
         "Internal events do not need an opening and do not set language. "
+        "A finished child is the result. Send it on this turn with zoen_imessage purpose=answer. "
+        "Do not wait for them to write again. An intermediate tick with nothing new stays silent. "
         "Language follows the owner's last human message and VOICE.md, never this note. "
         "Do not narrate tool operations or routine bookkeeping. "
     )
@@ -811,7 +813,6 @@ def _whatsapp_failure(index, error):
 
 
 _BUBBLE_PACE = (0.4, 0.55)
-_TEXT_CAP = 4
 _OUTBOUND_WINDOW = 180.0
 _RECENT_OUTBOUND: list[tuple[float, str]] = []
 
@@ -863,17 +864,6 @@ def _quote_allowed(reply, target) -> str:
     if not isinstance(target, dict):
         return ""
     return _wamid(reply)
-
-
-def _count_text(target) -> bool:
-    """Four text bubbles is the turn. More is the model talking to itself."""
-    if not isinstance(target, dict):
-        return True
-    sent = int(target.get("zoen_text_bubbles") or 0)
-    if sent >= _TEXT_CAP:
-        return False
-    target["zoen_text_bubbles"] = sent + 1
-    return True
 
 
 def _text_bubbles(body: str) -> list[str]:
@@ -1046,8 +1036,6 @@ async def _deliver_whatsapp(items, target=None):
         if not lines or WHATSAPP_DELIVER is None:
             return _whatsapp_failure(index, "whatsapp text missing")
         for offset, line in enumerate(lines):
-            if not _count_text(target):
-                return {"success": True, "completed": completed}
             if offset:
                 await asyncio.sleep(_BUBBLE_PACE[pace % 2])
                 pace += 1

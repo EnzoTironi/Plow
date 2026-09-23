@@ -1170,7 +1170,7 @@ def test_imessage_reaction_and_image_use_the_same_tool():
     assert ("sequence", {"items": [{"type": "text", "body": "olha"}]}) in box.posted
 
 
-def test_whatsapp_stops_after_four_text_bubbles():
+def test_whatsapp_sends_every_text_bubble():
     Adapter = _adapter()
     quiet.silence(Adapter)
     box = Adapter()
@@ -1195,8 +1195,7 @@ def test_whatsapp_stops_after_four_text_bubbles():
         quiet.WHATSAPP_DELIVER = None
     assert first["success"] is True
     assert second["success"] is True
-    assert sent == ["um", "dois", "três", "quatro"]
-    assert second["completed"] == []
+    assert sent == ["um", "dois", "três", "quatro", "cinco", "já te contei ali em cima"]
 
 
 def test_whatsapp_quotes_the_bubble_they_pointed_at():
