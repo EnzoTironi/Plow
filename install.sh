@@ -17,7 +17,7 @@ for arg in "$@"; do
     --local) LOCAL=1 ;;
     --fresh) FRESH=1 ;;
     *)
-      echo "uso: $0 [--local] [--fresh]" >&2
+      echo "usage: $0 [--local] [--fresh]" >&2
       exit 1
       ;;
   esac
@@ -28,7 +28,7 @@ fi
 
 need() {
   command -v "$1" >/dev/null 2>&1 || {
-    echo "falta $1." >&2
+    echo "missing $1." >&2
     exit 1
   }
 }
@@ -56,22 +56,22 @@ if [ -z "$ROOT" ]; then
   ROOT="${ZOEN_DIR:-$HOME/Plow}"
   if [ ! -d "$ROOT/.git" ]; then
     if [ -e "$ROOT" ] && [ -n "$(ls -A "$ROOT" 2>/dev/null || true)" ]; then
-      echo "$ROOT já existe e não é o Zoen. Defina ZOEN_DIR." >&2
+      echo "$ROOT already exists and is not Zoen. Set ZOEN_DIR." >&2
       exit 1
     fi
-    echo "baixando…"
+    echo "downloading…"
     git clone "$REPO" "$ROOT"
   fi
 fi
 
 cd "$ROOT"
 if [ ! -f compose.yml ] || ! grep -q 'AGENT_ID: \${AGENT_ID:-zoen}' compose.yml; then
-  echo "este diretório não é o Zoen: $ROOT" >&2
+  echo "this directory is not Zoen: $ROOT" >&2
   exit 1
 fi
 
 if [ ! -x tools/plow-agents/bin/plow-agents ]; then
-  echo "baixando…"
+  echo "downloading…"
   git clone --depth 1 "$RUNNER" tools/plow-agents
 fi
 
@@ -86,7 +86,7 @@ ensure_login() {
     return
   fi
   echo
-  echo "Mande do celular exatamente a frase abaixo."
+  echo "From your phone, text exactly the phrase below."
   echo
   plow login || plow login --new-line
 }
@@ -96,14 +96,14 @@ ensure_line() {
   echo "$lines"
   line=$(printf '%s\n' "$lines" | awk -F '\t' 'NR > 1 && $4 == "free" { print $1; exit }')
   if [ -z "$line" ]; then
-    echo "sem linha livre. criando…"
+    echo "no free line. creating one…"
     plow login --new-line
     lines=$(plow lines)
     echo "$lines"
     line=$(printf '%s\n' "$lines" | awk -F '\t' 'NR > 1 && $4 == "free" { print $1; exit }')
   fi
   if [ -z "$line" ]; then
-    echo "Ainda sem linha. Fale com o suporte Plow." >&2
+    echo "Still no line. Contact Plow support." >&2
     exit 1
   fi
 }
@@ -111,27 +111,27 @@ ensure_line() {
 if [ "$LOCAL" = 1 ]; then
   need docker
   docker info >/dev/null 2>&1 || {
-    echo "Abra o Docker e tente de novo." >&2
+    echo "Open Docker and try again." >&2
     exit 1
   }
   docker compose version >/dev/null 2>&1 || {
-    echo "falta o Compose." >&2
+    echo "Docker Compose is missing." >&2
     exit 1
   }
   if [ -d plow-credentials ] && [ ! -f plow-credentials ]; then
-    echo "Algo ficou pela metade. Rode: docker compose down && rmdir plow-credentials && $0 --local" >&2
+    echo "Something was left half done. Run: docker compose down && rmdir plow-credentials && $0 --local" >&2
     exit 1
   fi
   if [ ! -f plow-credentials ]; then
     ensure_login
     ensure_line
-    echo "ligando…"
+    echo "starting…"
     plow mint "$line"
   fi
   python3 "$ROOT/skills/zoen/scripts/face.py" rename || true
-  echo "ligando…"
+  echo "starting…"
   if [ "$FRESH" = 1 ]; then
-    echo "apagando o home local. memória, sessões e WhatsApp desta máquina saem."
+    echo "erasing the local home. this machine's memory, sessions and WhatsApp go with it."
     docker compose down -v
   else
     docker compose down
@@ -143,7 +143,7 @@ if [ "$LOCAL" = 1 ]; then
 else
   ensure_login
   ensure_line
-  echo "ligando…"
+  echo "starting…"
   plow deploy "$IMAGE" --line "$line"
   n=0
   st=""
@@ -152,7 +152,7 @@ else
     case "$st" in
       running) break ;;
       failed*)
-        echo "não subiu: $st" >&2
+        echo "did not start: $st" >&2
         exit 1
         ;;
     esac
@@ -162,7 +162,7 @@ else
   case "$st" in
     running) ;;
     *)
-      echo "ainda não subiu. rode: ./bin/plow-agents agents" >&2
+      echo "not up yet. run: ./bin/plow-agents agents" >&2
       exit 1
       ;;
   esac
@@ -171,4 +171,4 @@ fi
 echo
 plow lines
 echo
-echo "Pronto. Mande um iMessage."
+echo "Done. Send an iMessage."

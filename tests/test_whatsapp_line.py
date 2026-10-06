@@ -58,7 +58,7 @@ def test_handled_busy_event_is_not_steered_again():
     async def gateway(event, session_key):
         return True
 
-    event = type("Event", (), {"text": "sim", "media_urls": None})()
+    event = type("Event", (), {"text": "yes", "media_urls": None})()
     assert asyncio.run(line.steer_followup(gateway, Runner(), event, "s"))
 
 
@@ -78,16 +78,16 @@ def test_unstuck_steer_falls_through_to_the_queue():
     async def gateway(event, session_key):
         return False
 
-    event = type("Event", (), {"text": "oi", "media_urls": ["a.jpg"]})()
+    event = type("Event", (), {"text": "hi", "media_urls": ["a.jpg"]})()
     assert not asyncio.run(line.steer_followup(gateway, Runner(), event, "s"))
-    event = type("Event", (), {"text": "oi", "media_urls": None})()
+    event = type("Event", (), {"text": "hi", "media_urls": None})()
     assert not asyncio.run(line.steer_followup(gateway, Runner(), event, "s"))
 
 
 def test_hermes_session_keeps_the_phone():
     burst = line.burst_from_relay({
         "id": "wamid.IN",
-        "text": "oi",
+        "text": "hi",
         "to": "+55 37 99999-9999",
     })
     assert burst.line_id == "whatsapp:5537999999999"
@@ -198,14 +198,14 @@ def test_send_posts_relay_body():
     async def run():
         await adapter.send(
             "whatsapp:5537999999999",
-            "oi",
+            "hi",
             reply_to="wamid.ABC",
         )
 
     asyncio.run(run())
     assert posted == [(
         "https://relay.example/whatsapp/send",
-        {"to": "5537999999999", "text": "oi", "reply_to": "wamid.ABC"},
+        {"to": "5537999999999", "text": "hi", "reply_to": "wamid.ABC"},
     )]
 
 
@@ -219,7 +219,7 @@ def test_poll_once_acks_without_touching_an_adapter_class():
             calls.append(("get", url))
             return {"messages": [{
                 "id": "wamid.IN",
-                "text": "oi",
+                "text": "hi",
                 "to": "5537999999999",
             }]}
 
@@ -248,16 +248,16 @@ def test_an_authorization_link_is_a_whatsapp_button():
         f"Authorization URL:\n{url}",
     )
     assert cards == [{
-        "text": "Treg\nO link expira em 15 minutos.",
+        "text": "Treg\nThe link expires in 15 minutes.",
         "url": url,
-        "label": "Autorizar",
+        "label": "Authorize",
     }]
     assert line.authorization_cards("google", "Google identity verified: owner@example.com.") == []
     body = line.relay_body(
         line.Address(to="5537999999999"),
-        line.ButtonDelivery(body=cards[0]["text"], url=url, label="Autorizar"),
+        line.ButtonDelivery(body=cards[0]["text"], url=url, label="Authorize"),
     )
-    assert body["button"] == {"url": url, "label": "Autorizar"}
+    assert body["button"] == {"url": url, "label": "Authorize"}
     assert "http" not in body["text"]
 
 
@@ -300,7 +300,7 @@ def test_poll_once_holds_the_bubble_until_a_handler_accepts_it():
             calls.append(("get", url))
             return {"messages": [{
                 "id": "wamid.IN",
-                "text": "oi",
+                "text": "hi",
                 "to": "5537999999999",
             }]}
 
@@ -359,7 +359,7 @@ def test_owner_bubble_stays_on_the_whatsapp_line_after_accept_returns():
 
     async def later():
         seen["line"] = line.LINE.get()
-        await adapter.post_owner("oi")
+        await adapter.post_owner("hi")
 
     async def handler(burst):
         adapter.later = asyncio.get_running_loop().create_task(later())
@@ -382,7 +382,7 @@ def test_owner_bubble_stays_on_the_whatsapp_line_after_accept_returns():
     assert accepted.line_id == "whatsapp:5537999999999"
     assert posted == [(
         "https://relay.example/whatsapp/send",
-        {"to": "5537999999999", "text": "oi"},
+        {"to": "5537999999999", "text": "hi"},
     )]
 
 
@@ -553,7 +553,7 @@ def test_credits_failure_is_the_ready_notice_once_per_message():
                 adapter.handle_message = handler
                 await adapter.accept({
                     "id": "wamid.IN",
-                    "text": "oi",
+                    "text": "hi",
                     "to": "5537999999999",
                 })
                 await adapter.send("whatsapp:5537999999999", blob)
@@ -599,7 +599,7 @@ def test_gateway_prose_does_not_join_the_tool():
         await adapter.send("whatsapp:5537999999999", "ainda sem a ferramenta")
         await adapter.send(
             "whatsapp:5537999999999",
-            "oi joão, sou o zoen",
+            "hi joão, I'm zoen",
             metadata={"_interim_send": True},
         )
         copies.append("pesquiso qualquer coisa")
@@ -633,13 +633,13 @@ def test_silence_token_is_not_a_whatsapp_bubble():
 
     async def run():
         await adapter.send("whatsapp:5537999999999", "[NO_REPLY]")
-        await adapter.send("whatsapp:5537999999999", "oi")
+        await adapter.send("whatsapp:5537999999999", "hi")
 
     try:
         asyncio.run(run())
     finally:
         line._QUIET = previous
-    assert calls == [{"to": "5537999999999", "text": "oi"}]
+    assert calls == [{"to": "5537999999999", "text": "hi"}]
 
 
 def quiet_is_silence(text):
@@ -659,7 +659,7 @@ def test_pairing_code_answers_without_starting_a_turn():
     adapter = line.WhatsAppLine("https://relay.example/", Transport())
 
     async def handler(burst):
-        assert burst.text == "oi"
+        assert burst.text == "hi"
         return False
 
     adapter.handle_message = handler
@@ -677,7 +677,7 @@ def test_pairing_code_answers_without_starting_a_turn():
             }))
             stayed = asyncio.run(adapter.accept({
                 "id": "wamid.NEXT",
-                "text": "oi",
+                "text": "hi",
                 "to": "5537999999999",
             }))
         finally:

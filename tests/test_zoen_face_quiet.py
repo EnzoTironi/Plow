@@ -101,7 +101,7 @@ def test_credits_notice_stays_quiet_until_a_normal_reply():
                 {"chat_uid": "cht_x"},
             ))
             asyncio.run(box.send_sequence(
-                {"items": [{"type": "text", "body": "voltei"}]},
+                {"items": [{"type": "text", "body": "back"}]},
                 {"chat_uid": "cht_x"},
             ))
             asyncio.run(box.send("cht_x", blob))
@@ -109,7 +109,7 @@ def test_credits_notice_stays_quiet_until_a_normal_reply():
             os.environ.pop("HERMES_HOME", None)
     assert box.posted == [
         ("send", quiet.credits_notice("pt")),
-        ("sequence", {"items": [{"type": "text", "body": "voltei"}]}),
+        ("sequence", {"items": [{"type": "text", "body": "back"}]}),
         ("send", quiet.credits_notice("pt")),
     ]
 
@@ -995,9 +995,9 @@ def test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp():
     token = quiet.WHATSAPP.set({"to": "5511999999999", "message_id": "wamid.1"})
     try:
         result = asyncio.run(box.send_sequence({"items": [
-            {"type": "text", "body": "oi", "reply_to": "wamid.1"},
+            {"type": "text", "body": "hi", "reply_to": "wamid.1"},
             {"type": "pause", "seconds": 0},
-            {"type": "text", "body": "segunda"},
+            {"type": "text", "body": "second"},
             {"type": "text", "body": "MEDIA:/tmp/shot.png"},
             {"type": "text", "body": "VOICE:/tmp/note.m4a"},
         ]}, {"chat_uid": "cht_x"}))
@@ -1006,7 +1006,7 @@ def test_whatsapp_bubbles_quote_and_files_stay_on_whatsapp():
         quiet.WHATSAPP_DELIVER = None
         quiet.WHATSAPP_MEDIA = None
     assert result["success"] is True
-    assert sent == [{"text": "oi", "reply_to": "wamid.1"}, "segunda"]
+    assert sent == [{"text": "hi", "reply_to": "wamid.1"}, "second"]
     assert media == [
         {"path": "/tmp/shot.png", "voice": False},
         {"path": "/tmp/note.m4a", "voice": True},
@@ -1028,15 +1028,15 @@ def test_whatsapp_line_break_is_its_own_bubble():
     token = quiet.WHATSAPP.set({"to": "5511999999999", "message_id": "wamid.1"})
     try:
         result = asyncio.run(box.send_sequence({"items": [
-            {"type": "text", "body": "consigo sim, do rabisco ao visual bem acabado\nme diz o que você quer ver", "reply_to": "wamid.1"},
+            {"type": "text", "body": "sure I can, from sketch to polished visual\ntell me what you want to see", "reply_to": "wamid.1"},
         ]}, {"chat_uid": "cht_x"}))
     finally:
         quiet.WHATSAPP.reset(token)
         quiet.WHATSAPP_DELIVER = None
     assert result["success"] is True
     assert sent == [
-        {"text": "consigo sim, do rabisco ao visual bem acabado", "reply_to": "wamid.1"},
-        {"text": "me diz o que você quer ver", "reply_to": "wamid.1"},
+        {"text": "sure I can, from sketch to polished visual", "reply_to": "wamid.1"},
+        {"text": "tell me what you want to see", "reply_to": "wamid.1"},
     ]
     assert box.posted == []
 
@@ -1055,14 +1055,14 @@ def test_whatsapp_omitted_reply_does_not_quote():
     token = quiet.WHATSAPP.set({"to": "5511999999999", "message_id": "wamid.9", "reply_to": ""})
     try:
         result = asyncio.run(box.send_sequence({"items": [
-            {"type": "text", "body": "oi"},
-            {"type": "text", "body": "sobre aquilo", "reply_to": "whatsapp-wamid.explicit"},
+            {"type": "text", "body": "hi"},
+            {"type": "text", "body": "about that", "reply_to": "whatsapp-wamid.explicit"},
         ]}, {"chat_uid": "cht_x"}))
     finally:
         quiet.WHATSAPP.reset(token)
         quiet.WHATSAPP_DELIVER = None
     assert result["success"] is True
-    assert sent == ["oi", {"text": "sobre aquilo", "reply_to": "wamid.explicit"}]
+    assert sent == ["hi", {"text": "about that", "reply_to": "wamid.explicit"}]
 
 
 def test_a_reaction_alone_is_not_the_reply():
@@ -1120,7 +1120,7 @@ def test_whatsapp_one_call_reacts_quotes_and_sends_a_card():
     try:
         result = asyncio.run(box.send_sequence({"items": [
             {"type": "reaction", "kind": "like"},
-            {"type": "text", "body": "oi", "reply_to": "wamid.1"},
+            {"type": "text", "body": "hi", "reply_to": "wamid.1"},
             {"type": "image", "path": "/tmp/shot.png", "reply_to": "wamid.1"},
             {"type": "audio", "path": "/tmp/note.ogg", "voice": True},
             {"type": "contact", "who": "zoen"},
@@ -1133,7 +1133,7 @@ def test_whatsapp_one_call_reacts_quotes_and_sends_a_card():
         quiet.WHATSAPP_CONTACT = None
     assert result["success"] is True
     assert reacted == [{"message_id": "wamid.1", "type": "like"}]
-    assert sent == [{"text": "oi", "reply_to": "wamid.1"}]
+    assert sent == [{"text": "hi", "reply_to": "wamid.1"}]
     assert media[0] == {"path": "/tmp/shot.png", "voice": False, "reply_to": "wamid.1"}
     assert media[1]["path"] == "/tmp/note.ogg" and media[1]["voice"] is True
     assert cards == [{"name": "Zoen", "phone": "+553798136141"}]
@@ -1159,7 +1159,7 @@ def test_imessage_reaction_and_image_use_the_same_tool():
             result = asyncio.run(box.send_sequence({"items": [
                 {"type": "reaction", "kind": "like"},
                 {"type": "image", "path": str(png)},
-                {"type": "text", "body": "olha"},
+                {"type": "text", "body": "look"},
             ]}, {"chat_uid": "cht_x", "source_message_id": "msg_1"}))
         finally:
             os.environ.pop("HERMES_HOME", None)
@@ -1167,7 +1167,7 @@ def test_imessage_reaction_and_image_use_the_same_tool():
     assert result["success"] is True
     assert reactions == [("cht_x", "msg_1", "like")]
     assert ("file", str(png.resolve())) in box.posted
-    assert ("sequence", {"items": [{"type": "text", "body": "olha"}]}) in box.posted
+    assert ("sequence", {"items": [{"type": "text", "body": "look"}]}) in box.posted
 
 
 def test_whatsapp_sends_every_text_bubble():
@@ -1185,17 +1185,17 @@ def test_whatsapp_sends_every_text_bubble():
     token = quiet.WHATSAPP.set(target)
     try:
         first = asyncio.run(box.send_sequence({"items": [
-            {"type": "text", "body": "um\ndois\ntrês\nquatro\ncinco"},
+            {"type": "text", "body": "one\ntwo\nthree\nfour\nfive"},
         ]}, {"chat_uid": "cht_x"}))
         second = asyncio.run(box.send_sequence({"items": [
-            {"type": "text", "body": "já te contei ali em cima"},
+            {"type": "text", "body": "I told you up there"},
         ]}, {"chat_uid": "cht_x"}))
     finally:
         quiet.WHATSAPP.reset(token)
         quiet.WHATSAPP_DELIVER = None
     assert first["success"] is True
     assert second["success"] is True
-    assert sent == ["um", "dois", "três", "quatro", "cinco", "já te contei ali em cima"]
+    assert sent == ["one", "two", "three", "four", "five", "I told you up there"]
 
 
 def test_whatsapp_quotes_the_bubble_they_pointed_at():
@@ -1229,11 +1229,11 @@ def test_imessage_quote_field_does_not_reach_plow():
     quiet.silence(Adapter)
     box = Adapter()
     result = asyncio.run(box.send_sequence(
-        {"items": [{"type": "text", "body": "oi", "reply_to": "wamid.1"}]},
+        {"items": [{"type": "text", "body": "hi", "reply_to": "wamid.1"}]},
         {"chat_uid": "cht_x"},
     ))
     assert result["success"] is True
-    assert box.posted == [("sequence", {"items": [{"type": "text", "body": "oi"}]})]
+    assert box.posted == [("sequence", {"items": [{"type": "text", "body": "hi"}]})]
 
 
 def test_whatsapp_reply_stays_off_imessage():
@@ -1249,12 +1249,12 @@ def test_whatsapp_reply_stays_off_imessage():
     quiet.WHATSAPP_DELIVER = deliver
     token = quiet.WHATSAPP.set({"to": "5511999999999"})
     try:
-        result = asyncio.run(box.send_sequence({"items": [{"type": "text", "body": "oi"}]}, {"chat_uid": "cht_x"}))
+        result = asyncio.run(box.send_sequence({"items": [{"type": "text", "body": "hi"}]}, {"chat_uid": "cht_x"}))
     finally:
         quiet.WHATSAPP.reset(token)
         quiet.WHATSAPP_DELIVER = None
     assert result["success"] is True
-    assert sent == ["oi"]
+    assert sent == ["hi"]
     assert box.posted == []
 
 
@@ -1298,7 +1298,7 @@ def test_a_whatsapp_bubble_already_sent_is_not_sent_again():
 
     quiet.WHATSAPP_DELIVER = deliver
     token = quiet.WHATSAPP.set({"to": "5537999999999", "message_id": "wamid.1"})
-    body = "o que tá rolando? me fala o que pesa mais"
+    body = "what's going on? tell me what weighs most"
     try:
         first = asyncio.run(box.send_sequence(
             {"items": [{"type": "text", "body": body, "reply_to": "wamid.1"}]},
@@ -1397,7 +1397,7 @@ def test_a_refused_owner_dm_still_sends_the_whatsapp_bubble():
         })
 
     entry = SimpleNamespace(handler=handler)
-    body = "oi, pode falar por aqui"
+    body = "hi, you can talk to me here"
     try:
         quiet._bind_whatsapp_send(entry)
         raw = entry.handler({"items": [{"type": "text", "body": body}]})
@@ -1491,7 +1491,7 @@ def test_whatsapp_turn_dict_reaches_the_loop_without_the_contextvar():
     quiet.WHATSAPP_DELIVER = deliver
     try:
         result = asyncio.run(box.send_sequence(
-            {"items": [{"type": "text", "body": "oi"}]},
+            {"items": [{"type": "text", "body": "hi"}]},
             {"chat_uid": "whatsapp:5537999999999", "zoen_whatsapp": {
                 "to": "5537999999999",
                 "message_id": "wamid.1",
@@ -1501,7 +1501,7 @@ def test_whatsapp_turn_dict_reaches_the_loop_without_the_contextvar():
     finally:
         quiet.WHATSAPP_DELIVER = None
     assert result["success"] is True
-    assert sent == ["oi"]
+    assert sent == ["hi"]
     assert box.posted == []
 
 
@@ -1516,7 +1516,7 @@ def test_whatsapp_turn_refuses_an_imessage_post():
         code = quiet.guard_whatsapp_tool("execute_code", {"code": "print(1)"})
         wrote = quiet.guard_whatsapp_tool("write_file", {"path": "/var/lib/hermes/zoen/note.txt", "content": "1"})
         listed = quiet.guard_whatsapp_tool("plow_send_message", {"action": "list"})
-        sent = quiet.guard_whatsapp_tool("plow_send_message", {"to": "cht_x", "body": "oi"})
+        sent = quiet.guard_whatsapp_tool("plow_send_message", {"to": "cht_x", "body": "hi"})
     finally:
         quiet.WHATSAPP.reset(token)
     assert shell is None
@@ -1527,7 +1527,7 @@ def test_whatsapp_turn_refuses_an_imessage_post():
     assert sent["action"] == "block"
     assert quiet.guard_whatsapp_tool("terminal", posted) is None
     assert quiet.is_silence("[NO_REPLY]") is True
-    assert quiet.is_silence("oi") is False
+    assert quiet.is_silence("hi") is False
 
 
 def test_send_sequence_still_runs():

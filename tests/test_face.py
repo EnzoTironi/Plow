@@ -440,7 +440,7 @@ def no_intro(**_k):
 
 
 def test_dispatch_asks_the_model_to_onboard():
-    for text, name in [("Me lembra de renovar o contrato amanhã", None),
+    for text, name in [("Remind me to renew the contract tomorrow", None),
                        ("Hello, what's going on?", "Plow setup")]:
         event = Event(text, user_name=name)
         action = face.greet_on_dispatch(event, voiced=False, send=no_intro)
@@ -463,7 +463,7 @@ def test_dispatch_asks_the_model_to_onboard():
 def test_first_imessage_opener_keeps_the_prebuilt_bubbles_and_the_language():
     plow = FakePlow()
     previous = os.environ.get("HERMES_HOME")
-    event = Event("oi")
+    event = Event("hi")
     with tempfile.TemporaryDirectory() as home:
         os.environ["HERMES_HOME"] = home
         try:
@@ -505,7 +505,7 @@ def test_second_imessage_message_greets_with_the_saved_code():
     assert "python3 /opt/plow/zoen/face.py cards" not in prompt
     assert "both contact cards" in prompt
     assert "within 10 seconds" in prompt
-    assert "oi, eu sou o zoen" in prompt
+    assert "hi, I'm zoen" in prompt
     assert "142857" in prompt
     assert "wa.me" not in prompt
 
@@ -552,7 +552,7 @@ def test_whatsapp_code_introduces_zoen_in_english():
 def test_whatsapp_first_contact_uses_the_same_idea_without_imessage_cards():
     plow = FakePlow(history=said(
         "me mostra o desenho",
-        {"direction": "inbound", "body": "oi"},
+        {"direction": "inbound", "body": "hi"},
     ))
     event = Event("me mostra o desenho", source=Source())
     event.zoen_whatsapp = {"to": "5511999999999", "message_id": "wamid.1"}
@@ -657,7 +657,7 @@ def test_dispatch_answers_a_group_when_they_name_zoen():
     def boom(*_a, **_k):
         raise AssertionError("judge")
 
-    for text in ("zoen faz o CLI", "@Zoen e o login?", "fala Zoen"):
+    for text in ("zoen make the CLI", "@Zoen what about the login?", "hey Zoen"):
         action = face.greet_on_dispatch(
             group_event(text),
             voiced=True,
@@ -685,13 +685,13 @@ def test_dispatch_answers_a_group_when_the_judge_says_the_message_is_for_zoen():
     plow = FakePlow(
         directed="yes",
         history=said(
-            "e o login também",
+            "and the login too",
             {"direction": "outbound", "body": "tô nisso"},
         ),
     )
     with face_env():
         action = face.greet_on_dispatch(
-            group_event("e o login também"),
+            group_event("and the login too"),
             voiced=True,
             send=no_intro,
             http=plow.http,
@@ -723,7 +723,7 @@ def test_dispatch_does_not_intro_from_a_group():
     plow = FakePlow(directed="no")
     with face_env():
         action = face.greet_on_dispatch(
-            group_event("oi"),
+            group_event("hi"),
             voiced=False,
             send=lambda **kwargs: sent.append(kwargs) or {"ok": True},
             http=plow.http,
@@ -764,7 +764,7 @@ def test_dispatch_does_not_send_a_plugin_ack():
     plow = FakePlow()
     with tempfile.TemporaryDirectory() as d, face_env(home=d):
         action = face.greet_on_dispatch(
-            Event("faz um CLI", source=Source(), recall_text="faz um CLI"),
+            Event("make a CLI", source=Source(), recall_text="make a CLI"),
             voiced=True,
             send=no_intro,
             http=plow.http,

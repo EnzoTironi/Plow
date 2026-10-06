@@ -23,6 +23,13 @@ def test_notice_is_two_lines_without_a_trailing_period():
         assert "app.plow.co/dashboard" in body
 
 
+def test_an_unknown_language_gets_the_english_notice():
+    # Before anyone has written, there is no saved language: the notice is English, not Portuguese.
+    for lang in (None, "", "xx", "de"):
+        assert credits.notice(lang) == credits.NOTICE["en"], lang
+    assert credits.notice("pt-BR") == credits.NOTICE["pt"]
+
+
 def test_looks_like_the_plow_402_blob():
     blob = (
         'HTTP 402: {"detail":"You\'re out of Plow credits. '
@@ -47,7 +54,7 @@ def test_owner_copy_speaks_once_until_the_next_message():
         assert credits.owner_copy(blob, d, "whatsapp") == credits.notice("pt")
         credits.mark_told(credits.notice("pt"), d, "whatsapp")
         assert credits.owner_copy(blob, d, "whatsapp") == ""
-        assert credits.owner_copy("oi", d, "whatsapp") is None
+        assert credits.owner_copy("hi", d, "whatsapp") is None
         credits.clear_told(d, "whatsapp")
         assert credits.owner_copy(blob, d, "whatsapp") == credits.notice("pt")
 

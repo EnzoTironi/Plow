@@ -191,7 +191,8 @@ With Luna and a reused HTTP session, live measurements were:
 | Google/Slack status, three-message burst | 2.45s | 4.152s | One contextual status and reaction on the last message |
 
 The connector opening was “vou conferir o estado das conexões do Google e do Slack,
-sem iniciar login”, visible in Messages. These are send-to-accept measurements;
+sem iniciar login” (“I'll check the state of the Google and Slack connections,
+without starting a login”), visible in Messages. These are send-to-accept measurements;
 the exact arrival time on the phone was not instrumented. The first-ever cold
 message also waited about 34 seconds for the upstream `plow-init` home-chat startup
 path before reaching the adapter. The five-second end-to-end target is therefore
