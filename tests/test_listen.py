@@ -16,20 +16,20 @@ spec.loader.exec_module(listen)
 
 def test_empty_body_becomes_the_transcript():
     assert listen.with_transcripts(
-        ["/a.m4a"], ["audio/mp4"], "", transcribe_fn=lambda _path: "oi tudo bem"
-    ) == "oi tudo bem"
+        ["/a.m4a"], ["audio/mp4"], "", transcribe_fn=lambda _path: "hi, how are you"
+    ) == "hi, how are you"
 
 
 def test_attachment_placeholder_is_replaced():
     assert listen.with_transcripts(
-        ["/a.m4a"], ["audio/mp4"], "(attachment)", transcribe_fn=lambda _path: "oi"
-    ) == "oi"
+        ["/a.m4a"], ["audio/mp4"], "(attachment)", transcribe_fn=lambda _path: "hi"
+    ) == "hi"
 
 
 def test_keeps_typed_text_and_appends_the_transcript():
     assert listen.with_transcripts(
-        ["/a.m4a"], ["audio/mp4"], "look at this", transcribe_fn=lambda _path: "oi"
-    ) == "look at this\n\noi"
+        ["/a.m4a"], ["audio/mp4"], "look at this", transcribe_fn=lambda _path: "hi"
+    ) == "look at this\n\nhi"
 
 
 def test_ignores_photos():

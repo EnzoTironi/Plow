@@ -132,9 +132,9 @@ async def verify(home):
     async def completion(request):
         payload = await request.json()
         assert "msg_last" not in payload["messages"][-1]["content"]
-        assert "faz um resumo do documento" in payload["messages"][-1]["content"]
+        assert "summarize the document" in payload["messages"][-1]["content"]
         return web.json_response({"choices": [{"message": {"content": json.dumps({
-            "line": "vou olhar o documento e separar o que importa", "reaction": "like"})}}]})
+            "line": "I'll look at the document and pull out what matters", "reaction": "like"})}}]})
 
     api.router.add_post("/v1/chat/completions", completion)
     api.router.add_post("/mcp", public_mcp)
@@ -253,7 +253,7 @@ async def verify(home):
     finally:
         adapter._chats["cht_test"]["participants"][0]["role"] = "owner"
     message = {"uid": "msg_test", "direction": "inbound", "sender": {"type": "member", "role": "owner", "uid": "usr_test"},
-               "body": "faz um resumo do documento", "attachments": [{"url": "deliberately unresolved"}]}
+               "body": "summarize the document", "attachments": [{"url": "deliberately unresolved"}]}
     await adapter._on_message(message, "cht_test")
     await adapter._on_message(message, "cht_test")  # socket/backfill duplicate
     for uid in ("msg_second", "msg_last"):
@@ -263,7 +263,7 @@ async def verify(home):
     await asyncio.wait_for(asyncio.gather(*adapter._zoen_reception.tasks), 5)
     elapsed = time.monotonic() - last_received
     assert len([p for p in posted if p[0] == "messages"]) == 1, posted
-    assert [p[1]["body"] for p in posted if p[0] == "messages"] == ["vou olhar o documento e separar o que importa"]
+    assert [p[1]["body"] for p in posted if p[0] == "messages"] == ["I'll look at the document and pull out what matters"]
     assert [p[0] for p in posted if p[0].endswith("/reactions")] == ["messages/msg_last/reactions"], posted
     assert 1.9 <= elapsed < 5, elapsed
     assert not handed_off, "attachment unexpectedly resolved"

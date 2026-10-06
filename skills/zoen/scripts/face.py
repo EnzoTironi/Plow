@@ -224,7 +224,7 @@ def first_contact_prompt(
         if code:
             choice = (
                 "These bubbles already went out on this chat, with both "
-                "contact cards, within 10 seconds: oi, eu sou o zoen; stay "
+                "contact cards, within 10 seconds: hi, I'm zoen; stay "
                 "here; or send the code on WhatsApp; then the link with "
                 f"{code}. Do not send those lines again. Do not invent "
                 "another code or another link.\n"

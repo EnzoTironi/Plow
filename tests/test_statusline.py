@@ -13,7 +13,7 @@ import statusline
 
 
 @pytest.mark.parametrize("code,content,recent,expected", [
-    (200, '{"line":"vou olhar as opções de passeio","reaction":"like"}', [], {"line":"vou olhar as opções de passeio","reaction":"like"}),
+    (200, '{"line":"I will look at outing options","reaction":"like"}', [], {"line":"I will look at outing options","reaction":"like"}),
     (200, '{"line":null,"reaction":"love"}', [], {"line":None,"reaction":"love"}),
     (429, None, [], None),
     (200, None, [], None),
@@ -31,7 +31,7 @@ def test_contextual_opening_or_no_text(tmp_path, code, content, recent, expected
             assert "thinking" not in payload
             assert "Zoen" in payload["messages"][0]["content"]
             context = json.loads(payload["messages"][1]["content"])
-            assert context["incoming_burst"][-1]["text"] == "quero um passeio tranquilo"
+            assert context["incoming_burst"][-1]["text"] == "I want a calm outing"
             assert context["recent_openings_do_not_repeat"] == recent
             return web.json_response({"choices": [{"message": {"content": content}}]}, status=code)
 
@@ -45,7 +45,7 @@ def test_contextual_opening_or_no_text(tmp_path, code, content, recent, expected
         os.environ["HERMES_MODEL"] = "openai/gpt-5.6-luna"
         try:
             async with ClientSession(base_url=f"http://127.0.0.1:{runner.addresses[0][1]}") as http:
-                result = await statusline.draft([{"body": "quero um passeio tranquilo"}], http=http, home=tmp_path,
+                result = await statusline.draft([{"body": "I want a calm outing"}], http=http, home=tmp_path,
                     recent=recent)
             assert result == expected
         finally:

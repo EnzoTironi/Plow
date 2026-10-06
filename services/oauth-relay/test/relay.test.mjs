@@ -70,7 +70,7 @@ test("isolates flows, keeps callback retryable until authenticated acknowledgmen
   assert.equal(result.headers.get("Referrer-Policy"), "no-referrer");
   assert.equal(result.headers.get("Cache-Control"), "no-store");
   const html = await result.text();
-  assert.match(html, /Autorização recebida/);
+  assert.match(html, /Authorization received/);
   assert.ok(!html.includes(flow.state) && !html.includes("test-code"));
   assert.ok(!html.includes("https://issuer.example"));
   assert.match(result.headers.get("Content-Security-Policy"), /style-src 'self'; img-src 'self'/);
@@ -100,8 +100,8 @@ test("denial is delivered without untrusted error descriptions", async () => {
   const result = await callback(flow, { code: "", error: "access_denied", error_description: "sensitive text" });
   assert.equal(result.status, 200);
   const html = await result.text();
-  assert.match(html, /Autorização não concluída/);
-  assert.match(html, /mesmo link/);
+  assert.match(html, /Authorization not completed/);
+  assert.match(html, /same link/);
   assert.ok(!html.includes("sensitive text"));
   const data = await (await fetch(flow.url, { headers: flow.headers })).json();
   assert.equal(data.status, "pending");
@@ -115,7 +115,7 @@ test("signup error keeps the flow open for a later code", async () => {
   assert.equal((await (await fetch(flow.url, { headers: flow.headers })).json()).status, "pending");
   const result = await callback(flow);
   assert.equal(result.status, 200);
-  assert.match(await result.text(), /Autorização recebida/);
+  assert.match(await result.text(), /Authorization received/);
   const data = await (await fetch(flow.url, { headers: flow.headers })).json();
   assert.equal(data.status, "ready");
   assert.equal(data.callback.code, "test-code");
@@ -131,8 +131,8 @@ test("callback pages load only bundled assets and never reflect malformed input"
   assert.equal(result.status, 400);
   const html = await result.text();
   assert.ok(!html.includes("<script>"));
-  assert.match(html, /Não deu para concluir/);
-  assert.match(await (await fetch(base)).text(), /Suas conexões, com o Zoen/);
+  assert.match(html, /Couldn't finish/);
+  assert.match(await (await fetch(base)).text(), /Your connections, with Zoen/);
 });
 
 test("expires pending and completed flows, rejects oversized requests", async () => {
@@ -219,11 +219,11 @@ test("the two-factor link is one clickable address that opens the setup SMS", as
   const html = await start.text();
   assert.match(html, /class="connection-page"/);
   assert.match(html, /class="brand"/);
-  assert.match(html, /Confirmação de dois fatores/);
-  assert.match(html, /Esse botão manda um SMS pra confirmar o seu telefone e te devolve um contato/);
-  assert.match(html, /Envie um Oi para o contato/);
-  assert.match(html, /continuar conversando pelo iMessage\/Google Messages/);
-  assert.match(html, /enviar o código aqui e continuar com segurança/);
+  assert.match(html, /Two-factor confirmation/);
+  assert.match(html, /This button sends an SMS to confirm your phone and gives you a contact back/);
+  assert.match(html, /Send that contact a Hi/);
+  assert.match(html, /keep talking over iMessage\/Google Messages/);
+  assert.match(html, /send the code here and continue securely/);
   assert.match(html, /class="button" href="sms:\+16282463032\?&amp;body=Set%20this%20up%20for%20me%3A%20aiworthusing.com%2Fagent-index%2Fzoen"/);
 });
 
@@ -233,21 +233,21 @@ test("the setup button waits fifteen minutes before it is sent again", async () 
     message: { id, type: "text", from: phone, text: { body }, kapso: { direction: "inbound" } },
     conversation: { contact_name: "Caio", phone_number: phone },
   }), key));
-  assert.equal((await (await inbound("wamid.wait", "oi", "idem-wait")).json()).setup, true);
+  assert.equal((await (await inbound("wamid.wait", "hi", "idem-wait")).json()).setup, true);
   assert.equal((await (await inbound("wamid.wait2", "de novo", "idem-wait-2")).json()).setup, false);
   const posts = await (await fetch(`${base}/__fixture/kapso/posts`)).json();
   const buttons = posts.filter((post) => post?.to === phone && post?.type === "interactive");
   assert.equal(buttons.length, 1);
-  assert.match(buttons[0].interactive.body.text, /confirmação de dois fatores para a sua segurança/);
-  assert.match(buttons[0].interactive.body.text, /te devolve um contato/);
-  assert.match(buttons[0].interactive.body.text, /envie um Oi para o contato/);
+  assert.match(buttons[0].interactive.body.text, /two-factor confirmation for your security/);
+  assert.match(buttons[0].interactive.body.text, /gives you a contact back/);
+  assert.match(buttons[0].interactive.body.text, /send that contact a Hi/);
   assert.match(buttons[0].interactive.body.text, /iMessage\/Google Messages/);
-  assert.match(buttons[0].interactive.body.text, /enviar o código aqui e continuar com segurança/);
+  assert.match(buttons[0].interactive.body.text, /send the code here and continue securely/);
 });
 
 test("a new WhatsApp number gets the setup SMS, then only its own agent", async () => {
   const first = JSON.stringify({
-    message: { id: "wamid.1", type: "text", from: "5511999999999", text: { body: "oi" }, kapso: { direction: "inbound" } },
+    message: { id: "wamid.1", type: "text", from: "5511999999999", text: { body: "hi" }, kapso: { direction: "inbound" } },
     conversation: { contact_name: "Ana", phone_number: "5511999999999" },
   });
   const opened = await (await fetch(`${base}/whatsapp/webhook`, kapso(first, "idem-1"))).json();
@@ -290,23 +290,23 @@ test("a new WhatsApp number gets the setup SMS, then only its own agent", async 
   assert.equal(registered.ok, true);
   assert.match(registered.token, /^[A-Za-z0-9_-]{43,}$/);
   const second = JSON.stringify({
-    message: { id: "wamid.2", type: "text", from: "5511999999999", text: { body: "voltei" }, kapso: { direction: "inbound" } },
+    message: { id: "wamid.2", type: "text", from: "5511999999999", text: { body: "back" }, kapso: { direction: "inbound" } },
     conversation: { contact_name: "Ana", phone_number: "5511999999999" },
   });
   const again = await (await fetch(`${base}/whatsapp/webhook`, kapso(second, "idem-2"))).json();
   assert.equal(again.setup, false);
   const auth = { Authorization: `Bearer ${registered.token}` };
   const inbox = await (await fetch(`${base}/whatsapp/inbox`, { headers: auth })).json();
-  assert.deepEqual(inbox.messages.map((message) => message.text), ["oi", "111111", "voltei"]);
+  assert.deepEqual(inbox.messages.map((message) => message.text), ["hi", "111111", "back"]);
   assert.equal((await fetch(`${base}/whatsapp/send`, {
     method: "POST",
     headers: { ...auth, "Content-Type": "application/json" },
-    body: JSON.stringify({ to: "5511888888888", text: "nao" }),
+    body: JSON.stringify({ to: "5511888888888", text: "no" }),
   })).status, 403);
   assert.equal((await fetch(`${base}/whatsapp/send`, {
     method: "POST",
     headers: { ...auth, "Content-Type": "application/json" },
-    body: JSON.stringify({ to: "5511999999999", text: "oi ana" }),
+    body: JSON.stringify({ to: "5511999999999", text: "hi ana" }),
   })).status, 200);
   assert.equal((await fetch(`${base}/whatsapp/inbox/ack`, {
     method: "POST",
@@ -354,11 +354,11 @@ test("a new WhatsApp number gets the setup SMS, then only its own agent", async 
   const resumed = await (await fetch(`${base}/whatsapp/inbox`, { headers: { Authorization: `Bearer ${resumedRegister.token}` } })).json();
   assert.equal(resumed.messages[0].text, "Fala comigo");
   const one = JSON.stringify({
-    message: { id: "wamid.5", type: "text", from: "5511611111111", text: { body: "um" }, kapso: { direction: "inbound" } },
+    message: { id: "wamid.5", type: "text", from: "5511611111111", text: { body: "one" }, kapso: { direction: "inbound" } },
     conversation: { contact_name: "Um", phone_number: "5511611111111" },
   });
   const two = JSON.stringify({
-    message: { id: "wamid.6", type: "text", from: "5511622222222", text: { body: "dois" }, kapso: { direction: "inbound" } },
+    message: { id: "wamid.6", type: "text", from: "5511622222222", text: { body: "two" }, kapso: { direction: "inbound" } },
     conversation: { contact_name: "Dois", phone_number: "5511622222222" },
   });
   assert.equal((await (await fetch(`${base}/whatsapp/webhook`, kapso(one, "idem-5"))).json()).setup, true);
@@ -382,7 +382,7 @@ test("a new WhatsApp number gets the setup SMS, then only its own agent", async 
   assert.equal(claimed.ok, true);
   const emailOwner = { Authorization: `Bearer ${claimed.token}` };
   const held = await (await fetch(`${base}/whatsapp/inbox`, { headers: emailOwner })).json();
-  assert.equal(held.messages[0].text, "um");
+  assert.equal(held.messages[0].text, "one");
   assert.equal(held.messages[0].to, "5511611111111");
 });
 
@@ -446,7 +446,7 @@ test("a WhatsApp photo, quote and tapback stay on that chat", async () => {
       id: "wamid.photo",
       type: "image",
       from: "5511644444444",
-      image: { id: "media-jpeg", mime_type: "image/jpeg", caption: "olha" },
+      image: { id: "media-jpeg", mime_type: "image/jpeg", caption: "look" },
       context: { id: "wamid.earlier" },
       kapso: { direction: "inbound", quoted_content: "a mensagem de antes" },
     },
@@ -462,7 +462,7 @@ test("a WhatsApp photo, quote and tapback stay on that chat", async () => {
   )).linked;
   const auth = { Authorization: `Bearer ${registered.token}`, "Content-Type": "application/json" };
   const inbox = await (await fetch(`${base}/whatsapp/inbox`, { headers: auth })).json();
-  assert.equal(inbox.messages[0].text, "olha");
+  assert.equal(inbox.messages[0].text, "look");
   assert.equal(inbox.messages[0].media_id, "media-jpeg");
   assert.equal(inbox.messages[0].kind, "image");
   assert.equal(inbox.messages[0].reply_to, "wamid.earlier");
@@ -474,7 +474,7 @@ test("a WhatsApp photo, quote and tapback stay on that chat", async () => {
   assert.equal((await fetch(`${base}/whatsapp/send`, {
     method: "POST",
     headers: auth,
-    body: JSON.stringify({ to: "5511644444444", text: "vi", reply_to: "wamid.photo" }),
+    body: JSON.stringify({ to: "5511644444444", text: "seen", reply_to: "wamid.photo" }),
   })).status, 200);
   assert.equal((await fetch(`${base}/whatsapp/send`, {
     method: "POST",
@@ -507,7 +507,7 @@ test("a WhatsApp photo, quote and tapback stay on that chat", async () => {
   const thumb = posts.find((post) => post?.reaction?.emoji === "👍");
   const typing = posts.find((post) => post?.typing_indicator?.type === "text" && post?.message_id === "wamid.photo");
   const picture = posts.find((post) => post?.type === "image" && post?.image?.id === "uploaded-media");
-  assert.equal(quote.text.body, "vi");
+  assert.equal(quote.text.body, "seen");
   assert.equal(heart.reaction.message_id, "wamid.photo");
   assert.equal(heart.messaging_product, "whatsapp");
   assert.equal(thumb.reaction.message_id, "wamid.photo");
@@ -530,14 +530,14 @@ test("a WhatsApp photo, quote and tapback stay on that chat", async () => {
     headers: auth,
     body: JSON.stringify({
       to: "5511644444444",
-      text: "Treg\nO link expira em 15 minutos.",
-      button: { url: link, label: "Autorizar" },
+      text: "Treg\nThe link expires in 15 minutes.",
+      button: { url: link, label: "Authorize" },
     }),
   })).status, 200);
   const button = (await (await fetch(`${base}/__fixture/kapso/posts`)).json())
-    .find((post) => post?.interactive?.action?.parameters?.display_text === "Autorizar");
-  assert.equal(button.interactive.body.text, "Treg\nO link expira em 15 minutos.");
-  assert.equal(button.interactive.action.parameters.display_text, "Autorizar");
+    .find((post) => post?.interactive?.action?.parameters?.display_text === "Authorize");
+  assert.equal(button.interactive.body.text, "Treg\nThe link expires in 15 minutes.");
+  assert.equal(button.interactive.action.parameters.display_text, "Authorize");
   assert.equal(button.interactive.action.parameters.url, link);
   assert.equal(button.interactive.action.name, "cta_url");
 });
@@ -549,8 +549,8 @@ test("each line's code binds only the WhatsApp that sends it", async () => {
   }), key));
   const ana = "5511666666666";
   const bia = "5511677777777";
-  assert.equal((await (await inbound(ana, "wamid.code.ana", "oi ana", "idem-code-ana")).json()).setup, true);
-  assert.equal((await (await inbound(bia, "wamid.code.bia", "oi bia", "idem-code-bia")).json()).setup, true);
+  assert.equal((await (await inbound(ana, "wamid.code.ana", "hi ana", "idem-code-ana")).json()).setup, true);
+  assert.equal((await (await inbound(bia, "wamid.code.bia", "hi bia", "idem-code-bia")).json()).setup, true);
   const register = (uid, secret, code) => fetch(`${base}/whatsapp/register`, {
     method: "POST",
     headers: { Authorization: "Bearer proxied", "Content-Type": "application/json" },
@@ -568,11 +568,11 @@ test("each line's code binds only the WhatsApp that sends it", async () => {
   const inboxA = await (await fetch(`${base}/whatsapp/inbox`, {
     headers: { Authorization: `Bearer ${linkedA.token}` },
   })).json();
-  assert.deepEqual(inboxA.messages.map((message) => message.text), ["oi ana", "142857"]);
+  assert.deepEqual(inboxA.messages.map((message) => message.text), ["hi ana", "142857"]);
   assert.equal((await fetch(`${base}/whatsapp/send`, {
     method: "POST",
     headers: { Authorization: `Bearer ${linkedA.token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ to: bia, text: "nao" }),
+    body: JSON.stringify({ to: bia, text: "no" }),
   })).status, 403);
   assert.equal((await (await inbound(bia, "wamid.code.bia2", "314159", "idem-code-bia2")).json()).ok, true);
   const linkedB = await (await register("34".repeat(16), "e".repeat(43), "314159")).json();
@@ -580,7 +580,7 @@ test("each line's code binds only the WhatsApp that sends it", async () => {
   const inboxB = await (await fetch(`${base}/whatsapp/inbox`, {
     headers: { Authorization: `Bearer ${linkedB.token}` },
   })).json();
-  assert.deepEqual(inboxB.messages.map((message) => message.text), ["oi bia", "314159"]);
+  assert.deepEqual(inboxB.messages.map((message) => message.text), ["hi bia", "314159"]);
   const posts = await (await fetch(`${base}/__fixture/kapso/posts`)).json();
   const welcomes = posts.filter((post) => post?.text?.body === "pode falar. eu tô aqui.");
   assert.deepEqual(welcomes, []);
@@ -630,7 +630,7 @@ test("a code that already came from SMS links WhatsApp without another two-facto
 test("the configured phone is cleared once and every other number stays", async () => {
   const diag = async () => (await fetch(`${base}/whatsapp/diag`)).json();
   const inbound = (phone, key) => fetch(`${base}/whatsapp/webhook`, kapso(JSON.stringify({
-    message: { id: key, type: "text", from: phone, text: { body: "oi" }, kapso: { direction: "inbound" } },
+    message: { id: key, type: "text", from: phone, text: { body: "hi" }, kapso: { direction: "inbound" } },
     conversation: { contact_name: "Alvo", phone_number: phone },
   }), key));
   const before = await diag();
@@ -782,7 +782,7 @@ test("reset drops every registered number and a new one can start again", async 
   assert.equal(cleared.note.stage, "reset");
   const phone = "5511900000099";
   assert.equal((await fetch(`${base}/whatsapp/webhook`, kapso(JSON.stringify({
-    message: { id: "wamid.reset", type: "text", from: phone, text: { body: "oi" }, kapso: { direction: "inbound" } },
+    message: { id: "wamid.reset", type: "text", from: phone, text: { body: "hi" }, kapso: { direction: "inbound" } },
     conversation: { contact_name: "Novo", phone_number: phone },
   }), "idem-after-reset"))).status, 200);
   const started = await diag();

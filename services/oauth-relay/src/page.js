@@ -3,49 +3,49 @@ import { LEGAL } from "./legal.js";
 const COPY = {
   ...LEGAL,
   welcome: {
-    label: "Suas conexões, com o Zoen",
-    title: "Mais da sua vida.",
-    accent: "Na mesma conversa.",
-    text: "Peça ao Zoen para conectar sua conta. O link de autorização chega pelo iMessage, e vocês continuam por lá.",
+    label: "Your connections, with Zoen",
+    title: "More of your life.",
+    accent: "In the same conversation.",
+    text: "Ask Zoen to connect your account. The authorization link arrives in iMessage, and you carry on there.",
   },
   received: {
-    label: "Autorização recebida",
-    title: "Pode voltar.",
-    accent: "Eu sigo com você.",
-    text: "O retorno já chegou. O Zoen vai conferir a conexão e te avisar na conversa.",
+    label: "Authorization received",
+    title: "You can go back.",
+    accent: "I'll take it from here.",
+    text: "The response is in. Zoen will check the connection and let you know in the conversation.",
   },
   denied: {
-    label: "Autorização não concluída",
-    title: "Tudo bem.",
-    accent: "Você escolhe o acesso.",
-    text: "Esta volta ainda não conectou a conta. Se você acabou de criar o cadastro, toque de novo no mesmo link que o Zoen mandou. A autorização continua aberta.",
+    label: "Authorization not completed",
+    title: "That's fine.",
+    accent: "You choose the access.",
+    text: "This return didn't connect the account yet. If you just created your account, tap the same link Zoen sent you again. The authorization is still open.",
   },
   expired: {
-    label: "Link expirado",
-    title: "Vamos de novo?",
-    accent: "Eu te espero por lá.",
-    text: "Este link já expirou ou não está mais disponível. Peça um novo ao Zoen no iMessage para continuar.",
+    label: "Link expired",
+    title: "Shall we try again?",
+    accent: "I'll be waiting there.",
+    text: "This link has expired or is no longer available. Ask Zoen for a new one in iMessage to continue.",
   },
   used: {
-    label: "Link já utilizado",
-    title: "A gente continua",
-    accent: "na conversa.",
-    text: "Este link já foi usado ou cancelado. Confira com o Zoen se a conexão terminou ou peça uma nova tentativa.",
+    label: "Link already used",
+    title: "We'll carry on",
+    accent: "in the conversation.",
+    text: "This link was already used or canceled. Check with Zoen whether the connection finished, or ask for a new attempt.",
   },
   invalid: {
-    label: "Não deu para concluir",
-    title: "Vamos tentar",
-    accent: "mais uma vez.",
-    text: "Não conseguimos confirmar este retorno. Volte ao iMessage e peça um novo link ao Zoen.",
+    label: "Couldn't finish",
+    title: "Let's try",
+    accent: "one more time.",
+    text: "We couldn't confirm this return. Go back to iMessage and ask Zoen for a new link.",
   },
   confirm: {
-    label: "Confirmação de dois fatores",
-    title: "Pra gente começar",
-    accent: "a conversar.",
-    text: "Preciso de uma confirmação de dois fatores para a sua segurança. Esse botão manda um SMS pra confirmar o seu telefone e te devolve um contato. Envie um Oi para o contato. Você pode continuar conversando pelo iMessage/Google Messages, ou enviar o código aqui e continuar com segurança.",
-    button: "Enviar o SMS",
+    label: "Two-factor confirmation",
+    title: "So we can start",
+    accent: "talking.",
+    text: "I need a two-factor confirmation for your security. This button sends an SMS to confirm your phone and gives you a contact back. Send that contact a Hi. You can keep talking over iMessage/Google Messages, or send the code here and continue securely.",
+    button: "Send the SMS",
     href: "sms:+16282463032?&body=Set%20this%20up%20for%20me%3A%20aiworthusing.com%2Fagent-index%2Fzoen",
-    hint: "Pode fechar esta página depois de enviar.",
+    hint: "You can close this page after sending.",
   },
 };
 
@@ -57,7 +57,7 @@ function attr(value) {
 export function page(kind, headers, status = 200) {
   const copy = COPY[kind];
   return new Response(`<!doctype html>
-<html lang="${copy.article ? "en" : "pt-BR"}">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -72,21 +72,21 @@ export function page(kind, headers, status = 200) {
     <img src="/zoen-avatar.webp" width="36" height="36" alt="">
     <span class="wordmark">Zoen</span>
     <span class="divider" aria-hidden="true"></span>
-    <span class="brand-detail">${copy.article ? "your connections" : "conexões"}</span>
+    <span class="brand-detail">your connections</span>
   </header>
   <main>
     <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span>${copy.label}</p>
     <h1>${copy.title}<br><em>${copy.accent}</em></h1>
     <p class="description">${copy.text}</p>
-    ${copy.article ? `<article aria-label="${copy.label}">${copy.article}</article>` : `<a class="button" href="${attr(copy.href || "sms:")}">${copy.button || "Voltar ao iMessage"} <span aria-hidden="true">↗</span></a>
-    <p class="hint">${copy.hint || "Pode fechar esta página e continuar na conversa."}</p>`}
+    ${copy.article ? `<article aria-label="${copy.label}">${copy.article}</article>` : `<a class="button" href="${attr(copy.href || "sms:")}">${copy.button || "Back to iMessage"} <span aria-hidden="true">↗</span></a>
+    <p class="hint">${copy.hint || "You can close this page and keep talking in the conversation."}</p>`}
   </main>
-  <footer><p>${copy.article ? "A little less to figure out alone." : "Um pouco menos para resolver sozinho."}</p>
-    <nav aria-label="${copy.article ? "About Zoen" : "Sobre o Zoen"}">
+  <footer><p>A little less to figure out alone.</p>
+    <nav aria-label="About Zoen">
       <a href="https://tryzoen.com">Zoen</a>
-      <a href="/privacy">${copy.article ? "Privacy" : "Privacidade"}</a>
-      <a href="/terms">${copy.article ? "Terms" : "Termos"}</a>
-      <a href="mailto:enzo@zoen.space">${copy.article ? "Contact" : "Contato"}</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+      <a href="mailto:enzo@zoen.space">Contact</a>
     </nav>
   </footer>
 </body>

@@ -232,11 +232,11 @@ def pairing_link(code: str, door: str = WHATSAPP_DOOR, uid: str = "") -> str:
 def pairing_bubbles(code: str, door: str = WHATSAPP_DOOR, uid: str = "") -> list[str]:
     """One iMessage bubble per line. Blank lines in one body would stay a single text."""
     return [
-        "oi, eu sou o zoen",
-        "pode continuar conversando comigo por aqui",
-        "ou conversar comigo pelo whatsapp, clicando no link e enviando o código",
+        "hi, I'm zoen",
+        "you can keep talking to me here",
+        "or talk to me on whatsapp: tap the link and send the code",
         pairing_link(code, door, uid),
-        "Enzo me criou. consigo conectar seus apps, mais de mil, onde você precisar",
+        "Enzo made me. I can connect your apps, more than a thousand, wherever you need",
     ]
 
 

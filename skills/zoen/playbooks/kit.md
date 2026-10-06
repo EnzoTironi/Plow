@@ -34,7 +34,7 @@ their Mac. `plow_list_skills`.
 Bubbles (shape, match their language):
 
 ```text
-posso logar no github no seu mac?
+can I log in to github on your mac?
 ```
 
 App missing, next bubble is only:

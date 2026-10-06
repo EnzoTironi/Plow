@@ -10,7 +10,7 @@ const SETUP_COOLDOWN_MS = 15 * 60 * 1000;
 export const SETUP_URL = "https://auth.tryzoen.com/whatsapp/start";
 const WHATSAPP_DOOR = "553798136141";
 
-const SETUP_BODY = "pra gente começar a conversar\n\npreciso de uma confirmação de dois fatores para a sua segurança.\n\no botão manda um sms pra confirmar o seu telefone e te devolve um contato.\n\nenvie um Oi para o contato. você pode continuar conversando pelo iMessage/Google Messages\n\nou enviar o código aqui e continuar com segurança.";
+const SETUP_BODY = "so we can start talking\n\nI need a two-factor confirmation for your security.\n\nthe button sends an sms to confirm your phone and gives you a contact back.\n\nsend that contact a Hi. you can keep talking over iMessage/Google Messages\n\nor send the code here and continue securely.";
 
 export function setupMessage(target, url = SETUP_URL) {
   const body = {
@@ -22,7 +22,7 @@ export function setupMessage(target, url = SETUP_URL) {
       body: { text: SETUP_BODY },
       action: {
         name: "cta_url",
-        parameters: { display_text: "Enviar o SMS", url },
+        parameters: { display_text: "Send the SMS", url },
       },
     },
   };
@@ -211,7 +211,7 @@ function withQuote(body, replyTo) {
 export function buttonBody(target, text, url, label) {
   const href = String(url || "").trim();
   if (!href.startsWith("https://") || href.length > 2000) return null;
-  const display = String(label || "Autorizar").trim().slice(0, 20) || "Autorizar";
+  const display = String(label || "Authorize").trim().slice(0, 20) || "Authorize";
   const copy = String(text || "").trim().slice(0, 1024);
   if (!copy) return null;
   const payload = {

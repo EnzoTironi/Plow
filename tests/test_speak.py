@@ -50,7 +50,7 @@ def test_synthesize_rejects_empty_text_and_wrong_suffix(tmp_path):
     else:
         raise AssertionError("empty text must fail")
     try:
-        speak.synthesize("oi", tmp_path / "note.wav")
+        speak.synthesize("hi", tmp_path / "note.wav")
     except ValueError as exc:
         assert "m4a" in str(exc)
     else:
@@ -61,13 +61,13 @@ def test_main_prints_the_output_path(tmp_path, monkeypatch, capsys):
     dest = tmp_path / "zoen.m4a"
 
     def fake(text, path, lang=None):
-        assert text == "oi"
+        assert text == "hi"
         assert lang == "pt"
         path.write_bytes(b"ftyp")
         return path
 
     monkeypatch.setattr(speak, "synthesize", fake)
-    assert speak.main(["oi", "--out", str(dest)]) == 0
+    assert speak.main(["hi", "--out", str(dest)]) == 0
     assert capsys.readouterr().out.strip() == str(dest)
 
 

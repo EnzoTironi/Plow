@@ -33,7 +33,7 @@ NOTICE = {
 
 def notice(lang: str | None) -> str:
     key = (lang or "").strip().lower()[:2]
-    return NOTICE.get(key) or NOTICE["pt"]
+    return NOTICE.get(key) or NOTICE["en"]
 
 
 def language(home: str | None = None) -> str:

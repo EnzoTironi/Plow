@@ -64,7 +64,7 @@ class Adapter:
         return None
 
 
-def message(uid, text="faz uma pesquisa", attachments=None):
+def message(uid, text="do some research", attachments=None):
     return {"uid": uid, "body": text, "attachments": attachments or [], "sender": {"role": "owner"}}
 
 
@@ -77,7 +77,7 @@ def receiver(tmp_path, monkeypatch):
     monkeypatch.setattr(presence, "DRAFT_DELAY", .001)
 
     async def model_draft(messages, **kwargs):
-        return {"line": "vou olhar aquele documento", "reaction": "like"}
+        return {"line": "I'll look at that document", "reaction": "like"}
 
     monkeypatch.setattr(presence, "draft", model_draft)
     adapter = Adapter()
@@ -142,7 +142,7 @@ def test_burst_one_status_and_reaction_on_last_message(tmp_path, monkeypatch):
 
     asyncio.run(run())
     assert adapter.typed == ["cht_owner"]
-    assert adapter.posts == [("cht_owner", "messages", {"body": "vou olhar aquele documento", "format": "none"})]
+    assert adapter.posts == [("cht_owner", "messages", {"body": "I'll look at that document", "format": "none"})]
 
 
 def test_attachment_does_not_block_status_with_real_debounce(tmp_path, monkeypatch):
@@ -196,8 +196,8 @@ def test_model_selects_reaction_without_status_for_a_closer(tmp_path, monkeypatc
     monkeypatch.setattr(presence, "draft", closer)
 
     async def run():
-        receiving.accept(message("msg_1", "valeu"), "cht_owner")
-        receiving.accept(message("msg_2", "obrigado"), "cht_owner")
+        receiving.accept(message("msg_1", "thanks"), "cht_owner")
+        receiving.accept(message("msg_2", "thank you"), "cht_owner")
         await drain(receiving)
 
     asyncio.run(run())
@@ -270,13 +270,13 @@ def test_permission_timeout_never_uses_the_cached_owner(tmp_path, monkeypatch):
 def test_reaction_is_chosen_by_model_not_keywords(tmp_path, monkeypatch):
     receiving, adapter = receiver(tmp_path, monkeypatch)
     async def chosen(*args, **kwargs):
-        return {"line": "vou conectar sua agenda", "reaction": "emphasize"}
+        return {"line": "I'll connect your calendar", "reaction": "emphasize"}
     monkeypatch.setattr(presence, "draft", chosen)
     async def run():
-        receiving.accept(message("msg_connect", "conecta meu Google"), "cht_owner")
+        receiving.accept(message("msg_connect", "connect my Google"), "cht_owner")
         await drain(receiving)
     asyncio.run(run())
-    assert adapter.posts == [("cht_owner", "messages", {"body": "vou conectar sua agenda", "format": "none"})]
+    assert adapter.posts == [("cht_owner", "messages", {"body": "I'll connect your calendar", "format": "none"})]
 
 
 def test_typing_starts_when_the_model_is_called_and_no_eye_is_written(tmp_path, monkeypatch):
@@ -354,18 +354,18 @@ def test_new_message_cancels_the_outdated_opening(tmp_path, monkeypatch):
         if len(messages) == 1:
             await asyncio.sleep(.2)
             return {"line": "a stale opening", "reaction": None}
-        return {"line": "vou focar no pedido corrigido", "reaction": None}
+        return {"line": "I'll focus on the corrected request", "reaction": None}
 
     monkeypatch.setattr(presence, "draft", model_draft)
 
     async def run():
-        receiving.accept(message("msg_1", "faz uma pesquisa sobre viagens"), "cht_owner")
+        receiving.accept(message("msg_1", "research some trips"), "cht_owner")
         await asyncio.sleep(.01)
         receiving.accept(message("msg_2", "na verdade, sobre restaurantes"), "cht_owner")
         await drain(receiving)
 
     asyncio.run(run())
-    assert [p[2]["body"] for p in adapter.posts if p[1] == "messages"] == ["vou focar no pedido corrigido"]
+    assert [p[2]["body"] for p in adapter.posts if p[1] == "messages"] == ["I'll focus on the corrected request"]
 
 
 def test_main_work_never_waits_for_slow_reception_and_fast_answer_cancels_opening(tmp_path, monkeypatch):
@@ -374,7 +374,7 @@ def test_main_work_never_waits_for_slow_reception_and_fast_answer_cancels_openin
         release = asyncio.Event()
         async def slow_draft(*args, **kwargs):
             await release.wait()
-            return {"line": "vou separar as opções", "reaction": "like"}
+            return {"line": "I'll sort out the options", "reaction": "like"}
         monkeypatch.setattr(presence, "draft", slow_draft)
         receiving.accept(message("msg_1"), "cht_owner")
         event = SimpleNamespace(source=SimpleNamespace(chat_id="cht_owner"), message_id="msg_1", channel_prompt="")
@@ -401,17 +401,17 @@ def test_new_burst_closes_old_opening_and_keeps_context_in_receive_order(tmp_pat
             return {"line": messages[0]["body"], "reaction": "like"}
 
         monkeypatch.setattr(presence, "draft", draft)
-        receiving.accept(message("msg_1", "veja a agenda"), "cht_owner")
+        receiving.accept(message("msg_1", "check the calendar"), "cht_owner")
         await asyncio.sleep(.05)
         assert "cht_owner" not in receiving.bursts  # First draft is still pending.
-        receiving.accept(message("msg_2", "comece por amanhã"), "cht_owner")
+        receiving.accept(message("msg_2", "start with tomorrow"), "cht_owner")
         release_old.set()
         await drain(receiving)
-        assert contexts == [[], ["veja a agenda"]]
-        assert receiving.context["cht_owner"] == ["veja a agenda", "comece por amanhã"]
+        assert contexts == [[], ["check the calendar"]]
+        assert receiving.context["cht_owner"] == ["check the calendar", "start with tomorrow"]
 
     asyncio.run(run())
-    assert [p[2]["body"] for p in adapter.posts if p[1] == "messages"] == ["comece por amanhã"]
+    assert [p[2]["body"] for p in adapter.posts if p[1] == "messages"] == ["start with tomorrow"]
     assert all("msg_1" not in p[1] for p in adapter.posts)
 
 
@@ -466,13 +466,13 @@ def test_owner_message_lets_the_credits_notice_speak_again(tmp_path, monkeypatch
 
     async def guest():
         await box._on_message(
-            {"uid": "msg_guest", "body": "oi", "sender": {"type": "member", "role": "guest"}},
+            {"uid": "msg_guest", "body": "hi", "sender": {"type": "member", "role": "guest"}},
             "cht_owner",
         )
 
     async def owner():
         await box._on_message(
-            {"uid": "msg_owner", "body": "oi", "sender": {"type": "member", "role": "owner"}},
+            {"uid": "msg_owner", "body": "hi", "sender": {"type": "member", "role": "owner"}},
             "cht_owner",
         )
 

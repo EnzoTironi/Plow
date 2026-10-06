@@ -170,7 +170,7 @@ def turn_target(burst: Burst) -> dict:
     return target
 
 
-HANDSHAKE = "oi, eu sou o zoen. pode falar por aqui"
+HANDSHAKE = "hi, I'm zoen. you can talk to me here"
 
 
 def pairing_handshake(text: str) -> bool:
@@ -273,7 +273,7 @@ class TypingDelivery:
 class ButtonDelivery:
     body: str
     url: str
-    label: str = "Autorizar"
+    label: str = "Authorize"
 
 
 Delivery = TextDelivery | ReactionDelivery | TypingDelivery | ButtonDelivery
@@ -347,7 +347,7 @@ def relay_body(address: Address, delivery: Delivery) -> dict:
         return body
     if isinstance(delivery, ButtonDelivery):
         body["text"] = delivery.body[:1024]
-        body["button"] = {"url": delivery.url[:2000], "label": delivery.label[:20] or "Autorizar"}
+        body["button"] = {"url": delivery.url[:2000], "label": delivery.label[:20] or "Authorize"}
         return body
     raise TypeError(f"unknown delivery {type(delivery).__name__}")
 
@@ -369,12 +369,12 @@ def authorization_cards(name: str, details: str) -> list[dict]:
     if not https:
         return []
     title = str(name or "").strip()
-    title = title[:1].upper() + title[1:] if title else "Conexão"
+    title = title[:1].upper() + title[1:] if title else "Connection"
     if "15 minutes" in text or "expires" in text.lower():
-        copy = f"{title}\nO link expira em 15 minutos."
+        copy = f"{title}\nThe link expires in 15 minutes."
     else:
-        copy = f"{title}\nToque em Autorizar para conectar."
-    return [{"text": copy, "url": url, "label": "Autorizar"} for url in https]
+        copy = f"{title}\nTap Authorize to connect."
+    return [{"text": copy, "url": url, "label": "Authorize"} for url in https]
 
 
 def poll_pause(idle: int) -> float:
@@ -563,7 +563,7 @@ class WhatsAppLine:
             mark_told(str(content), channel="whatsapp")
         return {"success": True, "message_id": None}
 
-    async def send_card(self, chat_id: str, text: str, url: str, label: str = "Autorizar") -> dict:
+    async def send_card(self, chat_id: str, text: str, url: str, label: str = "Authorize") -> dict:
         """A WhatsApp card. The link is the button, not a line of the message."""
         address = _address_from_line(chat_id)
         body = relay_body(address, ButtonDelivery(body=str(text or ""), url=str(url or ""), label=label))
