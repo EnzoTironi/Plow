@@ -86,3 +86,27 @@ if __name__ == "__main__":
     test_stories_and_install_lead_with_one_click()
     time.sleep(0)
     print("ok")
+
+
+def test_the_agent_user_has_no_root():
+    """A root grant lets any turn rewrite the root-owned SOUL.md, plugins and approval gates."""
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    live = "\n".join(line for line in dockerfile.splitlines() if not line.lstrip().startswith("#"))
+    assert "sudoers" not in live
+    assert "NOPASSWD" not in live
+    assert " sudo" not in live.replace("--no-install-recommends", "")
+
+
+def test_gh_is_checksummed_for_both_architectures():
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    import re
+    for arch in ("AMD64", "ARM64"):
+        assert re.search(rf"ARG GH_SHA256_{arch}=[0-9a-f]{{64}}\n", dockerfile), arch
+    assert 'sha256sum -c -' in dockerfile
+    assert "| tar -xz" not in dockerfile  # never unpack a download before it is verified
+
+
+def test_pairing_retries_are_not_a_hot_loop():
+    script = (ROOT / "image/s6-overlay/s6-rc.d/zoen-pairing/pairing.sh").read_text()
+    assert "/bin/sleep 2" in script
+    assert "/bin/sleep 0.2" not in script
