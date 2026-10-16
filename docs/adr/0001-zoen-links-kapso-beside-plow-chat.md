@@ -23,3 +23,18 @@ accepted
 - The kit stays. An index leads a turn from a playbook to one leaf. A playbook returns stdout and an exit code.
 - The variant does not ship a config overlay. `HERMES_MODEL` and `HERMES_YOLO_MODE` are the model and approval knobs. Naming the Zoen plugin under `plugins.enabled` is the one config add. No `sitecustomize`.
 - A fast opening, if it stays, is one extra send on the same line. It is not its own module.
+
+## Addendum, 2026-10-16: approvals are config, not YOLO
+
+`HERMES_YOLO_MODE` was the approval knob because the gateway's `/approve` ask
+was dropped by the quiet layer (`quiet.py` wraps every `send`), so a flagged
+command parked the turn while the owner only saw typing. YOLO also waved
+through the `plow_chat` plugin's gate for email sent from the owner's Gmail.
+
+Now the ask reaches the chat (`is_approval_prompt` passes the quiet layer on
+iMessage and WhatsApp), and `enable-zoen-face.py` writes `approvals.mode: off`,
+which on the pinned Hermes skips only command prompts inside Zoen's own VM.
+Plugin gates ask again. The second config add is that `approvals` block.
+
+The base persona stays in fact as well as in intent: the image adapts the
+base `SOUL.md` (`image/zoen-soul.py`) instead of replacing it.

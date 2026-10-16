@@ -12,7 +12,6 @@ services:
       AGENT_BLURB: ${AGENT_BLURB:-life happens. text zoen. plan your week. find a great place. compare before you buy. walk into the meeting ready. find your next customer. turn an idea into something real. your apps and thousands of tools, in one conversation. big dreams. everyday problems. one little monster.}
       # Required: agentsview reports 0 tokens for Hermes; the client reads state.db here.
       HERMES_HOME: /var/lib/hermes
-      HERMES_YOLO_MODE: "1"
       TZ: ${TZ:-America/Sao_Paulo}
       # Optional. Missing tokens: issues/watch skip that source. Never required to boot.
       GH_TOKEN: ${GH_TOKEN:-}

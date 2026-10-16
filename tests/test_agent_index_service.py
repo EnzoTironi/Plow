@@ -29,8 +29,10 @@ def test_wiring():
     assert "ENV AGENT_ID=zoen" in dockerfile
     assert "ENV AGENT_NAME=Zoen" in dockerfile
     assert "ENV AGENT_BLURB=" in dockerfile
-    assert "base-ef0019372ff8bca593611b31ebd2e08f9f1458ff" in dockerfile
-    assert "sha256:a8a2f97ad78b8192d80a984dce81d3bf5a9a883d18cb7b677704913a09b56aee" in dockerfile
+    # Tag and multi-arch index digest, both immutable. tests/test_persona.py ties the sha
+    # to the base SOUL.md fixture, so a bump cannot skip reviewing the base persona.
+    assert "base-c692e807386993b677de13500ce3a1a323d52b48" in dockerfile
+    assert "sha256:e04a373ed7b8a1f6440e4813eb282c2b6087d31e77c6e5e386ae40a307163d32" in dockerfile
     compose = (ROOT / "compose.yml").read_text()
     assert "AGENT_ID: ${AGENT_ID:-zoen}" in compose
     assert "AGENT_NAME: ${AGENT_NAME:-Zoen}" in compose

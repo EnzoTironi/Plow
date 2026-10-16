@@ -114,6 +114,28 @@ def test_credits_notice_stays_quiet_until_a_normal_reply():
     ]
 
 
+def test_gateway_approval_prompt_reaches_the_owner():
+    """A plugin gate (an email in the owner's name) asks in chat. Dropping that ask parked the turn."""
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    prompt = "⚠️ gmail send to ana@example.com: 'Lunch Friday'\n\nReply /approve to run or /deny to cancel."
+    result = asyncio.run(box.send(
+        "cht_x", prompt, metadata={"is_approval_prompt": True, "_interim_send": True},
+    ))
+    assert box.posted == [("send", prompt)]
+    assert result.success is True
+
+
+def test_only_the_gateway_marker_makes_an_approval_prompt():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    asyncio.run(box.send("cht_x", "Reply /approve to run", metadata={"is_approval_prompt": "yes"}))
+    asyncio.run(box.send("cht_x", "Reply /approve to run"))
+    assert box.posted == []
+
+
 def test_normal_final_is_dropped():
     Adapter = _adapter()
     quiet.silence(Adapter)
@@ -1729,15 +1751,26 @@ def test_claim_identity_skips_modules_without_the_seam():
     assert not hasattr(module, "_with_identity")
 
 
+def _seed_soul() -> str:
+    """The base SOUL.md as the image ships it: image/zoen-soul.py over the pinned base."""
+    spec_soul = importlib.util.spec_from_file_location("zoen_soul", ROOT / "image/zoen-soul.py")
+    module = importlib.util.module_from_spec(spec_soul)
+    spec_soul.loader.exec_module(module)
+    return module.compose((ROOT / "tests/fixtures/base-SOUL.md").read_text())
+
+
 def test_seed_soul_is_zoen_not_a_plow_assistant():
-    soul = (ROOT / "runtime" / "SOUL.md").read_text()
+    seed = _seed_soul()
     persona = (ROOT / "runtime" / "persona.md").read_text()
+    # Hermes loads one file: the seed, then persona.md. Zoen's rules live in the persona.
+    soul = seed + "\n" + persona
+    assert seed.lstrip().startswith("# Zoen")
     assert persona.lstrip().startswith("# Zoen")
     assert "You are **Zoen**" in persona
     assert "https://tryzoen.com" in persona
     assert "add you to an iMessage group" in persona
-    assert "You are **Zoen**" not in soul
-    assert len(soul.encode()) + len(persona.encode()) < 20000
+    assert "You are **Zoen**" not in seed
+    assert len(soul.encode()) < 20000
     assert "You are a Plow assistant" not in soul
     assert "mention /help" in persona.lower()
     assert "zoen_connections" in soul
@@ -1757,7 +1790,7 @@ def test_seed_soul_is_zoen_not_a_plow_assistant():
 
 
 def test_persona_route_index_names_playbooks_and_skills():
-    persona = (ROOT / "runtime" / "SOUL.md").read_text()
+    persona = (ROOT / "runtime" / "persona.md").read_text()
     assert "# Route" in persona
     for needle in (
         "context.py dump",
