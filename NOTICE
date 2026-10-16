@@ -12,13 +12,20 @@ This product includes software and image patterns derived from:
 Those works are copyright The Plow Collective, Inc. and licensed under
 Apache-2.0 or MIT as stated in their repositories.
 
-The container image installs the following CLIs as deterministic scanners
-or intake tools (not as LLM backends):
+The container image installs GitHub CLI `gh` (MIT), GitHub, pinned by
+version and sha256. Skills use these CLIs as deterministic scanners or intake
+tools when they are present (not as LLM backends); the image does not bundle
+them:
 
 - @alibaba-group/open-code-review (Apache-2.0), Alibaba
 - deepsec (Apache-2.0), Vercel Labs
 - @coldtea/pr-lens-cli (MIT), Coldtea AI — validate/render/canvas only
-- GitHub CLI `gh` (MIT), GitHub
+
+tests/fixtures/hermes_threat_patterns.py is NousResearch/hermes-agent's
+tools/threat_patterns.py (MIT, Copyright (c) 2025 Nous Research), vendored
+unmodified so the tests run the same prompt-injection scan Hermes runs on
+SOUL.md. tests/fixtures/base-SOUL.md is plow-pbc/plow-hermes-agent's
+image/seed/SOUL.md at the pinned base commit.
 
 QA on the owner's Mac uses Plow Latch when installed; otherwise the
 Zoen skill drives the same user-path inside this container. There is no
