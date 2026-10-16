@@ -1911,3 +1911,157 @@ if __name__ == "__main__":
     test_pairing_does_not_hold_the_gateway()
     test_persona_route_index_names_playbooks_and_skills()
     print("ok")
+
+
+def _fresh_whatsapp(name):
+    spec_wa = importlib.util.spec_from_file_location(name, ROOT / "image/plugins/zoen-face/whatsapp.py")
+    module = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(module)
+    return module
+
+
+def test_relay_ping_never_carries_a_real_plow_bearer():
+    """The relay is a third-party host. Only the cloud placeholder may ride the ping."""
+    whatsapp = _fresh_whatsapp("zoen_face_whatsapp_ping")
+    seen = []
+
+    class Reply:
+        status = 204
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return b""
+
+    def fake_urlopen(request, timeout=None):
+        seen.append(dict(request.header_items()))
+        return Reply()
+
+    whatsapp.urlopen = fake_urlopen
+    previous = os.environ.get("PLOW_AGENT_TOKEN")
+    try:
+        os.environ["PLOW_AGENT_TOKEN"] = "plow_live_secret_for_test"
+        whatsapp._ping_relay("https://relay.example")
+        whatsapp._PINGED = False
+        os.environ["PLOW_AGENT_TOKEN"] = "proxied"
+        whatsapp._ping_relay("https://relay.example")
+    finally:
+        if previous is None:
+            os.environ.pop("PLOW_AGENT_TOKEN", None)
+        else:
+            os.environ["PLOW_AGENT_TOKEN"] = previous
+    assert "Authorization" not in seen[0]
+    assert seen[1]["Authorization"] == "Bearer proxied"
+
+
+def test_shared_state_is_private_to_the_agent_user():
+    """Pairing runs as root and the gateway as hermes: hand the files over, never 0777."""
+    whatsapp = _fresh_whatsapp("zoen_face_whatsapp_share")
+    owned = []
+    with tempfile.TemporaryDirectory() as home:
+        previous = os.environ.get("HERMES_HOME")
+        os.environ["HERMES_HOME"] = home
+        try:
+            whatsapp._write_token("t" * 43)
+            whatsapp._agent_secret()
+            whatsapp.os.geteuid = lambda: 0
+            whatsapp._agent_ids = lambda: (4242, 4243)
+            whatsapp.os.chown = lambda path, uid, gid: owned.append((os.path.basename(path), uid, gid))
+            whatsapp._share_zoen()
+            root = Path(home) / "zoen"
+            modes = {p.name: oct(p.stat().st_mode & 0o777) for p in [root, *root.iterdir()]}
+        finally:
+            whatsapp.os.geteuid = os.geteuid
+            whatsapp.os.chown = os.chown
+            if previous is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous
+    assert modes == {"zoen": "0o700", "whatsapp.token": "0o600", "agent.id": "0o600"}
+    assert sorted(owned) == [("agent.id", 4242, 4243), ("whatsapp.token", 4242, 4243), ("zoen", 4242, 4243)]
+
+
+def test_shared_state_is_left_alone_without_root():
+    whatsapp = _fresh_whatsapp("zoen_face_whatsapp_share_user")
+    with tempfile.TemporaryDirectory() as home:
+        previous = os.environ.get("HERMES_HOME")
+        os.environ["HERMES_HOME"] = home
+        try:
+            whatsapp._write_token("t" * 43)
+            whatsapp.os.geteuid = lambda: 1000
+            whatsapp._share_zoen()
+            mode = oct((Path(home) / "zoen" / "whatsapp.token").stat().st_mode & 0o777)
+        finally:
+            whatsapp.os.geteuid = os.geteuid
+            if previous is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous
+    assert mode == "0o600"
+
+
+def test_pairing_backs_off_while_plow_is_unreachable():
+    whatsapp = _fresh_whatsapp("zoen_face_whatsapp_backoff")
+    assert whatsapp._pairing_pause(0) == 0.2
+    assert whatsapp._pairing_pause(29.9) == 0.2
+    assert whatsapp._pairing_pause(30) == 2.0
+    assert whatsapp._pairing_pause(600) == 5.0
+    pauses = []
+    whatsapp.time.sleep = pauses.append
+    attempts = iter([False] * 160 + [True])
+
+    async def ensure(_agent):
+        return next(attempts)
+
+    async def register(_base):
+        return ""
+
+    whatsapp._ensure_pairing = ensure
+    whatsapp._register = register
+    whatsapp._share_zoen = lambda: None
+    previous = os.environ.get("PLOW_AGENT_TOKEN")
+    os.environ["PLOW_AGENT_TOKEN"] = "proxied"
+    try:
+        assert whatsapp.boot_announce() == 0
+    finally:
+        whatsapp.time.sleep = time.sleep
+        if previous is None:
+            os.environ.pop("PLOW_AGENT_TOKEN", None)
+        else:
+            os.environ["PLOW_AGENT_TOKEN"] = previous
+    # 30 seconds of 0.2s retries, then 2s: an outage costs the API a tenth of the requests.
+    fast = pauses.count(0.2)
+    assert fast in (150, 151)  # 150 x 0.2 lands a hair under 30.0 in floating point
+    assert pauses == [0.2] * fast + [2.0] * (160 - fast)
+
+
+def test_state_handoff_never_follows_a_planted_symlink():
+    whatsapp = _fresh_whatsapp("zoen_face_whatsapp_symlink")
+    owned = []
+    with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as outside:
+        target = Path(outside) / "shadow"
+        target.write_text("secret")
+        target.chmod(0o640)
+        previous = os.environ.get("HERMES_HOME")
+        os.environ["HERMES_HOME"] = home
+        try:
+            whatsapp._write_token("t" * 43)
+            (Path(home) / "zoen" / "planted").symlink_to(target)
+            whatsapp.os.geteuid = lambda: 0
+            whatsapp._agent_ids = lambda: (4242, 4243)
+            whatsapp.os.chown = lambda path, uid, gid: owned.append(os.path.basename(path))
+            whatsapp._share_zoen()
+            mode = oct(target.stat().st_mode & 0o777)
+        finally:
+            whatsapp.os.geteuid = os.geteuid
+            whatsapp.os.chown = os.chown
+            if previous is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous
+    assert mode == "0o640"
+    assert "planted" not in owned and "shadow" not in owned
