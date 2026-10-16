@@ -1,7 +1,7 @@
 #!/bin/sh
-# Publica as stories de docs/stories.json no Agent Index.
-# Precisa do container no ar (depois de plow-agents mint + compose up) para
-# o reporter já ter trocado PLOW_AGENT_TOKEN pela chave aik_.
+# Publish the stories in docs/stories.json to the Agent Index.
+# Needs the container running (after plow-agents mint + compose up) so the
+# reporter has already exchanged PLOW_AGENT_TOKEN for its aik_ key.
 set -eu
 cd "$(dirname "$0")/.."
 

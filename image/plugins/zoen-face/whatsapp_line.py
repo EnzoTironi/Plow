@@ -539,12 +539,15 @@ class WhatsAppLine:
             return {"success": True, "message_id": None}
         if copy is not None:
             content = copy
+        # The gateway's approval ask is interim by shape, but it is not prose:
+        # the owner has to see it to answer /approve, or the turn parks.
+        approval = isinstance(metadata, dict) and metadata.get("is_approval_prompt") is True
         # Hermes posts the model's own prose beside the tool: interim commentary
         # first, then the final text. The tool is the reply. That prose is not.
-        if isinstance(metadata, dict) and metadata.get("_interim_send"):
+        if not approval and isinstance(metadata, dict) and metadata.get("_interim_send"):
             return {"success": True, "message_id": None}
         spoke = getattr(_QUIET, "turn_spoke", None) if _QUIET is not None else None
-        if _QUIET is not None and (
+        if not approval and _QUIET is not None and (
             _QUIET.is_silence(content) or _QUIET.outbound_echo(content) or _QUIET.turn_copy(content)
             or (callable(spoke) and spoke())
         ):

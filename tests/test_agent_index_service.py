@@ -29,8 +29,10 @@ def test_wiring():
     assert "ENV AGENT_ID=zoen" in dockerfile
     assert "ENV AGENT_NAME=Zoen" in dockerfile
     assert "ENV AGENT_BLURB=" in dockerfile
-    assert "base-ef0019372ff8bca593611b31ebd2e08f9f1458ff" in dockerfile
-    assert "sha256:a8a2f97ad78b8192d80a984dce81d3bf5a9a883d18cb7b677704913a09b56aee" in dockerfile
+    # Tag and multi-arch index digest, both immutable. tests/test_persona.py ties the sha
+    # to the base SOUL.md fixture, so a bump cannot skip reviewing the base persona.
+    assert "base-c692e807386993b677de13500ce3a1a323d52b48" in dockerfile
+    assert "sha256:e04a373ed7b8a1f6440e4813eb282c2b6087d31e77c6e5e386ae40a307163d32" in dockerfile
     compose = (ROOT / "compose.yml").read_text()
     assert "AGENT_ID: ${AGENT_ID:-zoen}" in compose
     assert "AGENT_NAME: ${AGENT_NAME:-Zoen}" in compose
@@ -84,3 +86,41 @@ if __name__ == "__main__":
     test_stories_and_install_lead_with_one_click()
     time.sleep(0)
     print("ok")
+
+
+def test_the_agent_user_has_no_root():
+    """A root grant lets any turn rewrite the root-owned SOUL.md, plugins and approval gates."""
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    live = "\n".join(line for line in dockerfile.splitlines() if not line.lstrip().startswith("#"))
+    assert "sudoers" not in live
+    assert "NOPASSWD" not in live
+    assert " sudo" not in live.replace("--no-install-recommends", "")
+
+
+def test_gh_is_checksummed_for_both_architectures():
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    import re
+    for arch in ("AMD64", "ARM64"):
+        assert re.search(rf"ARG GH_SHA256_{arch}=[0-9a-f]{{64}}\n", dockerfile), arch
+    assert 'sha256sum -c -' in dockerfile
+    assert "| tar -xz" not in dockerfile  # never unpack a download before it is verified
+
+
+def test_pairing_retries_are_not_a_hot_loop():
+    script = (ROOT / "image/s6-overlay/s6-rc.d/zoen-pairing/pairing.sh").read_text()
+    assert "/bin/sleep 2" in script
+    assert "/bin/sleep 0.2" not in script
+
+
+def test_usage_reporting_is_the_base_reporter():
+    """A cloud 1-click install has no compose file: everything the reporter needs is in the image.
+
+    The base's agent-index service reads AGENT_ID from the container environment and fixes
+    HERMES_HOME=/var/lib/hermes (where state.db lives). A Zoen copy of that service would
+    shadow the base one and stop getting its fixes.
+    """
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    assert "\nENV AGENT_ID=zoen\n" in dockerfile
+    assert not (ROOT / "image/s6-overlay/s6-rc.d/agent-index").exists()
+    assert not (ROOT / "image/s6-overlay/s6-rc.d/user/contents.d/agent-index").exists()
+    assert "HERMES_HOME=" not in dockerfile.replace("HERMES_HOME=/var/lib/hermes", "")

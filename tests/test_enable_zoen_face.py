@@ -53,7 +53,8 @@ def test_live_dump_gains_zoen_face_and_keeps_plow_chat():
     assert "_config_version: 44" in text
     if enable.yaml is not None:
         data = enable.yaml.safe_load(text)
-        assert "approvals" not in data
+        # Shell prompts off in config; never HERMES_YOLO_MODE (that also skips plugin gates).
+        assert data["approvals"] == {"mode": "off"}
         assert "model" not in data
 
 
@@ -92,9 +93,14 @@ def test_a_non_luna_route_keeps_its_fallback():
 
 def test_already_listed_stays_untouched():
     with tempfile.TemporaryDirectory() as folder:
+        # A home from an image that still used HERMES_YOLO_MODE gains the approvals block once.
         path = _write(folder, "config.yaml", VOICED)
+        assert enable.ensure(path) is True
+        settled = path.read_text()
         assert enable.ensure(path) is False
-        assert path.read_text() == VOICED
+        assert path.read_text() == settled
+        data = enable.yaml.safe_load(settled)
+        assert data["plugins"]["enabled"].count("zoen-face") == 1
 
 
 def test_seed_text_keeps_indent_and_neighbors():
@@ -222,3 +228,35 @@ if __name__ == "__main__":
     test_refresh_removes_stale_layout_and_bak()
     test_refresh_pins_workspace_leftover_face()
     print("ok")
+
+
+def test_shell_approvals_stay_off_and_keep_other_approval_keys():
+    live = LIVE + (
+        "approvals:\n"
+        "  mode: manual\n"
+        "  timeout: 120\n"
+    )
+    with tempfile.TemporaryDirectory() as folder:
+        path = _write(folder, "config.yaml", live)
+        assert enable.ensure(path) is True
+        data = enable.yaml.safe_load(path.read_text())
+        assert data["approvals"] == {"mode": "off", "timeout": 120}
+        assert enable.ensure(path) is False
+
+
+def test_a_bare_yaml_off_is_already_off():
+    live = LIVE + "approvals:\n  mode: off\n"
+    with tempfile.TemporaryDirectory() as folder:
+        path = _write(folder, "config.yaml", live)
+        enable.ensure(path)
+        assert enable.ensure(path) is False
+
+
+def test_the_image_never_sets_yolo():
+    """YOLO bypasses the plow_chat plugin's approval for email sent in the owner's name."""
+    for name in ("Dockerfile", "compose.yml", ".env.example"):
+        live = [
+            line for line in (ROOT / name).read_text().splitlines()
+            if not line.lstrip().startswith("#")
+        ]
+        assert not any("HERMES_YOLO_MODE" in line for line in live), name

@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import secrets
+import stat
 import time
 from urllib.error import URLError
 from urllib.parse import quote
@@ -36,23 +37,7 @@ def _announce_lock() -> asyncio.Lock:
     return _ANNOUNCE_LOCK
 
 
-
-
-
-
-
-
 _HOME = ""
-
-
-
-
-
-
-
-
-
-
 
 
 def _digits(value) -> str:
@@ -342,12 +327,6 @@ def _clear_sent_claims() -> None:
 
 def _onboarded_path() -> str:
     return os.path.join(os.path.dirname(_token_path()), "whatsapp.onboarded")
-
-
-
-
-
-
 
 
 def _release_previous_install(uid: str) -> None:
@@ -644,8 +623,6 @@ async def _push_pairing(agent: str, me: dict) -> None:
             log.warning("whatsapp code open failed: %s", exc)
 
 
-
-
 def _agent_secret() -> str:
     """Stable on this VM's volume. The cloud token is only the placeholder."""
     path = os.path.join(os.path.dirname(_token_path()), "agent.id")
@@ -663,32 +640,55 @@ def _agent_secret() -> str:
     return current
 
 
-
-
 def _token_path() -> str:
     root = (os.environ.get("HERMES_HOME") or "/var/lib/hermes").strip() or "/var/lib/hermes"
     return os.path.join(root, "zoen", "whatsapp.token")
 
 
+def _agent_ids() -> tuple[int, int] | None:
+    """The gateway's uid and gid; None where there is no hermes user (a developer's host)."""
+    try:
+        import pwd
+
+        entry = pwd.getpwnam("hermes")
+    except (ImportError, KeyError):
+        return None
+    return entry.pw_uid, entry.pw_gid
+
+
 def _share_zoen() -> None:
-    """Pairing runs as root and the gateway runs as hermes. Both read this directory."""
+    """Pairing runs as root and the gateway runs as hermes: hand this directory to hermes.
+
+    The directory holds the relay session token and this install's secret, so
+    it stays 0700/0600, the same as plow-init-then-face.sh leaves it at boot.
+    Symlinks are skipped, never followed: the agent can write here, and a root
+    chmod through a planted link would reach any file on the box.
+    Not root (the gateway itself, or a test): every file is already its own.
+    """
+    if os.geteuid() != 0:
+        return
+    ids = _agent_ids()
+    if ids is None:
+        return
     root = os.path.dirname(_token_path())
     try:
-        os.makedirs(root, mode=0o777, exist_ok=True)
-        os.chmod(root, 0o777)
+        os.makedirs(root, mode=0o700, exist_ok=True)
     except OSError:
         return
-    for current, dirnames, filenames in os.walk(root):
-        for name in dirnames:
-            try:
-                os.chmod(os.path.join(current, name), 0o777)
-            except OSError:
-                pass
+    for current, _dirnames, filenames in os.walk(root):
+        _hand_over(current, 0o700, ids)
         for name in filenames:
-            try:
-                os.chmod(os.path.join(current, name), 0o666)
-            except OSError:
-                pass
+            _hand_over(os.path.join(current, name), 0o600, ids)
+
+
+def _hand_over(path: str, mode: int, ids: tuple[int, int]) -> None:
+    try:
+        if stat.S_ISLNK(os.lstat(path).st_mode):
+            return
+        os.chown(path, *ids)
+        os.chmod(path, mode)
+    except OSError:
+        log.warning("zoen state handoff skipped a path")
 
 
 def _read_token() -> str:
@@ -709,14 +709,6 @@ def _write_token(token: str) -> None:
 
 class _Uncertain(Exception):
     """The phone may already have this bubble. A retry would duplicate it."""
-
-
-
-
-
-
-
-
 
 
 async def _request(method, url, token, body=None, headers=None):
@@ -749,25 +741,6 @@ async def _request(method, url, token, body=None, headers=None):
         raise
     except (asyncio.TimeoutError, TimeoutError, aiohttp.ClientError):
         raise _Uncertain() from None
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 async def _plow_json(agent: str, path: str):
@@ -895,26 +868,6 @@ async def _ensure_pairing(agent: str) -> bool:
     return all(uid in _sent_chats() for uid in uids)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 _PINGED = False
 _LAST_BIND = "none"
 
@@ -927,11 +880,12 @@ def _ping_relay(base: str) -> None:
     _PINGED = True
     root = (base or "https://zoen-oauth-relay.agenttironi.workers.dev").rstrip("/")
     token = os.environ.get("PLOW_AGENT_TOKEN", "").strip()
-    request = Request(
-        root + "/whatsapp/ping",
-        headers={"User-Agent": "Zoen", "Authorization": f"Bearer {token}"},
-        method="GET",
-    )
+    headers = {"User-Agent": "Zoen"}
+    # The relay only counts which kind of token a ping carries. A real Plow
+    # bearer (a local install) never leaves for a third-party host for that.
+    if token == "proxied":
+        headers["Authorization"] = "Bearer proxied"
+    request = Request(root + "/whatsapp/ping", headers=headers, method="GET")
     try:
         with urlopen(request, timeout=4) as result:
             _LAST_BIND = f"ping{result.status}"
@@ -941,11 +895,26 @@ def _ping_relay(base: str) -> None:
         log.warning("whatsapp ping failed")
 
 
+def _pairing_pause(elapsed: float) -> float:
+    """Fast while a first text is likely; gentle once Plow keeps failing.
+
+    plow-init only finishes once the owner's chat exists, so a healthy boot
+    answers on the first pass. A loop that keeps going means Plow or the
+    network is down, and every Zoen in the fleet is asking at once.
+    """
+    if elapsed < 30:
+        return 0.2
+    if elapsed < 600:
+        return 2.0
+    return 5.0
+
+
 def boot_announce() -> int:
     """Answer the chat the user already opened. Their text creates it; this only sends."""
     agent = os.environ.get("PLOW_AGENT_TOKEN", "").strip()
     if not agent:
         return 1
+    waited = 0.0
     while True:
         try:
             if asyncio.run(_ensure_pairing(agent)):
@@ -959,7 +928,9 @@ def boot_announce() -> int:
                 return 0
         except Exception:
             log.warning("whatsapp boot announce failed")
-        time.sleep(0.2)
+        pause = _pairing_pause(waited)
+        time.sleep(pause)
+        waited += pause
 
 
 if __name__ == "__main__":

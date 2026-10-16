@@ -114,6 +114,28 @@ def test_credits_notice_stays_quiet_until_a_normal_reply():
     ]
 
 
+def test_gateway_approval_prompt_reaches_the_owner():
+    """A plugin gate (an email in the owner's name) asks in chat. Dropping that ask parked the turn."""
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    prompt = "⚠️ gmail send to ana@example.com: 'Lunch Friday'\n\nReply /approve to run or /deny to cancel."
+    result = asyncio.run(box.send(
+        "cht_x", prompt, metadata={"is_approval_prompt": True, "_interim_send": True},
+    ))
+    assert box.posted == [("send", prompt)]
+    assert result.success is True
+
+
+def test_only_the_gateway_marker_makes_an_approval_prompt():
+    Adapter = _adapter()
+    quiet.silence(Adapter)
+    box = Adapter()
+    asyncio.run(box.send("cht_x", "Reply /approve to run", metadata={"is_approval_prompt": "yes"}))
+    asyncio.run(box.send("cht_x", "Reply /approve to run"))
+    assert box.posted == []
+
+
 def test_normal_final_is_dropped():
     Adapter = _adapter()
     quiet.silence(Adapter)
@@ -756,6 +778,8 @@ def test_hi_is_answered_with_every_bubble_and_nothing_is_opened():
 
     whatsapp._request = fake_request
     whatsapp._plow_json = fake_plow
+    # The relay ping is a real GET; a unit test never leaves the machine.
+    whatsapp._ping_relay = lambda _base: None
     with tempfile.TemporaryDirectory() as home:
         os.environ["HERMES_HOME"] = home
         os.environ["PLOW_API_BASE"] = "https://plow.example"
@@ -777,11 +801,19 @@ def test_hi_is_answered_with_every_bubble_and_nothing_is_opened():
                 os.environ.pop("PLOW_AGENT_TOKEN", None)
             else:
                 os.environ["PLOW_AGENT_TOKEN"] = previous_token
-    bubbles = whatsapp.pairing_bubbles(code)
-    assert [row[2]["body"] for row in posted] == bubbles
-    assert fetched == ["/v1/agents/me"]
-    assert all("/v1/chats/" in row[1] and row[1].endswith("/messages") for row in posted)
-    assert "https://wa.me/553798136141?text=" + code in [row[2]["body"] for row in posted]
+    # The agent uid is known, so the link is the tap-to-arm button, not a bare wa.me link.
+    bubbles = whatsapp.pairing_bubbles(code, uid="c" * 32)
+    chat_posts = [row for row in posted if "/v1/chats/" in row[1]]
+    assert [row[2]["body"] for row in chat_posts] == bubbles
+    assert all(row[1].endswith("/messages") for row in chat_posts)
+    # Nothing is opened: the owner's own text created the chat.
+    assert not any(row[1].endswith("/v1/chats") for row in posted)
+    assert f"https://auth.tryzoen.com/whatsapp/go/{'c' * 32}/{code}" in bubbles
+    # After the bubbles, boot registers the code with the relay once.
+    relay_posts = [row for row in posted if row[1].endswith("/whatsapp/register")]
+    assert len(relay_posts) == 1
+    assert relay_posts[0][2]["code"] == code
+    assert set(fetched) == {"/v1/agents/me"}
 
 
 def test_no_chat_yet_does_not_email_or_open_one():
@@ -856,7 +888,7 @@ def test_a_mailed_claim_does_not_skip_the_hi_reply():
                 os.environ.pop("PLOW_API_BASE", None)
             else:
                 os.environ["PLOW_API_BASE"] = previous_api
-    assert posted == whatsapp.pairing_bubbles(code)
+    assert posted == whatsapp.pairing_bubbles(code, uid="c" * 32)
 
 
 def test_reused_line_volume_sends_the_code_once_for_the_new_agent():
@@ -1719,15 +1751,26 @@ def test_claim_identity_skips_modules_without_the_seam():
     assert not hasattr(module, "_with_identity")
 
 
+def _seed_soul() -> str:
+    """The base SOUL.md as the image ships it: image/zoen-soul.py over the pinned base."""
+    spec_soul = importlib.util.spec_from_file_location("zoen_soul", ROOT / "image/zoen-soul.py")
+    module = importlib.util.module_from_spec(spec_soul)
+    spec_soul.loader.exec_module(module)
+    return module.compose((ROOT / "tests/fixtures/base-SOUL.md").read_text())
+
+
 def test_seed_soul_is_zoen_not_a_plow_assistant():
-    soul = (ROOT / "runtime" / "SOUL.md").read_text()
+    seed = _seed_soul()
     persona = (ROOT / "runtime" / "persona.md").read_text()
+    # Hermes loads one file: the seed, then persona.md. Zoen's rules live in the persona.
+    soul = seed + "\n" + persona
+    assert seed.lstrip().startswith("# Zoen")
     assert persona.lstrip().startswith("# Zoen")
     assert "You are **Zoen**" in persona
     assert "https://tryzoen.com" in persona
     assert "add you to an iMessage group" in persona
-    assert "You are **Zoen**" not in soul
-    assert len(soul.encode()) + len(persona.encode()) < 20000
+    assert "You are **Zoen**" not in seed
+    assert len(soul.encode()) < 20000
     assert "You are a Plow assistant" not in soul
     assert "mention /help" in persona.lower()
     assert "zoen_connections" in soul
@@ -1747,7 +1790,7 @@ def test_seed_soul_is_zoen_not_a_plow_assistant():
 
 
 def test_persona_route_index_names_playbooks_and_skills():
-    persona = (ROOT / "runtime" / "SOUL.md").read_text()
+    persona = (ROOT / "runtime" / "persona.md").read_text()
     assert "# Route" in persona
     for needle in (
         "context.py dump",
@@ -1868,3 +1911,157 @@ if __name__ == "__main__":
     test_pairing_does_not_hold_the_gateway()
     test_persona_route_index_names_playbooks_and_skills()
     print("ok")
+
+
+def _fresh_whatsapp(name):
+    spec_wa = importlib.util.spec_from_file_location(name, ROOT / "image/plugins/zoen-face/whatsapp.py")
+    module = importlib.util.module_from_spec(spec_wa)
+    spec_wa.loader.exec_module(module)
+    return module
+
+
+def test_relay_ping_never_carries_a_real_plow_bearer():
+    """The relay is a third-party host. Only the cloud placeholder may ride the ping."""
+    whatsapp = _fresh_whatsapp("zoen_face_whatsapp_ping")
+    seen = []
+
+    class Reply:
+        status = 204
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return b""
+
+    def fake_urlopen(request, timeout=None):
+        seen.append(dict(request.header_items()))
+        return Reply()
+
+    whatsapp.urlopen = fake_urlopen
+    previous = os.environ.get("PLOW_AGENT_TOKEN")
+    try:
+        os.environ["PLOW_AGENT_TOKEN"] = "plow_live_secret_for_test"
+        whatsapp._ping_relay("https://relay.example")
+        whatsapp._PINGED = False
+        os.environ["PLOW_AGENT_TOKEN"] = "proxied"
+        whatsapp._ping_relay("https://relay.example")
+    finally:
+        if previous is None:
+            os.environ.pop("PLOW_AGENT_TOKEN", None)
+        else:
+            os.environ["PLOW_AGENT_TOKEN"] = previous
+    assert "Authorization" not in seen[0]
+    assert seen[1]["Authorization"] == "Bearer proxied"
+
+
+def test_shared_state_is_private_to_the_agent_user():
+    """Pairing runs as root and the gateway as hermes: hand the files over, never 0777."""
+    whatsapp = _fresh_whatsapp("zoen_face_whatsapp_share")
+    owned = []
+    with tempfile.TemporaryDirectory() as home:
+        previous = os.environ.get("HERMES_HOME")
+        os.environ["HERMES_HOME"] = home
+        try:
+            whatsapp._write_token("t" * 43)
+            whatsapp._agent_secret()
+            whatsapp.os.geteuid = lambda: 0
+            whatsapp._agent_ids = lambda: (4242, 4243)
+            whatsapp.os.chown = lambda path, uid, gid: owned.append((os.path.basename(path), uid, gid))
+            whatsapp._share_zoen()
+            root = Path(home) / "zoen"
+            modes = {p.name: oct(p.stat().st_mode & 0o777) for p in [root, *root.iterdir()]}
+        finally:
+            whatsapp.os.geteuid = os.geteuid
+            whatsapp.os.chown = os.chown
+            if previous is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous
+    assert modes == {"zoen": "0o700", "whatsapp.token": "0o600", "agent.id": "0o600"}
+    assert sorted(owned) == [("agent.id", 4242, 4243), ("whatsapp.token", 4242, 4243), ("zoen", 4242, 4243)]
+
+
+def test_shared_state_is_left_alone_without_root():
+    whatsapp = _fresh_whatsapp("zoen_face_whatsapp_share_user")
+    with tempfile.TemporaryDirectory() as home:
+        previous = os.environ.get("HERMES_HOME")
+        os.environ["HERMES_HOME"] = home
+        try:
+            whatsapp._write_token("t" * 43)
+            whatsapp.os.geteuid = lambda: 1000
+            whatsapp._share_zoen()
+            mode = oct((Path(home) / "zoen" / "whatsapp.token").stat().st_mode & 0o777)
+        finally:
+            whatsapp.os.geteuid = os.geteuid
+            if previous is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous
+    assert mode == "0o600"
+
+
+def test_pairing_backs_off_while_plow_is_unreachable():
+    whatsapp = _fresh_whatsapp("zoen_face_whatsapp_backoff")
+    assert whatsapp._pairing_pause(0) == 0.2
+    assert whatsapp._pairing_pause(29.9) == 0.2
+    assert whatsapp._pairing_pause(30) == 2.0
+    assert whatsapp._pairing_pause(600) == 5.0
+    pauses = []
+    whatsapp.time.sleep = pauses.append
+    attempts = iter([False] * 160 + [True])
+
+    async def ensure(_agent):
+        return next(attempts)
+
+    async def register(_base):
+        return ""
+
+    whatsapp._ensure_pairing = ensure
+    whatsapp._register = register
+    whatsapp._share_zoen = lambda: None
+    previous = os.environ.get("PLOW_AGENT_TOKEN")
+    os.environ["PLOW_AGENT_TOKEN"] = "proxied"
+    try:
+        assert whatsapp.boot_announce() == 0
+    finally:
+        whatsapp.time.sleep = time.sleep
+        if previous is None:
+            os.environ.pop("PLOW_AGENT_TOKEN", None)
+        else:
+            os.environ["PLOW_AGENT_TOKEN"] = previous
+    # 30 seconds of 0.2s retries, then 2s: an outage costs the API a tenth of the requests.
+    fast = pauses.count(0.2)
+    assert fast in (150, 151)  # 150 x 0.2 lands a hair under 30.0 in floating point
+    assert pauses == [0.2] * fast + [2.0] * (160 - fast)
+
+
+def test_state_handoff_never_follows_a_planted_symlink():
+    whatsapp = _fresh_whatsapp("zoen_face_whatsapp_symlink")
+    owned = []
+    with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as outside:
+        target = Path(outside) / "shadow"
+        target.write_text("secret")
+        target.chmod(0o640)
+        previous = os.environ.get("HERMES_HOME")
+        os.environ["HERMES_HOME"] = home
+        try:
+            whatsapp._write_token("t" * 43)
+            (Path(home) / "zoen" / "planted").symlink_to(target)
+            whatsapp.os.geteuid = lambda: 0
+            whatsapp._agent_ids = lambda: (4242, 4243)
+            whatsapp.os.chown = lambda path, uid, gid: owned.append(os.path.basename(path))
+            whatsapp._share_zoen()
+            mode = oct(target.stat().st_mode & 0o777)
+        finally:
+            whatsapp.os.geteuid = os.geteuid
+            whatsapp.os.chown = os.chown
+            if previous is None:
+                os.environ.pop("HERMES_HOME", None)
+            else:
+                os.environ["HERMES_HOME"] = previous
+    assert mode == "0o640"
+    assert "planted" not in owned and "shadow" not in owned

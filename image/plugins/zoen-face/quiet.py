@@ -178,8 +178,19 @@ async def _deliver_credits(text, args, kwargs, orig_send, adapter):
     return last
 
 
+def is_approval_prompt(metadata) -> bool:
+    """Hermes marks its approval ask; the owner must see it or the turn parks on typing.
+
+    A plugin gate (an email sent in the owner's name) and every other approval
+    the gateway raises arrive here, never through zoen_imessage.
+    """
+    return isinstance(metadata, dict) and metadata.get("is_approval_prompt") is True
+
+
 def _wrap_send(orig_send):
     async def send(self, *args, **kwargs):
+        if is_approval_prompt(kwargs.get("metadata")):
+            return await orig_send(self, *args, **kwargs)
         text = _leftover_text(args, kwargs)
         if credits_looks_like(text):
             return await _deliver_credits(text, args, kwargs, orig_send, self)

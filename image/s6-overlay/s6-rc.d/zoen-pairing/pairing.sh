@@ -8,5 +8,5 @@ export PATH
 
 until /opt/hermes/.venv/bin/python /opt/hermes/plugins/zoen-face/whatsapp.py; do
   echo "zoen-pairing: owner's text not answered yet, retrying" >&2
-  /bin/sleep 0.2
+  /bin/sleep 2
 done

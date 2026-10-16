@@ -612,6 +612,37 @@ def test_gateway_prose_does_not_join_the_tool():
     assert posted == [{"to": "5537999999999", "text": "ainda sem a ferramenta"}]
 
 
+def test_gateway_approval_prompt_is_a_whatsapp_bubble():
+    """The approval ask is interim by shape, but the owner has to see it to answer."""
+    import asyncio
+    from types import SimpleNamespace
+
+    posted = []
+
+    class Transport:
+        async def post(self, url, body):
+            posted.append(body)
+
+    adapter = line.WhatsAppLine("https://relay.example/", Transport())
+    previous = line._QUIET
+    line.bind_outbound(SimpleNamespace(
+        is_silence=quiet_is_silence,
+        outbound_echo=lambda _text: False,
+        turn_copy=lambda _text: False,
+        turn_spoke=lambda: True,
+        _remember_outbound=lambda _text: None,
+    ))
+    prompt = "gmail send to ana@example.com\n\nReply /approve to run or /deny to cancel."
+    try:
+        asyncio.run(adapter.send(
+            "whatsapp:5537999999999", prompt,
+            metadata={"is_approval_prompt": True, "_interim_send": True},
+        ))
+    finally:
+        line._QUIET = previous
+    assert posted == [{"to": "5537999999999", "text": prompt}]
+
+
 def test_silence_token_is_not_a_whatsapp_bubble():
     import asyncio
     from types import SimpleNamespace

@@ -5,7 +5,7 @@ project_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 runner="$project_root/tools/plow-agents/bin/plow-agents"
 
 if [ ! -x "$runner" ]; then
-    echo "runner oficial ausente: execute git clone --depth 1 https://github.com/plow-pbc/plow-agents.git tools/plow-agents" >&2
+    echo "the official plow-agents CLI is missing: run ./install.sh once, or clone plow-pbc/plow-agents into tools/plow-agents" >&2
     exit 1
 fi
 

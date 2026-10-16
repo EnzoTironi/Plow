@@ -61,9 +61,15 @@ def test_install_cloud_default_deploys_the_public_digest():
     text = (ROOT / "install.sh").read_text()
     toml = (ROOT / "plow-agents.toml").read_text()
     assert 'image = "ghcr.io/enzotironi/zoen/all-in-one:v1"' in toml
-    assert "ghcr.io/enzotironi/zoen/all-in-one:v1" in text
+    # plow-agents deploy takes image@sha256:<digest>, exe:<slug> or --local; a tag dies
+    # with "deploy needs image@sha256:<64 hex>, exe:<slug>, or --local". exe:zoen is the
+    # admitted 1-click image.
+    assert 'IMAGE="${ZOEN_IMAGE:-exe:zoen}"' in text
+    assert "all-in-one:v1" not in text.split("IMAGE=", 1)[1].split("\n", 1)[0]
     _, _, after = text.partition('[ "$LOCAL" = 1 ]')
-    then_part, _, else_part = after.partition("else")
+    # The top-level else sits at column 0; nested ones (--fresh) are indented.
+    then_part, _, else_part = after.partition("\nelse\n")
+    else_part = else_part.partition("\nfi\n")[0]
     assert 'face.py" rename' in then_part
     assert "docker compose up" in then_part
     assert "plow mint" in then_part
@@ -71,6 +77,22 @@ def test_install_cloud_default_deploys_the_public_digest():
     assert 'deploy "$IMAGE"' in else_part
     assert "plow mint" not in else_part
     assert "docker compose up" not in else_part
+
+
+def test_install_pins_the_plow_agents_cli_by_commit():
+    text = (ROOT / "install.sh").read_text()
+    import re
+    ref = re.search(r'RUNNER_REF="\$\{ZOEN_RUNNER_REF:-([0-9a-f]+)\}"', text)
+    assert ref and len(ref.group(1)) == 40
+    assert 'fetch -q --depth 1 "$RUNNER" "$RUNNER_REF"' in text
+    assert "git clone --depth 1 \"$RUNNER\"" not in text
+
+
+def test_user_facing_scripts_speak_english():
+    for name in ("install.sh", "bin/plow-agents", ".env.example", "scripts/publish-stories.sh"):
+        text = (ROOT / name).read_text()
+        for word in ("baixando", "ligando", "não", "Pronto", "Opcionais", "ausente"):
+            assert word not in text, (name, word)
 
 
 if __name__ == "__main__":

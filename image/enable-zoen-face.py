@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""List zoen-face under plugins.enabled. Model and approval stay on env."""
+"""List zoen-face under plugins.enabled, and keep shell approvals off.
+
+The model stays on env. Approvals are config, not HERMES_YOLO_MODE: YOLO
+also waves through the plow_chat plugin's own gates (an email sent from the
+owner's Gmail), while `approvals.mode: off` only skips the prompts for
+commands Zoen runs inside its own VM. Hardline floors still apply.
+"""
 from __future__ import annotations
 
 import os
@@ -60,6 +66,26 @@ def pin_luna_backup(data: dict) -> bool:
     if delegation.get("fallback_providers") == [LUNA_BACKUP]:
         return False
     delegation["fallback_providers"] = [dict(LUNA_BACKUP)]
+    return True
+
+
+def pin_shell_approvals_off(data: dict) -> bool:
+    """Commands in Zoen's own VM run without a prompt; plugin approvals still ask.
+
+    The pinned Hermes (dbd0272) checks `approvals.mode == "off"` only in the
+    command guards; `request_tool_approval` (plugin gates) checks YOLO alone.
+    Re-check this on every Hermes bump: newer Hermes also lets mode=off
+    through the plugin gate.
+    """
+    approvals = data.get("approvals")
+    if not isinstance(approvals, dict):
+        approvals = {}
+    # YAML 1.1 reads a bare `off` as False; Hermes normalizes both to "off".
+    if approvals.get("mode") in ("off", False):
+        data["approvals"] = approvals
+        return False
+    approvals["mode"] = "off"
+    data["approvals"] = approvals
     return True
 
 
@@ -126,7 +152,11 @@ def ensure_yaml(path: Path) -> bool:
     if "zoen" in data:
         data.pop("zoen")
         changed = True
-    if enable_plugin(data) or pin_luna_backup(data) or changed:
+    # Run both: `a() or b()` would skip the Luna pin whenever the plugin was just listed.
+    listed = enable_plugin(data)
+    pinned = pin_luna_backup(data)
+    quiet_shell = pin_shell_approvals_off(data)
+    if listed or pinned or quiet_shell or changed:
         _replace(path, yaml.safe_dump(data, sort_keys=False))
         return True
     return False
