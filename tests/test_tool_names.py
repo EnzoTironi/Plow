@@ -77,3 +77,16 @@ def test_the_renamed_tool_is_the_one_quiet_installs():
     assert 'IMESSAGE = "zoen_imessage"' in quiet
     init = (ROOT / "image/plugins/zoen-face/__init__.py").read_text()
     assert 'name="zoen_connections"' in init
+
+
+def test_every_skill_has_routable_frontmatter():
+    """Hermes indexes a skill by its frontmatter; a missing name or a vague description misroutes."""
+    for path in sorted((ROOT / "skills").rglob("SKILL.md")):
+        text = path.read_text(encoding="utf-8")
+        match = re.match(r"---\n(.*?)\n---\n", text, re.S)
+        assert match, path
+        front = match.group(1)
+        name = re.search(r"^name:\s*(\S.*)$", front, re.M)
+        description = re.search(r"^description:\s*(\S.*)$", front, re.M)
+        assert name and name.group(1).strip().strip("'\"") == path.parent.name, path
+        assert description and len(description.group(1)) >= 20, path

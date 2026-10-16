@@ -110,3 +110,17 @@ def test_pairing_retries_are_not_a_hot_loop():
     script = (ROOT / "image/s6-overlay/s6-rc.d/zoen-pairing/pairing.sh").read_text()
     assert "/bin/sleep 2" in script
     assert "/bin/sleep 0.2" not in script
+
+
+def test_usage_reporting_is_the_base_reporter():
+    """A cloud 1-click install has no compose file: everything the reporter needs is in the image.
+
+    The base's agent-index service reads AGENT_ID from the container environment and fixes
+    HERMES_HOME=/var/lib/hermes (where state.db lives). A Zoen copy of that service would
+    shadow the base one and stop getting its fixes.
+    """
+    dockerfile = (ROOT / "Dockerfile").read_text()
+    assert "\nENV AGENT_ID=zoen\n" in dockerfile
+    assert not (ROOT / "image/s6-overlay/s6-rc.d/agent-index").exists()
+    assert not (ROOT / "image/s6-overlay/s6-rc.d/user/contents.d/agent-index").exists()
+    assert "HERMES_HOME=" not in dockerfile.replace("HERMES_HOME=/var/lib/hermes", "")
