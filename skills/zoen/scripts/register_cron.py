@@ -8,17 +8,26 @@ current home channel gets retargeted rather than trusted.
 
 Never read "could not tell what is registered" as "nothing is": that duplicates
 the job. Only a missing jobs.json means empty; anything unreadable raises.
+
+The job runs in Hermes monitor mode. floor_monitor.py runs first on each tick
+and the model only wakes when its line changes: every two hours while the owner
+has written in the last 72 hours, never while they are away. Hermes only runs
+monitor scripts from $HERMES_HOME/scripts, so this copies the image's script
+there on every boot.
 """
 import json
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERMES = "/opt/hermes/bin/hermes"
 JOBS_FILE = str(Path(os.environ.get("HERMES_HOME", "/var/lib/hermes")) / "cron/jobs.json")
 NAME = "zoen-floor"
 SCHEDULE = "0 */2 * * *"
+MONITOR = "zoen-floor-monitor.py"
+MONITOR_SOURCE = Path(__file__).resolve().with_name("floor_monitor.py")
 PROMPT = (
     "Run skill zoen, cron section. Keep the existing voice. Read context.py dump and "
     "the native Kanban's active tasks. Resume only work the owner already authorized; "
@@ -30,7 +39,8 @@ PROMPT = (
     "Notify via zoen_imessage only for a completed result, a meaningful change, "
     "failure or required input. If nothing needs them, [SILENT]. No periodic check-in. "
     "Never onboard, install, use Latch, spend money or deploy production from cron. "
-    "Use their language and casing. Short bubbles, same personality."
+    "Use their language and casing. Short bubbles, same personality. "
+    "A MONITOR block only says the owner was active recently; it is not a request."
 )
 
 
@@ -52,8 +62,28 @@ def delivery_target(home_channel):
     return f"plow_chat:{home_channel.strip()}"
 
 
-def main(home_channel, jobs_path=JOBS_FILE, run=subprocess.run):
+def install_monitor(scripts_dir, source=MONITOR_SOURCE):
+    """Put the image's monitor where Hermes runs it. Rewritten only when it differs."""
+    scripts_dir = Path(scripts_dir)
+    target = scripts_dir / MONITOR
+    wanted = Path(source).read_bytes()
+    if target.is_file() and not target.is_symlink() and target.read_bytes() == wanted:
+        return False
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    descriptor, staged = tempfile.mkstemp(prefix=".zoen-floor-monitor.", dir=scripts_dir)
+    with os.fdopen(descriptor, "wb") as handle:
+        handle.write(wanted)
+    os.chmod(staged, 0o644)
+    os.replace(staged, target)
+    return True
+
+
+def main(home_channel, jobs_path=JOBS_FILE, run=subprocess.run, scripts_dir=None, source=MONITOR_SOURCE):
     deliver = delivery_target(home_channel)
+    if scripts_dir is None:
+        scripts_dir = Path(os.environ.get("HERMES_HOME", "/var/lib/hermes")) / "scripts"
+    # Before create/edit: Hermes checks the monitor path when the job is saved.
+    install_monitor(scripts_dir, source)
     job = registered(jobs_path)
     if job is None:
         return run(
@@ -69,6 +99,8 @@ def main(home_channel, jobs_path=JOBS_FILE, run=subprocess.run):
                 "zoen",
                 "--deliver",
                 deliver,
+                "--monitor-script",
+                MONITOR,
             ]
         ).returncode
     schedule = job.get("schedule")
@@ -77,7 +109,8 @@ def main(home_channel, jobs_path=JOBS_FILE, run=subprocess.run):
     changes = []
     for flag, actual, desired in (("--deliver", job.get("deliver"), deliver),
                                    ("--prompt", job.get("prompt"), PROMPT),
-                                   ("--schedule", schedule, SCHEDULE)):
+                                   ("--schedule", schedule, SCHEDULE),
+                                   ("--monitor-script", job.get("monitor_script"), MONITOR)):
         if actual != desired:
             changes.extend((flag, desired))
     if not changes:

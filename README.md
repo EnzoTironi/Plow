@@ -99,9 +99,17 @@ docker compose up --build -d
 docker compose logs -f agent   # wait for "plow-init: configured from … as cht_…"
 ```
 
-Then text the line's number. `./install.sh --local` does the same steps for you
-(login, a free line, mint, build). `docker compose down` keeps memory, sessions and
+Then text the line's number. `docker compose down` keeps memory, sessions and
 WhatsApp; `down -v` erases them.
+
+The script does the same steps for you: login, a free line, then either the
+cloud image that "Text this agent" boots (`exe:zoen`) or, with `--local`, this
+checkout in Docker.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/EnzoTironi/Plow/main/install.sh | sh
+./install.sh --local
+```
 
 ## Deploy
 
