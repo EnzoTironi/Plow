@@ -129,8 +129,10 @@ def test_pack_does_not_treat_an_acked_file_as_plugin_ack():
         packed = context.pack(d, seed=False)
         assert "<acked>" not in packed
         assert "plugin already sent" not in packed
-        assert "reception layer" in packed
-        assert "your next tool is zoen_imessage" in packed
+        # The thread stays free: one ack bubble, then the work goes to a child.
+        assert "uses zoen_imessage" in packed
+        assert "This thread stays free" in packed
+        assert "delegate_task" in packed
 
 
 def test_pack_tells_the_model_to_drive_the_mac_when_latch_is_connected():

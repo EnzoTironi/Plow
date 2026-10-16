@@ -756,6 +756,8 @@ def test_hi_is_answered_with_every_bubble_and_nothing_is_opened():
 
     whatsapp._request = fake_request
     whatsapp._plow_json = fake_plow
+    # The relay ping is a real GET; a unit test never leaves the machine.
+    whatsapp._ping_relay = lambda _base: None
     with tempfile.TemporaryDirectory() as home:
         os.environ["HERMES_HOME"] = home
         os.environ["PLOW_API_BASE"] = "https://plow.example"
@@ -777,11 +779,19 @@ def test_hi_is_answered_with_every_bubble_and_nothing_is_opened():
                 os.environ.pop("PLOW_AGENT_TOKEN", None)
             else:
                 os.environ["PLOW_AGENT_TOKEN"] = previous_token
-    bubbles = whatsapp.pairing_bubbles(code)
-    assert [row[2]["body"] for row in posted] == bubbles
-    assert fetched == ["/v1/agents/me"]
-    assert all("/v1/chats/" in row[1] and row[1].endswith("/messages") for row in posted)
-    assert "https://wa.me/553798136141?text=" + code in [row[2]["body"] for row in posted]
+    # The agent uid is known, so the link is the tap-to-arm button, not a bare wa.me link.
+    bubbles = whatsapp.pairing_bubbles(code, uid="c" * 32)
+    chat_posts = [row for row in posted if "/v1/chats/" in row[1]]
+    assert [row[2]["body"] for row in chat_posts] == bubbles
+    assert all(row[1].endswith("/messages") for row in chat_posts)
+    # Nothing is opened: the owner's own text created the chat.
+    assert not any(row[1].endswith("/v1/chats") for row in posted)
+    assert f"https://auth.tryzoen.com/whatsapp/go/{'c' * 32}/{code}" in bubbles
+    # After the bubbles, boot registers the code with the relay once.
+    relay_posts = [row for row in posted if row[1].endswith("/whatsapp/register")]
+    assert len(relay_posts) == 1
+    assert relay_posts[0][2]["code"] == code
+    assert set(fetched) == {"/v1/agents/me"}
 
 
 def test_no_chat_yet_does_not_email_or_open_one():
@@ -856,7 +866,7 @@ def test_a_mailed_claim_does_not_skip_the_hi_reply():
                 os.environ.pop("PLOW_API_BASE", None)
             else:
                 os.environ["PLOW_API_BASE"] = previous_api
-    assert posted == whatsapp.pairing_bubbles(code)
+    assert posted == whatsapp.pairing_bubbles(code, uid="c" * 32)
 
 
 def test_reused_line_volume_sends_the_code_once_for_the_new_agent():

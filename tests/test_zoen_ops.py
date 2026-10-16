@@ -63,7 +63,9 @@ def test_install_cloud_default_deploys_the_public_digest():
     assert 'image = "ghcr.io/enzotironi/zoen/all-in-one:v1"' in toml
     assert "ghcr.io/enzotironi/zoen/all-in-one:v1" in text
     _, _, after = text.partition('[ "$LOCAL" = 1 ]')
-    then_part, _, else_part = after.partition("else")
+    # The top-level else sits at column 0; nested ones (--fresh) are indented.
+    then_part, _, else_part = after.partition("\nelse\n")
+    else_part = else_part.partition("\nfi\n")[0]
     assert 'face.py" rename' in then_part
     assert "docker compose up" in then_part
     assert "plow mint" in then_part

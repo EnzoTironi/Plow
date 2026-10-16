@@ -126,7 +126,10 @@ def ensure_yaml(path: Path) -> bool:
     if "zoen" in data:
         data.pop("zoen")
         changed = True
-    if enable_plugin(data) or pin_luna_backup(data) or changed:
+    # Run both: `a() or b()` would skip the Luna pin whenever the plugin was just listed.
+    listed = enable_plugin(data)
+    pinned = pin_luna_backup(data)
+    if listed or pinned or changed:
         _replace(path, yaml.safe_dump(data, sort_keys=False))
         return True
     return False
